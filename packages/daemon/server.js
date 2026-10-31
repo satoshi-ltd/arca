@@ -58,7 +58,7 @@ import {
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web, hostName } from "./web.js";
 import { tailAddress } from "./tailscale.js";
-import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT, STREAMED_EDIT } from "./engine.js";
+import { Engine, HUB_UNAVAILABLE, STREAM_ONLY_EDIT, STREAMED_EDIT } from "./engine.js";
 import { fromHub, streamedCover, streamedLibrary, streamedMedia, streamedTrack, trackOf } from "./music-routes.js";
 import {
   Network,
@@ -72,6 +72,7 @@ import {
   token,
   fail,
   hashFileAsync,
+  fingerprintMatches,
   atomic,
   requireSpace,
   deleteSyncedCopy,
@@ -189,7 +190,7 @@ export async function start(home, options = {}) {
   const verifiedObject = async (file, hash) => {
     const signature = fileSignature(file);
     if (signature && verifiedObjects.get(hash) === signature) return true;
-    const ok = (await hashFileAsync(file)) === hash;
+    const ok = await fingerprintMatches(file, hash);
     if (ok && signature && fileSignature(file) === signature) {
       if (verifiedObjects.size >= 4096) verifiedObjects.delete(verifiedObjects.keys().next().value);
       verifiedObjects.set(hash, signature);
@@ -948,7 +949,7 @@ export async function start(home, options = {}) {
         if (!fs.existsSync(file))
           fail("Local copy missing. Sync before downloading.", 409);
         if (
-          s.streamOnly(volume) && file !== s.blob(hash)
+          s.videoFolder(volume) && file !== s.blob(hash)
             ? !(await s.holds(volume, file, hash))
             : (await hashFileAsync(file)) !== hash
         )
@@ -1284,7 +1285,6 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/changes") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
-        if (!admin && s.streamOnly(volume)) fail(STREAM_ONLY, 409);
         const committed = Number(
           s.db
             .prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'")
@@ -1319,7 +1319,6 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/snapshot") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
-        if (!admin && s.streamOnly(volume)) fail(STREAM_ONLY, 409);
         const controller = new AbortController();
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
@@ -1507,16 +1506,18 @@ export async function start(home, options = {}) {
           return send(200, view);
         }
         s.volume(volume);
-        return send(
-          200,
-          url.searchParams.has("limit")
-            ? listPage(s, volume, url.searchParams, name)
-            : {
-                versions: s
-                  .history(volume, name)
-                  .map((row) => s.conflictStatus(row)),
-              },
-        );
+        const answer = url.searchParams.has("limit")
+          ? listPage(s, volume, url.searchParams, name)
+          : {
+              versions: s
+                .history(volume, name)
+                .map((row) => s.conflictStatus(row)),
+            };
+        if (s.streamOnly(volume) && answer.versions)
+          answer.versions = answer.versions.map((row) =>
+            row.deleted || row.directory || !row.hash ? row : { ...row, kept: fs.existsSync(s.contentFile(row.hash)) },
+          );
+        return send(200, answer);
       }
       if (req.method === "GET" && route === "/v1/browse") {
         requireAdmin();
@@ -1536,7 +1537,7 @@ export async function start(home, options = {}) {
       if (route.startsWith("/v1/blobs/") && req.method === "GET") {
         requireHub();
         const hash = route.split("/").at(-1);
-        const file = s.blob(hash);
+        const file = s.contentFile(hash);
         if (device.role === "player") {
           const candidates = s.db.prepare(`SELECT f.volume, f.path,
             EXISTS(SELECT 1 FROM gallery_folders g WHERE g.volume=f.volume) AS gallery,
@@ -1622,7 +1623,7 @@ export async function start(home, options = {}) {
               fs.appendFileSync(tmp, data, { mode: 0o600 });
               const complete = offset + data.length === size;
               if (complete) {
-                if ((await hashFileAsync(tmp)) !== hash) {
+                if (!(await fingerprintMatches(tmp, hash))) {
                   fs.unlinkSync(tmp);
                   fail("Upload hash mismatch", 409);
                 }
@@ -1850,7 +1851,6 @@ export async function start(home, options = {}) {
                   !Number.isFinite(Date.parse(b.captured)))
               )
                 fail("Invalid capture date");
-              if (!admin && s.streamOnly(b.volume)) fail(STREAM_ONLY, 403);
               const result = await engine.propose(b, device);
               if (b.hash && b.captured)
                 s.db
@@ -1874,7 +1874,6 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/conflict-choice") {
-          if (s.streamOnly(b.volume)) fail(STREAM_ONLY_EDIT, 409);
           if (config.role !== "hub") {
             requireAdmin();
             if (!s.volume(b.volume).selected)
@@ -2036,8 +2035,6 @@ export async function start(home, options = {}) {
         if (route === "/v1/folder-retention") {
           requireAdmin();
           requireHub();
-          if (s.streamOnly(b.id))
-            fail("Movies & TV folders keep no older versions.", 409);
           return send(
             200,
             await authorizedWork(() => {
@@ -2222,6 +2219,7 @@ export async function start(home, options = {}) {
             return send(
               200,
               await authorizedWork(() => {
+                if (s.streamOnly(b.id)) s.dropVideoVersions(b.id);
                 const result = s.forgetVolume(b.id);
                 engine.folderStates.delete(b.id);
                 engine.music?.sweep(true);

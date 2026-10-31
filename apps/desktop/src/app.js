@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.22";
+const APP_VERSION = "0.8.23";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2134,6 +2134,7 @@ function viewRefreshSignature(status, view, detailId) {
       })),
       status.phase,
       !!status.hubUnavailable,
+      view === "folders" ? status.media : null,
       view === "devices" ? status.backup : null,
       view === "devices"
         ? status.devices?.map(({ last_seen, ...device }) => ({
@@ -2300,8 +2301,6 @@ function folderRetentionMode(volume) {
   );
 }
 function folderRetentionSummary(volume) {
-  if (volume.video)
-    return `<div class="stat folder-history-status"><span>Version history</span><strong>Off</strong><p>Movies &amp; TV keep current files only</p></div>`;
   const mode = folderRetentionMode(volume);
   const label =
     folderRetentionChoices.find((choice) => choice.id === mode)?.summary ||
@@ -7429,11 +7428,11 @@ function videoTabsMarkup(tabs) {
     : "";
   return `<div class="folder-browser-tools video-tools"><div class="music-tools">${tabRow}</div>${sort}</div>`;
 }
-const VIDEO_DELETE_NOTE = "Removes the file from the hub for every device and cannot be undone: Movies &amp; TV keeps no copies or history. The download on this device goes with it.";
+const VIDEO_DELETE_NOTE = "Removes the file from the hub for every device. Retained history can restore it. The download on this device goes with it.";
 const videoNoun = (item) => (item.kind === "movie" || item.kind === "episode" ? item.kind : "video");
 const videoFiles = (episodes) => (episodes || []).filter((episode) => episode.path);
 function videoDownloadItem(v, item) {
-  if (!videoDownloadable() || !item?.path) return "";
+  if (!videoDownloadable() || !item?.path || v.selected) return "";
   const row = videoDownloadOf(v.id, item);
   const remove = v.mode === "keep" ? "" : button("Remove from this device", "video-download-remove", item.id, "secondary", "monitor");
   if (row?.state === "done") return remove;
@@ -8955,7 +8954,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" && !v.video ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -9055,7 +9054,7 @@ async function renderHistory(
       section(
         "File versions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? (v.deleted ? pill("Deleted", "id", "trash-2") : pill("Current", "id", "check")) : v.deleted || folderVolume(historyVolume)?.video ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? (v.deleted ? pill("Deleted", "id", "trash-2") : pill("Current", "id", "check")) : v.deleted || v.kept === false ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : data.offline
             ? empty(
                 "No saved versions for this file",
@@ -10603,14 +10602,14 @@ async function handle(name, id, control) {
     const kinds = [
       ["gallery", "images", "Photos", "Photos and videos by date."],
       ["music", "music", "Audio", "Music and podcasts, with playlists."],
-      ["video", "clapperboard", "Movies &amp; TV", "Films and series. Stays on the hub and streams to your devices; no older versions."],
+      ["video", "clapperboard", "Movies &amp; TV", "Films and series, streamed or kept on your devices."],
     ];
     modal(
       modalHeader("What’s in this folder?", escape(`${folder.name} · ${countLabel(folder.files || 0, "file")} · ${bytes(folder.bytes || 0)}`), "library-big") +
         kinds
           .map(([value, symbol, name, text]) => `<label class="role-card"><input name="kind" type="radio" value="${value}">${icon(symbol)}<div><strong>${name}</strong><p>${text}</p></div></label>`)
           .join("") +
-        '<p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions, and other devices stop syncing it and stream it instead.</p>',
+        '<p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions.</p>',
       async (form) => {
         const kind = form.get("kind");
         if (kind === "gallery") {
@@ -10833,9 +10832,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         `Delete “${escape(historyPath.split("/").pop())}”?`,
-        folderVolume(historyVolume)?.video
-          ? "Deletes it from the hub’s disk. Movies &amp; TV keep no older versions, so it can’t be restored."
-          : "Deletes from all synced copies. Retained history can be restored.",
+        "Deletes from all synced copies. Retained history can be restored.",
         "trash-2",
       ),
       async () => {
@@ -11358,7 +11355,6 @@ async function handle(name, id, control) {
       .filter(Boolean)
       .join(" · ");
     const media = status.role !== "hub" && !remote.gallery && (remote.music || remote.video);
-    const choices = media && (remote.music || native);
     const modeCard = (value, name, text, checked) =>
       `<label class="role-card"><input name="mode" type="radio" value="${value}"${checked ? " checked" : ""}><div><strong>${name}</strong><p>${text}</p></div></label>`;
     modal(
@@ -11371,68 +11367,49 @@ async function handle(name, id, control) {
           "refresh-cw",
         ) +
         `<div class="selection-summary"><div class="tile large">${icon(folderSymbol(remote))}</div><div class="row-main"><strong>${escape(remote.name)}</strong><p>${summary}</p></div><span class="mono">id ${escape(remote.id.slice(0, 4))}</span></div>` +
-        (choices
+        (media
           ? modeCard("stream", "Stream from the hub", remote.music ? "Download tracks or albums to listen offline." : "Download titles to watch offline.", !!remote.video) +
-            modeCard("keep", "Keep on this device", remote.music ? "A full copy that syncs both ways." : "Every movie and episode, new ones too.", !!remote.music)
+            modeCard("keep", "Keep on this device", "A full copy that syncs both ways.", !!remote.music)
           : "") +
-        (!media || remote.music
-          ? '<div id="selection-copy"><label for="selection-path">Local destination</label>' +
+        ('<div id="selection-copy"><label for="selection-path">Local destination</label>' +
             `<div class="field-with-icon selection-path">${native && !local?.path ? pathPicker("path", "local destination") : icon("folder")}<input id="selection-path" class="mono" name="path" value="${escape(destination)}" ${local?.path ? "readonly" : ""} required></div>` +
             (local?.path
               ? '<p class="selection-hint">Change this location from folder details.</p>'
               : "") +
-            `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`
-          : "") +
-        (remote.video && choices
-          ? '<div id="selection-space" class="path-check selection-check" role="status" hidden>Checking free space…</div>'
-          : "") +
+            `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`) +
         "</div>",
       async (f) => {
         const mode = media ? f.get("mode") || "stream" : undefined;
         await api(
           "/v1/select",
           media
-            ? mode === "keep" && remote.music
+            ? mode === "keep"
               ? { id: remote.id, mode, path: f.get("path") }
               : { id: remote.id, mode }
             : { id: remote.id, path: f.get("path") },
         );
-        if (!media || (remote.music && mode === "keep")) await api("/v1/sync", { background: true });
+        if (!media || mode === "keep") await api("/v1/sync", { background: true });
       },
       "Start syncing",
     );
     icons();
-    if (!media || remote.music) checkFolderPath("path", remote.id);
+    checkFolderPath("path", remote.id);
     const copy = $("#selection-copy");
-    const space = $("#selection-space");
     const applyMode = () => {
       const mode = $('#dialog [name="mode"]:checked')?.value || (media ? "stream" : "keep");
       const streaming = mode === "stream";
-      if (copy) {
-        copy.hidden = streaming;
-        $('#dialog [name="path"]').disabled = streaming;
-      }
-      if (space) space.hidden = streaming;
+      copy.hidden = streaming;
+      $('#dialog [name="path"]').disabled = streaming;
       const submit = $("#submit-dialog");
       const check = $("#folder-path-status");
       submit.disabled =
         !streaming &&
-        !!copy &&
         (!check || check.classList.contains("path-check-error") || !/ free/.test(check.textContent));
       submit.innerHTML = streaming ? icon("play") + "Start streaming" : icon("refresh-cw") + "Start syncing";
       icons();
     };
     for (const input of document.querySelectorAll('#dialog [name="mode"]')) input.addEventListener("change", applyMode);
     applyMode();
-    if (space)
-      void api(`/v1/video/downloads?${new URLSearchParams({ volume: remote.id })}`)
-        .catch(() => null)
-        .then((answer) => {
-          if (!space.isConnected) return;
-          const parts = [Number.isFinite(remote.bytes) ? `Needs ${bytes(remote.bytes)}` : null, Number.isFinite(answer?.freeBytes) ? `${bytes(answer.freeBytes)} free` : null].filter(Boolean);
-          if (parts.length) space.textContent = parts.join(" · ");
-          else space.remove();
-        });
     return;
   }
   if (name === "enable-backup") {
@@ -12067,7 +12044,7 @@ function setupFolders(o) {
   return setupOrder(o)
     .map((v) => {
       const pick = o.picks.get(v.id);
-      const modes = setupMedia(v) && (v.music || native)
+      const modes = setupMedia(v)
         ? `<div class="segmented" role="group" aria-label="${escape(v.name)} mode">${[["stream", "Stream"], ["keep", "Keep"]].map(([mode, label]) => `<button type="button" data-setup-mode="${escape(v.id)}" data-mode="${mode}" class="${pick.mode === mode ? "active" : ""}" aria-pressed="${pick.mode === mode}">${label}</button>`).join("")}</div>`
         : "";
       const meta = v.policyError ? escape(v.policyError) : pick.mode === "stream" ? "Streams from hub" : Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet";
@@ -12106,7 +12083,7 @@ async function startSetupFolders(root, chosen) {
       await api(
         "/v1/select",
         setupMedia(v)
-          ? v.mode === "keep" && v.music
+          ? v.mode === "keep"
             ? { id: v.id, mode: "keep", path: `${base}/${v.name}` }
             : { id: v.id, mode: v.mode }
           : { id: v.id, path: `${base}/${v.name}` },

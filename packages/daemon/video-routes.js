@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { streamGalleryMedia } from "./gallery-media.js";
 import { digest, fail, token } from "./storage.js";
 import { PREPARING } from "./video.js";
+import { videoType } from "../core/video-names.js";
 import { CLIENT_AUDIO, STREAMABLE_VIDEO, keyframeBefore } from "./video-sessions.js";
 
 export const VIDEO_OFFLINE = "Connect to your hub to watch";
@@ -118,6 +119,12 @@ function sendText(res, req, value) {
   res.end(req.method === "HEAD" ? undefined : data);
 }
 
+function keptMedia({ s, config }, volume, name, hash) {
+  if (config.role === "hub" || !s.db.prepare("SELECT 1 FROM volumes WHERE id=? AND selected=1").get(volume)) return null;
+  const file = s.localContent(volume, name, hash);
+  return file ? { file, size: fs.statSync(file).size, type: videoType(name) || "video/mp4" } : null;
+}
+
 export async function streamVideo(context, volume, name, hash) {
   const { video, req, res, config } = context;
   if (config.role === "hub") {
@@ -126,15 +133,9 @@ export async function streamVideo(context, volume, name, hash) {
     return streamGalleryMedia(req, res, media);
   }
   const downloads = context.engine.videoDownloads;
-  const local = downloads?.local(volume, name, hash);
+  const local = downloads?.local(volume, name, hash) || keptMedia(context, volume, name, hash);
   if (local) return streamGalleryMedia(req, res, local);
-  try {
-    return await proxy(context, `/v1/video/media?${new URLSearchParams({ volume, path: name, hash })}`);
-  } catch (error) {
-    const standIn = error.status === 503 && !res.headersSent ? downloads?.standIn(volume, name) : null;
-    if (!standIn) throw error;
-    return streamGalleryMedia(req, res, standIn);
-  }
+  return proxy(context, `/v1/video/media?${new URLSearchParams({ volume, path: name, hash })}`);
 }
 
 export async function sendSubtitles(context, volume, name, json = false, embedded = null) {
@@ -188,7 +189,6 @@ export async function replicaLibrary(context, volume, known, stop = null) {
     else if (answer.unchanged) value = await forward(engine, `/v1/video/library?${new URLSearchParams({ volume })}`, undefined, undefined, stop);
     else value = answer;
     engine.videoDownloads?.pruneLibrary(volume, value);
-    engine.videoDownloads?.reconcile(volume, value);
     if (!value.unchanged) {
       s.db.prepare("INSERT OR REPLACE INTO remote_views(key,value,used) VALUES(?,?,?)").run(key, JSON.stringify(value), Date.now());
       s.db.exec("DELETE FROM remote_views WHERE key NOT IN (SELECT key FROM remote_views ORDER BY used DESC LIMIT 64)");
@@ -302,8 +302,13 @@ async function compatible(context) {
     video.warmSubtitles(volume, name, hash);
     return launch(media.file, item);
   }
-  const local = engine.videoDownloads?.local(volume, name, hash) || (engine.hubUnavailable ? engine.videoDownloads?.standIn(volume, name) : null);
+  const local = engine.videoDownloads?.local(volume, name, hash);
   if (local?.item) return launch(local.file, local.item);
+  const kept = keptMedia(context, volume, name, hash);
+  if (kept) {
+    const item = fileOf(await replicaLibrary(context, volume, null), name);
+    if (item?.hash === hash) return launch(kept.file, item);
+  }
   const answer = await forward(engine, `/v1/video/compatible?${query}`);
   latest();
   const id = HLS.exec(answer.url || "")?.[1];
@@ -384,7 +389,7 @@ export async function videoRoute(context) {
         item = video.entry(volume, name);
       } else {
         const listed = await replicaLibrary(context, volume, null);
-        const local = engine.videoDownloads?.local(volume, name, hash) || (listed.offline ? engine.videoDownloads?.standIn(volume, name) : null);
+        const local = engine.videoDownloads?.local(volume, name, hash) || keptMedia(context, volume, name, hash);
         item = fileOf(listed, name) || local?.item;
         if (listed.offline && item && !local) fail(VIDEO_OFFLINE, 503);
       }

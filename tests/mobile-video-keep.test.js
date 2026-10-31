@@ -1,215 +1,183 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createVideoDownloads } from "../apps/mobile/src/video-downloads.js";
-import { keepVideoLibraries, pruneVideoLibraries, refreshVideoLibrary, videoModes, videoModesKey } from "../apps/mobile/src/video-sync.js";
-import { normalizeLibrary } from "../apps/mobile/src/video-library.js";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
+import { createVideoDownloads, keptSource, playbackSource } from "../apps/mobile/src/video-downloads.js";
+import { pruneVideoLibraries, videoModes, videoModesKey } from "../apps/mobile/src/video-sync.js";
 import { Replica } from "../apps/mobile/src/replica.js";
+import { quickHashFile } from "../packages/daemon/storage.js";
 
 const hash = (n) => String(n).repeat(64).slice(0, 64);
+const catalog = { video: true, volumes: [{ id: "v", name: "kids-shows", video: true, bytes: 30 }, { id: "d", name: "docs", bytes: 1 }] };
 
-function memoryStore() {
-  const values = new Map();
-  const downloads = new Map();
-  const libraries = new Map();
-  return {
-    values,
-    downloads,
-    get: async (key, fallback) => (values.has(key) ? structuredClone(values.get(key)) : fallback),
-    set: async (key, value) => void values.set(key, structuredClone(value)),
-    videoDownloads: async () => [...downloads.values()],
-    saveVideoDownload: async (scope, row) => void downloads.set(`${row.volume}\n${row.path}`, row),
-    foreignVideoDownloads: async () => [],
-    forgetVideoDownload: async (scope, volume, path) => void downloads.delete(`${volume}\n${path}`),
-    videoLibrary: async (scope, volume) => libraries.get(volume) || null,
-    saveVideoLibrary: async (scope, volume, value) => void libraries.set(volume, { version: value.version, value }),
-    pruneVideoLibraries: async (scope, keep) => {
-      for (const id of [...libraries.keys()]) if (!keep.includes(id)) libraries.delete(id);
-    },
+function setup(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-keep-"));
+  const db = new DatabaseSync(path.join(root, "replica.sqlite"));
+  t.after(() => {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const store = new ReplicaStore({
+    execAsync: async (sql) => db.exec(sql),
+    runAsync: async (sql, ...args) => db.prepare(sql).run(...args),
+    getFirstAsync: async (sql, ...args) => db.prepare(sql).get(...args) ?? null,
+    getAllAsync: async (sql, ...args) => db.prepare(sql).all(...args),
+  });
+  const storage = path.join(root, "files");
+  const files = {
+    folder: (scope, volume) => path.join(storage, scope, "folders", volume),
+    work: (scope, volume, at) => path.join(storage, scope, "folders", volume, ...at.split("/")),
+    videoDownload: (scope, volume, name) => path.join(storage, scope, "video-downloads", volume, name),
+    mkdir: async (uri) => fs.mkdirSync(uri, { recursive: true }),
+    exists: async (uri) => fs.existsSync(uri),
+    present: (uri) => fs.existsSync(uri),
+    stat: async (uri) => (fs.existsSync(uri) ? { size: fs.statSync(uri).size } : null),
+    free: async () => 1024 * 1024 * 1024 * 1024,
+    remove: async (uri) => fs.rmSync(uri, { force: true }),
+    hash: async (uri) => crypto.createHash("sha256").update(fs.readFileSync(uri)).digest("hex"),
+    read: async (uri, offset, length) => new Uint8Array(fs.readFileSync(uri).subarray(offset, offset + length)),
   };
-}
-
-const removed = [];
-const files = {
-  videoDownload: (scope, volume, name) => `${scope}/${volume}/${name}`,
-  remove: async (uri) => void removed.push(uri),
-  free: async () => 1000 * 1024 * 1024 * 1024,
-};
-
-const raw = {
-  version: "1",
-  movies: [
-    { id: "m1", path: "Movies/Old.mkv", hash: hash(1), size: 10, added: 100 },
-    { id: "m2", path: "Movies/New.mp4", hash: hash(2), size: 20, added: 300 },
-    { id: "m3", path: "Movies/Started.mp4", hash: hash(3), size: 30, added: 50, position: { position: 40, duration: 100 } },
-  ],
-  shows: [{ id: "s1", title: "Show", seasons: [{ season: 1, episodes: [{ id: "e1", path: "Shows/S01E01.mp4", hash: hash(4), size: 5, added: 200, episode: 1 }] }] }],
-  other: [],
-  continue: [],
-  nextUp: [],
-};
-
-function offlineClient(library = raw) {
-  return {
-    state: () => ({ connection: null, catalog: { video: true, volumes: [{ id: "v", video: true, bytes: 65 }, { id: "d", bytes: 1 }] } }),
-    api: async (route) => {
-      if (route.startsWith("/v1/video/library")) return structuredClone(library);
-      throw new Error(`unexpected ${route}`);
-    },
-  };
-}
-
-const settle = () => new Promise((resolve) => setImmediate(resolve));
-
-test("Keep queues every movie and episode the phone can play, started titles first and then the newest, once per version", async () => {
-  const store = memoryStore();
-  const replica = { scope: "hub", store, files };
-  const downloads = createVideoDownloads({ replica, client: offlineClient() });
-  const library = normalizeLibrary(raw);
-  await downloads.keep("v", library, "android");
-  await settle();
-  const queued = [...store.downloads.values()].sort((a, b) => a.added - b.added || 0);
-  assert.deepEqual(new Set(queued.map((row) => row.path)), new Set(["Movies/Started.mp4", "Movies/New.mp4", "Shows/S01E01.mp4", "Movies/Old.mkv"]), "every title but the show itself");
-  assert.equal(queued[0].path, "Movies/Started.mp4", "a started title goes first");
-  await store.saveVideoDownload("hub", { ...store.downloads.get("v\nMovies/New.mp4"), state: "failed" });
-  const before = store.downloads.get("v\nMovies/New.mp4");
-  await downloads.keep("v", library, "android");
-  assert.equal(store.downloads.get("v\nMovies/New.mp4"), before, "a failed copy of the same file is not queued again on every cycle");
-  await downloads.stop();
-
-  const ios = memoryStore();
-  const iphone = createVideoDownloads({ replica: { scope: "hub", store: ios, files }, client: offlineClient() });
-  await iphone.keep("v", library, "ios");
-  assert.equal(ios.downloads.has("v\nMovies/Old.mkv"), false, "the iPhone keeps only files it can play");
-  await iphone.keep("v", normalizeLibrary({ ...raw, movies: [], shows: [] }), "ios");
-  await iphone.stop();
-});
-
-test("a library read keeps only a library in Keep mode, and the cycle reads every kept library", async () => {
-  const store = memoryStore();
-  const client = offlineClient();
-  const replica = { scope: "hub", store, files, client };
-  const downloads = createVideoDownloads({ replica, client });
-  await store.set(videoModesKey("hub"), { v: "stream" });
-  await refreshVideoLibrary(replica, "v", { downloads, platform: "android" });
-  assert.equal(store.downloads.size, 0, "a streamed library downloads nothing by itself");
-  await store.set(videoModesKey("hub"), { v: "keep" });
-  await refreshVideoLibrary(replica, "v", { downloads });
-  assert.equal(store.downloads.size, 0, "without the platform nothing is guessed");
-  await keepVideoLibraries(replica, downloads, "android");
-  assert.equal(store.downloads.size, 4);
-  await downloads.stop();
-});
-
-test("starting a Movies & TV library records its mode without selecting it, and Stop syncing removes the mode and its downloads", async () => {
-  const store = memoryStore();
-  const client = offlineClient();
-  const changes = [];
+  const client = { state: () => ({ connection: null, catalog }) };
   const replica = Object.assign(Object.create(Replica.prototype), {
     scope: "hub",
     store,
     files,
     client,
     requireActiveReplica: async () => {},
-    changed: () => changes.push("changed"),
+    changed: () => {},
   });
-  await replica.startVideo({ id: "v", bytes: 65 }, "stream");
+  return { store, files, replica, storage };
+}
+
+async function download(store, volume, at, state = "done") {
+  await store.saveVideoDownload("hub", { volume, path: at, hash: hash(at.length), ext: "mp4", subtitles: [], state, done: 10, size: 10, saved: [], added: 0 });
+}
+
+test("Keep selects a Movies & TV library as a complete copy, dropping its stream mode and per-title downloads", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  await replica.streamVideo(catalog.volumes[0]);
   assert.deepEqual(await videoModes(replica), { v: "stream" });
-  await replica.startVideo({ id: "v", bytes: 65 }, "keep");
-  assert.deepEqual(await videoModes(replica), { v: "keep" });
-  await assert.rejects(replica.startVideo({ id: "d", bytes: 1 }, "keep"), /Only Movies & TV libraries/);
-  const tight = Object.assign(Object.create(Replica.prototype), { ...replica, files: { ...files, free: async () => 10 } });
-  await assert.rejects(tight.startVideo({ id: "v", bytes: 65 }, "keep"), /Not enough storage/);
-  await store.saveVideoDownload("hub", { volume: "v", path: "Movies/New.mp4", hash: hash(2), ext: "mp4", subtitles: [], state: "done" });
-  await store.saveVideoDownload("hub", { volume: "w", path: "Movies/Else.mp4", hash: hash(5), ext: "mp4", subtitles: [], state: "done" });
-  removed.length = 0;
-  await replica.stopVideo("v");
+  await download(store, "v", "Movies/A.mp4");
+  await download(store, "w", "Movies/B.mp4");
+  await replica.select(catalog.volumes[0]);
+  assert.equal((await store.folder("hub", "v")).selected, 1, "selecting a Movies & TV folder is allowed");
   assert.deepEqual(await videoModes(replica), {});
-  assert.deepEqual([...store.downloads.keys()], ["w\nMovies/Else.mp4"], "only this library's downloads go");
-  assert.ok(removed.includes(`hub/v/${hash(2)}.mp4`));
-  assert.equal(replica.removing, false);
+  assert.deepEqual((await store.videoDownloads("hub")).map((row) => row.volume), ["w"], "its per-title downloads give way to the copy");
+  await assert.rejects(replica.streamVideo(catalog.volumes[0]), /already kept on this phone/);
+  await assert.rejects(replica.stopVideo("v"), /Use Stop syncing to remove its copy/);
 });
 
-test("a library the hub no longer lists as Movies & TV loses its mode", async () => {
-  const store = memoryStore();
-  const replica = { scope: "hub", store };
-  await store.set(videoModesKey("hub"), { v: "keep", gone: "stream" });
-  await pruneVideoLibraries(replica, { video: true, volumes: [{ id: "v", video: true }, { id: "gone" }] });
-  assert.deepEqual(await videoModes(replica), { v: "keep" });
-  await pruneVideoLibraries(replica, { video: true, volumes: [] });
-  assert.deepEqual(await videoModes(replica), { v: "keep" }, "an empty answer drops nothing");
-});
-
-test("Stop syncing a kept library during a keep cycle leaves no mode and no downloads behind", async () => {
-  const store = memoryStore();
-  const slow = store.forgetVideoDownload;
-  store.forgetVideoDownload = async (...args) => {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    return slow(...args);
-  };
-  let release;
-  const client = {
-    state: () => ({ connection: null, catalog: { video: true, volumes: [{ id: "v", video: true, bytes: 20 }] } }),
-    api: async () => {
-      await new Promise((resolve) => (release = resolve));
-      return structuredClone(raw);
-    },
-  };
-  const replica = Object.assign(Object.create(Replica.prototype), { scope: "hub", store, files, client, requireActiveReplica: async () => {}, changed: () => {} });
-  const downloads = createVideoDownloads({ replica, client });
-  replica.videoDownloads = downloads;
-  await store.set(videoModesKey("hub"), { v: "keep" });
-  await store.saveVideoDownload("hub", { volume: "v", path: "Movies/Old.mkv", hash: hash(1), ext: "mkv", subtitles: [], state: "done", done: 10, size: 10, saved: [], added: 0 });
-  await downloads.load();
-  const cycle = keepVideoLibraries(replica, downloads, "android");
-  await new Promise((resolve) => setTimeout(resolve, 1));
-  const stop = replica.stopVideo("v");
-  await new Promise((resolve) => setImmediate(resolve));
-  release();
-  await Promise.all([cycle, stop]);
-  assert.deepEqual(await videoModes(replica), {});
-  assert.deepEqual([...store.downloads.keys()], []);
-  await downloads.stop();
-});
-
-test("a keep already past its library read waits for removal order: Stop syncing still removes what it queued", async () => {
-  const store = memoryStore();
-  const client = offlineClient();
-  const replica = Object.assign(Object.create(Replica.prototype), { scope: "hub", store, files, client, requireActiveReplica: async () => {}, changed: () => {} });
-  const downloads = createVideoDownloads({ replica, client });
-  replica.videoDownloads = downloads;
-  await store.set(videoModesKey("hub"), { v: "keep" });
-  const keeping = downloads.keep("v", normalizeLibrary(raw), "android", async () => (await videoModes(replica)).v === "keep");
-  await replica.stopVideo("v");
-  await keeping;
-  assert.deepEqual([...store.downloads.keys()], []);
-  await downloads.stop();
-});
-
-test("starting waits for a removal, and Keep on an iPhone needs room only for the files it can play", async () => {
-  const store = memoryStore();
-  const client = offlineClient();
-  const replica = Object.assign(Object.create(Replica.prototype), { scope: "hub", store, files: { ...files, free: async () => 300 * 1024 * 1024 }, client, requireActiveReplica: async () => {}, changed: () => {} });
+test("streaming records only the mode, and Stop syncing removes the mode and its downloads", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  await assert.rejects(replica.streamVideo(catalog.volumes[1]), /Only Movies & TV libraries/);
   replica.removing = true;
-  await assert.rejects(replica.startVideo({ id: "v", bytes: 65 }, "stream"), /Wait for the current operation/);
+  await assert.rejects(replica.streamVideo(catalog.volumes[0]), /Wait for the current operation/);
   replica.removing = false;
-  assert.equal(await replica.keptBytes({ id: "v", bytes: 65 }, "ios"), 55, "the MKV is left out");
-  assert.equal(await replica.keptBytes({ id: "v", bytes: 65 }, "android"), 65);
-  assert.equal(await replica.keptBytes({ id: "v", bytes: 65 }), 65);
+  await replica.streamVideo(catalog.volumes[0]);
+  assert.equal(await store.folder("hub", "v"), null, "nothing is selected");
+  await download(store, "v", "Movies/A.mp4", "queued");
+  await replica.stopVideo("v");
+  assert.deepEqual(await videoModes(replica), {});
+  assert.deepEqual(await store.videoDownloads("hub"), []);
 });
 
-test("the Stop syncing confirmation of a Movies & TV library says what it stops", async () => {
+test("a library kept the old way keeps its downloads until Stop syncing removes them", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  await store.set(videoModesKey("hub"), { v: "keep" });
+  await download(store, "v", "Movies/A.mp4");
+  const downloads = createVideoDownloads({ replica, client: replica.client });
+  replica.videoDownloads = downloads;
+  await downloads.load();
+  assert.equal(downloads.get("v", "Movies/A.mp4").state, "done", "nothing deletes it by itself");
+  await replica.stopVideo("v");
+  assert.deepEqual(await videoModes(replica), {});
+  assert.deepEqual(await store.videoDownloads("hub"), []);
+  await downloads.stop();
+});
+
+test("a library the hub no longer lists as Movies & TV loses its mode", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  await store.set(videoModesKey("hub"), { v: "stream", gone: "stream" });
+  await pruneVideoLibraries(replica, { video: true, volumes: [{ id: "v", video: true }, { id: "gone" }] });
+  assert.deepEqual(await videoModes(replica), { v: "stream" });
+  await pruneVideoLibraries(replica, { video: true, volumes: [] });
+  assert.deepEqual(await videoModes(replica), { v: "stream" }, "an empty answer drops nothing");
+});
+
+test("files of a Movies & TV folder are fingerprinted like the hub; other folders keep the whole-file SHA-256", async (t) => {
+  const { files, replica, storage } = setup(t);
+  for (const size of [0, 1000, 4 * 1024 * 1024, 9 * 1024 * 1024 + 7]) {
+    const file = path.join(storage, `clip-${size}.mp4`);
+    fs.mkdirSync(storage, { recursive: true });
+    fs.writeFileSync(file, Buffer.alloc(size, size % 251));
+    assert.equal(await replica.fingerprint(file, "v"), quickHashFile(file), `size ${size}`);
+    assert.equal(await replica.fingerprint(file, "d"), await files.hash(file));
+    assert.equal(await replica.fingerprint(file, null), await files.hash(file));
+  }
+});
+
+test("a kept title plays from the local copy, and a file the iPhone cannot open streams", async (t) => {
+  const { files, storage } = setup(t);
+  const movie = { path: "Movies/Heat.mp4", hash: hash(1) };
+  const mkv = { path: "Movies/Up.mkv", hash: hash(2) };
+  assert.equal(keptSource(files, "hub", "v", movie, "android"), null, "a copy that has not arrived yet streams");
+  for (const item of [movie, mkv]) {
+    fs.mkdirSync(path.dirname(files.work("hub", "v", item.path)), { recursive: true });
+    fs.writeFileSync(files.work("hub", "v", item.path), "film");
+  }
+  assert.deepEqual(keptSource(files, "hub", "v", movie, "ios"), { uri: path.join(storage, "hub", "folders", "v", "Movies", "Heat.mp4"), local: true, lan: false, offset: 0 });
+  assert.equal(keptSource(files, "hub", "v", mkv, "ios"), null);
+  assert.ok(keptSource(files, "hub", "v", mkv, "android"));
+  const kept = keptSource(files, "hub", "v", movie, "android");
+  const streamed = { uri: "https://hub/stream" };
+  assert.equal(await playbackSource({ downloads: null, kept, volume: "v", item: movie, stream: async () => streamed }), kept);
+  assert.equal(await playbackSource({ downloads: null, kept, volume: "v", item: movie, mode: "compatible", stream: async () => streamed }), streamed, "the compatible stream still comes from the hub");
+  assert.equal(await playbackSource({ downloads: null, kept: null, volume: "v", item: mkv, stream: async () => streamed }), streamed);
+});
+
+test("the Stop syncing confirmation of a streamed Movies & TV library says what it stops", async () => {
   const { stopVideo } = await import("../apps/mobile/src/confirm-copy.js");
-  assert.equal(stopVideo({ name: "kids", files: 0, size: 0, kept: true }).message, "Stops keeping it on this phone. Hub files and history are kept.");
   assert.equal(stopVideo({ name: "kids", files: 0, size: 0, kept: false }).message, "Stops streaming it here. Hub files and history are kept.");
-  const counted = stopVideo({ name: "kids", files: 3, size: 1024, kept: true });
-  assert.match(counted.message, /^3 files · 1(\.0)? KB downloaded on this phone will be deleted\. Stops keeping it on this phone\./);
+  assert.equal(stopVideo({ name: "kids", files: 0, size: 0, kept: true }).message, "Stops keeping it on this phone. Hub files and history are kept.");
+  const counted = stopVideo({ name: "kids", files: 3, size: 1024, kept: false });
+  assert.match(counted.message, /^3 files · 1(\.0)? KB downloaded on this phone will be deleted\./);
   assert.equal(counted.label, "Stop syncing and delete");
 });
 
-test("the playable size of a library counts only what this phone can keep", async () => {
-  const { playableBytes } = await import("../apps/mobile/src/video-downloads.js");
-  const library = normalizeLibrary(raw);
-  assert.equal(playableBytes(library, "ios"), 55);
-  assert.equal(playableBytes(library, "android"), 65);
-  assert.equal(playableBytes(null, "ios"), null, "unknown until the library is read");
+test("a kept folder that becomes Movies & TV forgets its cached whole-file hashes once, so its files are fingerprinted instead of downloaded again", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  replica.hashCache = new Map();
+  const record = (volume, at) => ({ size: 4, mtime: 1, hash: hash(9), due: 0, scope: "hub", volume, path: at, uri: `u/${volume}/${at}` });
+  for (const [volume, at] of [["v", "Heat.mp4"], ["d", "notes.txt"]]) {
+    await store.cacheHash(`u/${volume}/${at}`, record(volume, at));
+    replica.hashCache.set(`u/${volume}/${at}`, record(volume, at));
+  }
+  await replica.matchFingerprint("d");
+  assert.ok(await store.cachedHash("u/d/notes.txt"), "an ordinary folder keeps its cache");
+  await replica.matchFingerprint("v");
+  assert.equal(await store.cachedHash("u/v/Heat.mp4"), null);
+  assert.equal(replica.hashCache.has("u/v/Heat.mp4"), false);
+  assert.ok(replica.hashCache.has("u/d/notes.txt"));
+  await store.cacheHash("u/v/Heat.mp4", record("v", "Heat.mp4"));
+  await replica.matchFingerprint("v");
+  assert.ok(await store.cachedHash("u/v/Heat.mp4"), "only a change of kind clears it");
+});
+
+test("selecting a library kept the old way is refused until Stop syncing removes its downloads", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  await store.set(videoModesKey("hub"), { v: "keep" });
+  await download(store, "v", "Movies/A.mp4");
+  await assert.rejects(replica.select(catalog.volumes[0]), /This library is kept on this device\. Stop syncing it to remove its titles\./);
+  assert.equal(await store.folder("hub", "v"), null);
+  assert.equal((await store.videoDownloads("hub")).length, 1, "nothing is deleted by the refusal");
 });

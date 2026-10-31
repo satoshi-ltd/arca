@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fail, fileSignature, overlapPath } from "./storage.js";
+import { TRANSFER_TEMP, VIDEO_VERSIONS, fail, fileSignature, overlapPath } from "./storage.js";
 
 export function moveFolder(engine, id, location) {
   const s = engine.store,
@@ -186,7 +186,6 @@ function collectUnusedObjects(store) {
       .all(Date.now())
       .map((r) => r.hash),
   );
-  // Video folders are read in place, so their rows never pin an object.
   for (const table of ["files", "revisions"])
     for (const r of store.db
       .prepare(
@@ -225,7 +224,40 @@ function collectUnusedObjects(store) {
         store.db.prepare("DELETE FROM scan_cache WHERE hash=?").run(name);
       objectsRemoved++;
     }
-  return objectsRemoved;
+  return objectsRemoved + collectVideoVersions(store, cutoff);
+}
+function collectVideoVersions(store, cutoff) {
+  let removed = 0;
+  for (const { volume } of store.db.prepare("SELECT volume FROM video_folders").all()) {
+    const v = store.db.prepare("SELECT path FROM volumes WHERE id=?").get(volume);
+    const directory = v?.path && path.join(v.path, VIDEO_VERSIONS);
+    if (!directory || !fs.existsSync(directory)) continue;
+    const held = new Set(
+      store.db
+        .prepare("SELECT hash FROM revisions WHERE volume=? AND hash IS NOT NULL UNION SELECT hash FROM files WHERE volume=? AND hash IS NOT NULL")
+        .all(volume, volume)
+        .map((r) => r.hash),
+    );
+    for (const r of store.db.prepare("SELECT row,expected FROM pending WHERE volume=?").all(volume)) {
+      held.add(JSON.parse(r.row).hash);
+      held.add(r.expected);
+    }
+    for (const name of fs.readdirSync(directory)) {
+      const file = path.join(directory, name);
+      if (TRANSFER_TEMP.test(name) && fs.statSync(file).mtimeMs < Date.now() - 60000) {
+        fs.rmSync(file, { force: true });
+        continue;
+      }
+      if (!/^[a-f0-9]{64}$/.test(name) || held.has(name) || fs.statSync(file).mtimeMs >= cutoff) continue;
+      try {
+        fs.unlinkSync(file);
+        removed++;
+      } catch (error) {
+        if (!["EBUSY", "EPERM", "EACCES"].includes(error.code)) throw error;
+      }
+    }
+  }
+  return removed;
 }
 // Runs inside the serialized cycle or an unlink, when no capture or transfer is writing objects.
 export async function releaseReplicaObjects(store) {
@@ -290,9 +322,7 @@ export function folderRetentionOptions(volume, mode) {
 }
 export function applyFolderRetention(store) {
   for (const volume of store.volumes()) {
-    const mode = store.streamOnly(volume.id)
-      ? "off"
-      : store.config.folderRetention?.[volume.id] || "1m";
+    const mode = store.config.folderRetention?.[volume.id] || "1m";
     if (mode !== "forever")
       applyRetention(store, folderRetentionOptions(volume.id, mode), false);
   }

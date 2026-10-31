@@ -36,6 +36,12 @@ for (const ending of ["\n", "\r\n"]) {
     status.volumes[0].sync = { state: "error", error: "Disk full" };
     assert.notEqual(signature(status, "folders", "a"), detail);
   });
+  test(`starting a library by mode repaints the folder list (${ending.length === 1 ? "LF" : "CRLF"})`, () => {
+    const status = { phase: "idle", volumes: [{ id: "a", files: 1 }], media: {} };
+    const list = signature(status, "folders", null);
+    status.media = { m: "stream" };
+    assert.notEqual(signature(status, "folders", null), list);
+  });
   test(`machines still refreshes backup and device reports; pause updates folder detail (${ending.length === 1 ? "LF" : "CRLF"})`, () => {
     const status = {
       phase: "syncing",

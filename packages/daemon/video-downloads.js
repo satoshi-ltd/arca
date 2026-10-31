@@ -20,8 +20,6 @@ const UNSENT = "The hub could not send this video";
 const NO_SPACE = "Not enough free space on this device to finish the download";
 const MISSING = "The downloaded file is missing. Download it again.";
 const ACTIVE = ["queued", "downloading"];
-const KEEP_EVERY_MS = 60000;
-const KEEP_GONE_MS = 60000;
 const BUSY = "Close the video on this device so its new copy can replace the old one";
 const FLOOR_BYTES = 5 * 1024 ** 3;
 const FLOOR_SHARE = 0.1;
@@ -31,15 +29,6 @@ const offline = (kind = "video") => Object.assign(new Error(kind === "music" ? M
 const complete = (library) =>
   !!library && !library.offline && !library.indexing && [library.movies, library.shows, library.other, library.tracks].some((list) => Array.isArray(list) && list.length);
 const worded = (row, message) => (row.kind === "music" ? message.replace("video", "track") : message);
-export function keptTitles(library) {
-  const items = new Map();
-  for (const item of [...(library.movies || []), ...(library.other || [])]) items.set(item.id, item);
-  for (const show of library.shows || [])
-    for (const season of show.seasons || []) for (const episode of season.episodes || []) items.set(episode.id, episode);
-  const first = [...(library.continue || []), ...(library.nextUp || [])].map((id) => items.get(id)).filter(Boolean);
-  const rest = [...items.values()].sort((a, b) => String(b.added || "").localeCompare(String(a.added || "")) || (a.path < b.path ? -1 : 1));
-  return [...new Set([...first, ...rest])].filter((item) => typeof item.path === "string" && /^[a-f0-9]{64}$/.test(item.hash || ""));
-}
 const extension = (name) => {
   const ext = path.extname(name).toLowerCase();
   return /^\.[a-z0-9]{1,6}$/.test(ext) ? ext : "";
@@ -60,18 +49,14 @@ export class VideoDownloads {
     this.musicDir = path.join(this.s.home, "music-downloads");
     this.chunk = options.chunk || CHUNK;
     this.poll = options.poll ?? POLL_MS;
-    this.keepEvery = options.keepEvery ?? KEEP_EVERY_MS;
     this.space = options.space || ((directory) => fs.statfsSync(directory));
     this.platform = options.platform || process.platform;
-    this.keptAt = new Map();
     this.s.db.exec(`
-      CREATE TABLE IF NOT EXISTS video_downloads(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,state TEXT NOT NULL,error TEXT,file TEXT NOT NULL,item TEXT NOT NULL,show TEXT,subtitles TEXT NOT NULL DEFAULT '[]',art TEXT NOT NULL DEFAULT '{}',added INTEGER NOT NULL,kind TEXT NOT NULL DEFAULT 'video',previous TEXT,PRIMARY KEY(hub,volume,path));
+      CREATE TABLE IF NOT EXISTS video_downloads(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,state TEXT NOT NULL,error TEXT,file TEXT NOT NULL,item TEXT NOT NULL,show TEXT,subtitles TEXT NOT NULL DEFAULT '[]',art TEXT NOT NULL DEFAULT '{}',added INTEGER NOT NULL,kind TEXT NOT NULL DEFAULT 'video',PRIMARY KEY(hub,volume,path));
       CREATE TABLE IF NOT EXISTS video_outbox(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,route TEXT NOT NULL,body TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(hub,volume,path,route));
-      CREATE TABLE IF NOT EXISTS video_keep_missing(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(hub,volume,path));
     `);
     const columns = this.s.db.prepare("PRAGMA table_info(video_downloads)").all().map((column) => column.name);
     if (!columns.includes("kind")) this.s.db.exec("ALTER TABLE video_downloads ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'");
-    if (!columns.includes("previous")) this.s.db.exec("ALTER TABLE video_downloads ADD COLUMN previous TEXT");
     this.s.db.prepare("UPDATE video_downloads SET state='queued' WHERE state='downloading'").run();
     this.current = null;
     this.running = null;
@@ -100,7 +85,7 @@ export class VideoDownloads {
   progress(row) {
     if (row.state === "done") return row.size;
     if (this.isCurrent(row)) return this.current.done;
-    if (!row.previous && fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === row.size) return row.size;
+    if (fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === row.size) return row.size;
     return fs.statSync(this.where(row, ".part"), { throwIfNoEntry: false })?.size || 0;
   }
   missing(row) {
@@ -173,22 +158,15 @@ export class VideoDownloads {
     void this.wake();
     return this.list(volume);
   }
-  enqueue(volume, item, kind = "video", show = null, replace = false) {
+  enqueue(volume, item, kind = "video", show = null) {
     const known = this.row(volume, item.path);
     if (known && ACTIVE.includes(known.state)) return false;
     if (known && known.state === "done" && known.hash === item.hash && !this.missing(known)) return false;
     if (known && known.state === "failed" && known.hash === item.hash) {
-      if (replace && known.error !== MISSING) return false;
       this.update(known, { state: "queued", error: null });
       return true;
     }
     const added = Math.max(Date.now(), (this.s.db.prepare("SELECT max(added) AS added FROM video_downloads").get().added || 0) + 1);
-    if (known && replace && (known.state === "done" || known.previous)) {
-      const previous = known.previous || (this.missing(known) ? null : JSON.stringify({ hash: known.hash, size: known.size, item: json(known.item, null), show: json(known.show, null) }));
-      if (known.hash !== item.hash) fs.rmSync(this.where(known, ".part"), { force: true });
-      this.update(known, { state: "queued", error: null, hash: item.hash, size: Number(item.size) || 0, item: JSON.stringify(item), show: show ? JSON.stringify(show) : null, added, previous });
-      return true;
-    }
     if (known) this.discard(known);
     const file = digest(`${this.hub}\0${volume}\0${item.path}`).slice(0, 32) + extension(item.path);
     this.s.db
@@ -210,11 +188,7 @@ export class VideoDownloads {
   remove(volume, paths) {
     return this.drop(volume, paths, false);
   }
-  unmark(row) {
-    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=? AND path=?").run(row.hub, row.volume, row.path);
-  }
   discard(row) {
-    this.unmark(row);
     const remove = this.s.db.prepare("DELETE FROM video_downloads WHERE hub=? AND volume=? AND path=?");
     if (this.isCurrent(row)) {
       remove.run(row.hub, row.volume, row.path);
@@ -232,7 +206,6 @@ export class VideoDownloads {
     const remove = this.s.db.prepare("DELETE FROM video_downloads WHERE hub=? AND volume=? AND path=?");
     for (const row of rows) {
       remove.run(row.hub, row.volume, row.path);
-      this.unmark(row);
       if (this.isCurrent(row)) this.current.controller.abort();
       else
         try {
@@ -252,16 +225,13 @@ export class VideoDownloads {
     if (!this.hub || !Array.isArray(volumes) || !volumes.length) return;
     const kinds = { video: new Set(volumes.filter((v) => v?.video).map((v) => v.id)), music: new Set(volumes.filter((v) => v?.music).map((v) => v.id)) };
     this.forget(this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=?").all(this.hub).filter((row) => !kinds[row.kind === "music" ? "music" : "video"].has(row.volume)));
-    for (const { volume } of this.s.db.prepare("SELECT DISTINCT volume FROM video_keep_missing WHERE hub=?").all(this.hub))
-      if (!kinds.video.has(volume)) this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=?").run(this.hub, volume);
     for (const [volume, mode] of Object.entries(this.s.mediaModes()))
       if (!kinds.video.has(volume) && !(mode === "stream" && kinds.music.has(volume))) this.s.db.prepare("DELETE FROM media_modes WHERE volume=?").run(volume);
   }
   forgetVolume(volume, kind = null) {
     const rows = this.rows(volume).filter((row) => !kind || (row.kind === "music") === (kind === "music"));
-    const held = rows.map((row) => (row.state === "done" ? row.size : row.previous ? json(row.previous, {}).size || 0 : null)).filter((size) => size !== null);
+    const held = rows.filter((row) => row.state === "done").map((row) => row.size);
     this.forget(rows);
-    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=?").run(this.hub, volume);
     return { deleted: held.length, deletedBytes: held.reduce((total, size) => total + size, 0) };
   }
   floor() {
@@ -273,54 +243,9 @@ export class VideoDownloads {
       return null;
     }
   }
-  reconcile(volume, library) {
-    if (!this.hub || this.engine.config.installation !== "desktop" || this.s.mediaMode(volume) !== "keep" || !complete(library)) return;
-    this.keptAt.set(volume, Date.now());
-    const missing = this.s.db.prepare("SELECT at FROM video_keep_missing WHERE hub=? AND volume=? AND path=?");
-    const clear = this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=? AND path=?");
-    for (const row of this.rows(volume)) {
-      if (fileOf(library, row.path)) {
-        clear.run(this.hub, volume, row.path);
-        continue;
-      }
-      const since = missing.get(this.hub, volume, row.path)?.at;
-      if (since === undefined) this.s.db.prepare("INSERT INTO video_keep_missing(hub,volume,path,at) VALUES(?,?,?,?)").run(this.hub, volume, row.path, Date.now());
-      else if (Date.now() - since >= KEEP_GONE_MS) {
-        this.forget([row]);
-        clear.run(this.hub, volume, row.path);
-      }
-    }
-    let budget = this.floor();
-    if (budget === null) return;
-    for (const row of this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=? AND state IN ('queued','downloading')").all(this.hub))
-      budget -= Math.max(0, row.size - this.progress(row));
-    let queued = false;
-    for (const item of keptTitles(library)) {
-      const known = this.row(volume, item.path);
-      if (known && (ACTIVE.includes(known.state) || (known.state === "failed" && known.hash === item.hash && known.error !== MISSING) || (known.state === "done" && known.hash === item.hash && !this.missing(known)))) continue;
-      const size = Number(item.size) || 0;
-      if (size > budget) break;
-      if (this.enqueue(volume, item, "video", this.showOf(library, item), true)) {
-        budget -= size;
-        queued = true;
-      }
-    }
-    if (queued) void this.wake();
-  }
-  async readKept(stop) {
-    if (this.engine.config.installation !== "desktop") return;
-    for (const [volume, mode] of Object.entries(this.s.mediaModes())) {
-      if (mode !== "keep" || stop.aborted || Date.now() - (this.keptAt.get(volume) || 0) < this.keepEvery) continue;
-      this.keptAt.set(volume, Date.now());
-      try {
-        await replicaLibrary({ engine: this.engine, s: this.s }, volume, null, stop);
-      } catch {}
-    }
-  }
   pruneHubs() {
     if (!this.hub) return;
     this.forget(this.s.db.prepare("SELECT * FROM video_downloads WHERE hub<>?").all(this.hub));
-    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub<>?").run(this.hub);
   }
   erase(row) {
     const folder = this.folder(row);
@@ -379,7 +304,6 @@ export class VideoDownloads {
   }
   async run() {
     this.sweep();
-    await this.readKept(this.stopping.signal);
     const busy = new Set();
     while (!this.closed && !this.halting) {
       const row = this.s.db
@@ -431,7 +355,7 @@ export class VideoDownloads {
     const show = row.kind === "music" ? null : this.showOf(library, item);
     if (item.hash !== row.hash || Number(item.size) !== row.size) {
       fs.rmSync(this.where(row, ".part"), { force: true });
-      this.update(row, { hash: item.hash, size: Number(item.size) || 0, ...(row.previous ? {} : { subtitles: "[]", art: "{}" }) });
+      this.update(row, { hash: item.hash, size: Number(item.size) || 0, subtitles: "[]", art: "{}" });
       this.current.done = 0;
     }
     this.update(row, { state: "downloading", error: null, item: JSON.stringify(item), show: show ? JSON.stringify(show) : null });
@@ -456,7 +380,6 @@ export class VideoDownloads {
         throw new Error(BUSY);
       }
     }
-    if (row.previous) this.update(row, { previous: null });
     const subtitles = row.kind === "music" ? [] : await this.subtitles(row, item, signal);
     const art = row.kind === "music" ? await this.covers(row, item, signal) : await this.art(row, item, show, signal);
     if (signal.aborted) throw signal.reason;
@@ -601,19 +524,9 @@ export class VideoDownloads {
     }
     return saved;
   }
-  standIn(volume, name) {
-    if (typeof volume !== "string" || typeof name !== "string") return null;
-    const row = this.row(volume, name);
-    const previous = row?.previous ? json(row.previous, null) : null;
-    if (!previous?.item || fs.statSync(this.where(row), { throwIfNoEntry: false })?.size !== previous.size) return null;
-    return { file: this.where(row), size: previous.size, type: videoType(name) || "video/mp4", item: previous.item };
-  }
   local(volume, name, hash) {
     if (typeof volume !== "string" || typeof name !== "string") return null;
     const row = this.row(volume, name);
-    const previous = row?.previous ? json(row.previous, null) : null;
-    if (previous?.item && previous.hash === hash && row.hash !== hash && fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === previous.size)
-      return { file: this.where(row), size: previous.size, type: videoType(name) || "video/mp4", item: previous.item };
     if (!row || row.state !== "done" || row.hash !== hash || this.missing(row)) return null;
     const file = this.where(row);
     if (row.kind === "music") return { file, size: row.size, type: audioType(name) || "application/octet-stream" };
@@ -622,8 +535,7 @@ export class VideoDownloads {
   subtitle(volume, name, embedded) {
     if (typeof volume !== "string" || typeof name !== "string") return null;
     for (const row of this.rows(volume)) {
-      const previous = row.previous ? json(row.previous, null) : null;
-      if ((row.state !== "done" && !previous) || (embedded && (row.path !== name || (row.hash !== embedded.hash && previous?.hash !== embedded.hash)))) continue;
+      if (row.state !== "done" || (embedded && (row.path !== name || row.hash !== embedded.hash))) continue;
       const hit = json(row.subtitles, []).find((sub) => (embedded ? sub.stream === embedded.stream : sub.path === name));
       if (!hit) continue;
       try {
@@ -640,7 +552,7 @@ export class VideoDownloads {
   artData(volume, key, size) {
     if (typeof volume !== "string" || typeof key !== "string") return null;
     for (const row of this.rows(volume)) {
-      const file = (row.state === "done" || row.previous) && json(row.art, {})[`${size}:${key}`];
+      const file = row.state === "done" && json(row.art, {})[`${size}:${key}`];
       if (!file) continue;
       let data;
       try {
@@ -663,8 +575,7 @@ export class VideoDownloads {
   }
   offlineLibrary(volume) {
     const rows = this.rows(volume)
-      .filter((row) => row.kind !== "music" && (row.state === "done" || row.previous))
-      .map((row) => (row.state === "done" ? row : { ...row, item: JSON.stringify(json(row.previous, {}).item), show: JSON.stringify(json(row.previous, {}).show) }));
+      .filter((row) => row.kind !== "music" && row.state === "done");
     if (!rows.length) return null;
     const movies = [];
     const other = [];

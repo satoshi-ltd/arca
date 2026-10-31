@@ -34,7 +34,6 @@ export function Onboarding({
   skip,
   retry,
   audioStreams,
-  sizes,
 }) {
   const { s } = useDesign();
   const device = Platform.OS === "ios" ? "iPhone" : "phone";
@@ -169,7 +168,7 @@ export function Onboarding({
       </View>
       <Text style={[s.caption, s.centerText]}>
         {chosen.length === 1 ? chosen[0].name : count(chosen.length, "folder", "folders")} ·{" "}
-        {bytes(downloadBytes(chosen, modes, sizes))} to download ·{" "}
+        {bytes(downloadBytes(chosen, modes))} to download ·{" "}
         {Number.isFinite(free)
           ? `${bytes(free)} free`
           : "Checking available space"}

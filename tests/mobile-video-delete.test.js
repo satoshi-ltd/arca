@@ -40,15 +40,15 @@ test("the confirmation names the title, counts the files and warns it cannot be 
   const items = Array.from({ length: 10 }, (_, i) => episode(i + 1));
   const season = deleteVideo({ title: "Andor", season: 1, unit: "episode", items });
   assert.equal(season.title, "Delete “Andor” season 1?");
-  assert.equal(season.message, "Removes 10 episodes from the hub for every device and cannot be undone: Movies & TV keeps no copies or history. The downloads on this device go with it.");
+  assert.equal(season.message, "Removes 10 episodes from the hub for every device. Retained history can restore it. The downloads on this device go with it.");
   assert.equal(season.label, "Delete 10 episodes");
   assert.equal(season.destructive, true);
   assert.equal(deleteVideo({ title: "Andor", unit: "episode", items }).title, "Delete “Andor”?");
   const one = deleteVideo({ title: "1. Kassa", unit: "episode", items: [items[0]] });
-  assert.equal(one.message, "Removes 1 episode from the hub for every device and cannot be undone: Movies & TV keeps no copies or history. The download on this device goes with it.");
+  assert.equal(one.message, "Removes 1 episode from the hub for every device. Retained history can restore it. The download on this device goes with it.");
   assert.equal(one.label, "Delete 1 episode");
   const movie = deleteVideo({ title: "Heat", unit: "movie", items: [items[0]] });
-  assert.equal(movie.message, "Removes the file from the hub for every device and cannot be undone: Movies & TV keeps no copies or history. The download on this device goes with it.");
+  assert.equal(movie.message, "Removes the file from the hub for every device. Retained history can restore it. The download on this device goes with it.");
   assert.equal(movie.label, "Delete movie");
 });
 
@@ -137,5 +137,5 @@ test("an episode's sheet orders watched, its download action and Delete episode�
   assert.deepEqual(sheet({ state: "done", done: 2, size: 2 }), ["watched", "remove-download", "delete-episode"]);
   assert.deepEqual(sheet({ state: "stale", done: 2, size: 2 }), ["watched", "download", "remove-download", "delete-episode"], "an outdated copy downloads again or leaves the phone");
   assert.deepEqual(sheet({ state: "failed", done: 1, size: 2 }), ["watched", "download", "remove-download", "delete-episode"], "a failed partial retries or leaves the phone");
-  assert.match(app, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+dropDownloads\(volume, downloadTargets\(item\)\);/);
+  assert.match(app, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+removeDownloads\(volume, downloadTargets\(item\)\);/);
 });

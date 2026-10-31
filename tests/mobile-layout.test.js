@@ -639,9 +639,7 @@ test("folder rows show the gallery icon the hub assigns and selection states the
   assert.match(app, /const folderKind = \(f\) => \(galleryFolder\(f\) \? "photos"/);
   assert.match(app, /\{folderSections\(\s*\[\s*\.\.\.folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\),\s*\.\.\.streamedVolumes\.map\(\(v\) => \(\{ \.\.\.v, streamed: true \}\)\),\s*\],\s*\(f\) => \(f\.streamed \? \(isVideoFolder\(catalog, f\.id\) \? "video" : "audio"\) : folderKind\(f\)\),\s*\)\.map/);
   assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : isVideoFolder\(catalog, v\.id\) \? "clapperboard" : v\.music && catalog\?\.music \? "music" : "folders"\}/);
-  assert.match(app, /`Needs \$\{bytes\(selectNeeds\)\} · `/);
-  assert.match(app, /const selectNeeds = selectMedia === "video" \? keptSizes\[shownSheet\.volume\.id\] \?\? shownSheet\.volume\.bytes : shownSheet\?\.volume\?\.bytes;/, "Keep needs room only for what the phone can play, the folder size until that is known");
-  assert.match(app, /sizes\[v\.id\] = await r\.keptBytes\(v, Platform\.OS\)\.catch\(\(\) => v\.bytes \|\| 0\);/);
+  assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
   assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : isVideoFolder\(catalog, shownSheet\.volume\.id\) \? "clapperboard" : shownSheet\.volume\.music && catalog\?\.music \? "music" : "folder",/);
   assert.doesNotMatch(app, /free here/);
 });

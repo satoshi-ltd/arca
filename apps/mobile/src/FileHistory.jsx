@@ -8,6 +8,7 @@ import { Text } from "./Text";
 import { Badge, Button, Card, EmptyState, Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
 import { FilePreview } from "./FilePreview";
+import { restorable } from "./file-history.js";
 
 export function FileHistory({
   target,
@@ -140,7 +141,7 @@ export function FileHistory({
                       {row.rev === target.currentRev ? (
                         <Badge>Current</Badge>
                       ) : (
-                        !row.deleted && (
+                        restorable(row) && (
                           <Button
                             quiet
                             label="Restore"

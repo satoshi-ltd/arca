@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.23 — 2026-10-31
+
+- Keep on a Movies & TV library now works like an Audio library on desktop, servers and phones: a complete two-way folder at a destination, with View folder and Open in Finder, played from the local copy. Libraries kept the old way keep their downloads until Stop syncing.
+- The hub keeps older versions of Movies & TV files changed or deleted through Arca under its usual retention, moved into a hidden `.arca-versions` folder on the library's own disk instead of copying the library, so restore works as in any folder. A Movies & TV folder must sit on one disk.
+- Folders on desktop refreshes as soon as a library is started with Stream, without switching views.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.22 — 2026-10-31
 
 - The Umbrel package is gone: Arca ships for servers as the Docker image only, and the server sign-in and setup screens always show the Docker web-code command.

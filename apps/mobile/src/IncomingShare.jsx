@@ -1,7 +1,6 @@
 import { Busy } from "./components";
 import { useRetained } from "./motion";
 import { galleryConfig } from "./gallery.js";
-import { acceptsWrites } from "./video-sync.js";
 import { Eyebrow, Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
@@ -35,7 +34,7 @@ import {
 } from "./share-destinations";
 
 // One share operation; cancellation discards the app-owned temporary copies.
-export function IncomingShare({ connection, catalog, locals, onSaved, onChoose }) {
+export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   const { s } = useDesign();
   const [items, setItems] = useState([]),
     [open, setOpen] = useState(false);
@@ -162,7 +161,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved, onChoose }
     let active = true;
     (async () => {
       const r = await runtime();
-      const choices = locals.filter((f) => acceptsWrites(catalog, f) && !galleryConfig(f));
+      const choices = locals.filter((f) => !!f.selected && !galleryConfig(f));
       const entries =
         r.scope && r.scope === connection?.hubId
           ? await loadDestinations(r.store, r.scope, choices)
@@ -246,7 +245,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved, onChoose }
       setBusy(false);
     }
   }
-  const destinations = locals.filter((f) => acceptsWrites(catalog, f) && !galleryConfig(f));
+  const destinations = locals.filter((f) => !!f.selected && !galleryConfig(f));
   useEffect(() => {
     if (parked && destinations.length && items.length) {
       setParked(false);

@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.8.22 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.8.23 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -35,7 +35,7 @@
 
       <section class="kit-section">
         <h2>Folders <span>01</span></h2>
-        <p class="kit-caption">Device · Up to four sections, Folders, Photos, Audio and Movies &amp; TV, each one grouped card with hairline dividers and 66 px rows; a podcasts folder shows the podcast glyph; folders the hub offers sit in a dashed list; a streamed Audio library reads "· Streams from hub" and a kept Movies &amp; TV library "· Kept on this device", and an Audio or Movies &amp; TV library not started waits in the dashed list with Start syncing like any folder, and a Movies &amp; TV one still opens its library from its name; hover changes only the fill. A state recolours the tile: a conflict draws the warning tile with triangle-alert, any error the error tile with circle-alert, and the subtitle starts with the state word in that ink, with the row's one action (Review, Locate… or Change location…) and no pill; paused, offline and disconnected draw the neutral tile with the kind glyph; a ring only ever means sync progress. The sidebar's Search is a borderless row with the nav's geometry; below the nav, Favorites lists only what the person pinned here (a folder with the header star or a right-click on its row, a sub-folder, artist, album, playlist or show) in a fixed order: grouped like Folders (folders, then photos, then audio, a pinned place with its folder's kind) and by name within each group, with no manual reordering, with the nav's own row type; a pinned folder carries at most one state (busy, a warning dot, pause); with nothing pinned the section is absent; only that region scrolls</p>
+        <p class="kit-caption">Device · Up to four sections, Folders, Photos, Audio and Movies &amp; TV, each one grouped card with hairline dividers and 66 px rows; a podcasts folder shows the podcast glyph; folders the hub offers sit in a dashed list; a streamed Audio library reads "· Streams from hub" and a kept Movies &amp; TV library like any kept folder, and an Audio or Movies &amp; TV library not started waits in the dashed list with Start syncing like any folder, and a Movies &amp; TV one still opens its library from its name; hover changes only the fill. A state recolours the tile: a conflict draws the warning tile with triangle-alert, any error the error tile with circle-alert, and the subtitle starts with the state word in that ink, with the row's one action (Review, Locate… or Change location…) and no pill; paused, offline and disconnected draw the neutral tile with the kind glyph; a ring only ever means sync progress. The sidebar's Search is a borderless row with the nav's geometry; below the nav, Favorites lists only what the person pinned here (a folder with the header star or a right-click on its row, a sub-folder, artist, album, playlist or show) in a fixed order: grouped like Folders (folders, then photos, then audio, a pinned place with its folder's kind) and by name within each group, with no manual reordering, with the nav's own row type; a pinned folder carries at most one state (busy, a warning dot, pause); with nothing pinned the section is absent; only that region scrolls</p>
         <div class="kit-window">
           <div class="shell">
             <aside class="sidebar">
@@ -71,7 +71,7 @@
 <article class="folder-card" role="button" tabindex="0"><div class="tile large"><span data-icon="music"></span></div><div class="row-main"><strong>records</strong><p class="meta">8,412 files · 61.3 GB · Streams from hub</p></div><span data-icon="chevron-right" class="chevron"></span></article>
 </div></section><section><div class="section-label">Movies &amp; TV</div>
 <div class="folder-list">
-<article class="folder-card" role="button" tabindex="0"><div class="tile large"><span data-icon="clapperboard"></span></div><div class="row-main"><strong>films</strong><p class="meta">86 files · 412.0 GB · Kept on this device</p></div><span data-icon="chevron-right" class="chevron"></span></article>
+<article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="clapperboard"></span></div></div><div class="row-main"><strong>films</strong><p class="meta">86 files · 412.0 GB</p></div><span data-icon="chevron-right" class="chevron"></span></article>
 </div></section>
                   <section><div class="section-label">On hub · not selected</div>
                     <div class="folder-list">
@@ -156,15 +156,18 @@
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="play"></span>Start streaming</button></div>
           </dialog>
         </div>
-        <p class="kit-caption">Movies &amp; TV · Stream from the hub is the default; Keep on this device keeps every title in the desktop app's download store, so there is no destination, only the size and free-space line</p>
+        <p class="kit-caption">Movies &amp; TV · Stream from the hub is the default; Keep on this device is the Audio dialog: the destination, the size and free-space line and the .arcaignore callout, on the desktop app and on a server</p>
         <div class="kit-dialog-stage">
           <dialog open aria-labelledby="select-video-title">
             <div id="dialog-content"><div class="folder-selection">
               <div class="modal-title"><div class="tile"><span data-icon="refresh-cw"></span></div><div><h2 id="select-video-title">Sync “videos” on macbook-pro</h2><p>Choose how this device plays this library.</p></div></div>
               <div class="selection-summary"><div class="tile large"><span data-icon="clapperboard"></span></div><div class="row-main"><strong>videos</strong><p>318 files · 2.0 TB · on the hub</p></div><span class="mono">id 7f3e</span></div>
               <label class="role-card"><input name="media-mode-video" type="radio" value="stream" /><div><strong>Stream from the hub</strong><p>Download titles to watch offline.</p></div></label>
-              <label class="role-card"><input name="media-mode-video" type="radio" value="keep" checked /><div><strong>Keep on this device</strong><p>Every movie and episode, new ones too.</p></div></label>
-              <div class="path-check selection-check" role="status"><span>Needs 2.0 TB · 589.0 GB free</span></div>
+              <label class="role-card"><input name="media-mode-video" type="radio" value="keep" checked /><div><strong>Keep on this device</strong><p>A full copy that syncs both ways.</p></div></label>
+              <label for="select-path-video">Local destination</label>
+              <div class="field-with-icon selection-path"><button type="button" class="icon-button field-picker" aria-label="Choose local destination"><span data-icon="folder"></span></button><input id="select-path-video" class="mono" name="path" value="/Users/javi/arca/videos" required /></div>
+              <div class="path-check selection-check" role="status"><span>New folder · Needs 2.0 TB · 589.0 GB free</span></div>
+              <div class="callout"><span data-icon="info"></span><p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
           </dialog>
@@ -316,7 +319,7 @@
           <div class="kit-dialog-stage">
             <dialog aria-labelledby="dialog-title" open>
         <form>
-          <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="library-big" aria-hidden="true"></span></div><div><h2 id="dialog-title">What’s in this folder?</h2><p>documents · 8 files · 12.4 GB</p></div></div><label class="role-card"><input name="kind" type="radio" value="gallery"><span data-icon="images" aria-hidden="true"></span><div><strong>Photos</strong><p>Photos and videos by date.</p></div></label><label class="role-card"><input name="kind" type="radio" value="music"><span data-icon="music" aria-hidden="true"></span><div><strong>Audio</strong><p>Music and podcasts, with playlists.</p></div></label><label class="role-card"><input name="kind" type="radio" value="video"><span data-icon="clapperboard" aria-hidden="true"></span><div><strong>Movies &amp; TV</strong><p>Films and series. Stays on the hub and streams to your devices; no older versions.</p></div></label><p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions, and other devices stop syncing it and stream it instead.</p></div>
+          <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="library-big" aria-hidden="true"></span></div><div><h2 id="dialog-title">What’s in this folder?</h2><p>documents · 8 files · 12.4 GB</p></div></div><label class="role-card"><input name="kind" type="radio" value="gallery"><span data-icon="images" aria-hidden="true"></span><div><strong>Photos</strong><p>Photos and videos by date.</p></div></label><label class="role-card"><input name="kind" type="radio" value="music"><span data-icon="music" aria-hidden="true"></span><div><strong>Audio</strong><p>Music and podcasts, with playlists.</p></div></label><label class="role-card"><input name="kind" type="radio" value="video"><span data-icon="clapperboard" aria-hidden="true"></span><div><strong>Movies &amp; TV</strong><p>Films and series, streamed or kept on your devices.</p></div></label><p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions.</p></div>
           <div class="dialog-actions">
             <button type="button" class="secondary" id="cancel-dialog">Cancel</button><button class="primary" type="submit" id="submit-dialog" disabled="">Set up</button>
           </div>
@@ -828,7 +831,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
         <div class="kit-dialog-stage">
           <dialog aria-labelledby="dialog-title" open>
       <form>
-        <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="library-big" aria-hidden="true"></span></div><div><h2 id="dialog-title">What’s in this folder?</h2><p>documents · 8 files · 12.4 GB</p></div></div><label class="role-card"><input name="kind" type="radio" value="gallery"><span data-icon="images" aria-hidden="true"></span><div><strong>Photos</strong><p>Photos and videos by date.</p></div></label><label class="role-card"><input name="kind" type="radio" value="music"><span data-icon="music" aria-hidden="true"></span><div><strong>Audio</strong><p>Music and podcasts, with playlists.</p></div></label><label class="role-card"><input name="kind" type="radio" value="video"><span data-icon="clapperboard" aria-hidden="true"></span><div><strong>Movies &amp; TV</strong><p>Films and series. Stays on the hub and streams to your devices; no older versions.</p></div></label><p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions, and other devices stop syncing it and stream it instead.</p></div>
+        <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="library-big" aria-hidden="true"></span></div><div><h2 id="dialog-title">What’s in this folder?</h2><p>documents · 8 files · 12.4 GB</p></div></div><label class="role-card"><input name="kind" type="radio" value="gallery"><span data-icon="images" aria-hidden="true"></span><div><strong>Photos</strong><p>Photos and videos by date.</p></div></label><label class="role-card"><input name="kind" type="radio" value="music"><span data-icon="music" aria-hidden="true"></span><div><strong>Audio</strong><p>Music and podcasts, with playlists.</p></div></label><label class="role-card"><input name="kind" type="radio" value="video"><span data-icon="clapperboard" aria-hidden="true"></span><div><strong>Movies &amp; TV</strong><p>Films and series, streamed or kept on your devices.</p></div></label><p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions.</p></div>
         <div class="dialog-actions">
           <button type="button" class="secondary" id="cancel-dialog">Cancel</button><button class="primary" type="submit" id="submit-dialog" disabled="">Set up</button>
         </div>

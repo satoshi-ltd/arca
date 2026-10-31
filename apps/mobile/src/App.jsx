@@ -15,14 +15,12 @@ import {
   watchedTargets,
 } from "./video-library.js";
 import {
-  acceptsWrites,
   cachedVideoLibrary,
   createArtLoader,
   deleteNotice,
   deleteVideos,
   flushPositions,
   isVideoFolder,
-  keepVideoLibraries,
   loadSubtitles,
   markWatched,
   pruneVideoArt,
@@ -35,7 +33,7 @@ import {
   watchPrivateNetwork,
   withQueuedPositions,
 } from "./video-sync.js";
-import { KEPT_LIBRARY, createVideoDownloads, downloadAction, downloadKey, downloadable, itemDownload, playbackCues, playbackSource } from "./video-downloads.js";
+import { createVideoDownloads, downloadAction, downloadKey, downloadable, itemDownload, keptSource, playbackCues, playbackSource } from "./video-downloads.js";
 import { audioActions, audioRows, audioTargets, createAudioDownloads } from "./audio-downloads.js";
 import {
   DISCOVERY_MS,
@@ -907,7 +905,7 @@ export default function App() {
   const videoModeOf = status.videos ? JSON.parse(status.videos) : {};
   const videoHeld = (id) => !!videoModeOf[id] || [...videoDownloads.values()].some((row) => row.volume === id);
   const videoStarted = videoFolder && videoHeld(folder.id) && !currentFolder?.selected;
-  const writable = acceptsWrites(catalog, folder);
+  const writable = !!folder?.selected;
   const videoDeep = videoView && videoRoute.length > 1;
   useEffect(() => {
     if (folder && !folder.selected && currentFolder?.selected) setFolder(currentFolder);
@@ -957,24 +955,6 @@ export default function App() {
   );
   const selectMedia = shownSheet?.kind === "select" ? mediaKind(catalog, shownSheet.volume, playerAvailable) : null;
   const selectMode = shownSheet?.mode || (selectMedia ? defaultMode(selectMedia) : "keep");
-  const [keptSizes, setKeptSizes] = useState({});
-  const sizesNeeded = (onboarding && onboardingStep === "folders") || selectMedia === "video";
-  useEffect(() => {
-    const r = engine.current;
-    const known = client.state().catalog;
-    if (!sizesNeeded || !r?.scope || !known?.video) return undefined;
-    let active = true;
-    (async () => {
-      const sizes = {};
-      for (const v of known.volumes.filter((entry) => isVideoFolder(known, entry.id)))
-        sizes[v.id] = await r.keptBytes(v, Platform.OS).catch(() => v.bytes || 0);
-      if (active) setKeptSizes(sizes);
-    })().catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [sizesNeeded, replica?.scope, catalog]);
-  const selectNeeds = selectMedia === "video" ? keptSizes[shownSheet.volume.id] ?? shownSheet.volume.bytes : shownSheet?.volume?.bytes;
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
   const pullSync = screen === "Folders" && !folder && connected && !!replica;
   const screenDepth = detail ? 2 : folder && screen === "Folders" ? 1 : 0;
@@ -1081,7 +1061,7 @@ export default function App() {
       }
       try {
         await flushPositions({ client, replica }).catch(() => 0);
-        const fresh = await refreshVideoLibrary(replica, folder.id, { signal: controller.signal, downloads: downloads.current, platform: Platform.OS });
+        const fresh = await refreshVideoLibrary(replica, folder.id, { signal: controller.signal, downloads: downloads.current });
         await withQueuedPositions(replica, folder.id, fresh.library);
         if (active) setVideoData({ key, library: fresh.library, offline: false });
       } catch {
@@ -1101,7 +1081,7 @@ export default function App() {
       if (busy || AppState.currentState !== "active") return;
       busy = true;
       try {
-        const fresh = await refreshVideoLibrary(replica, folder.id, { downloads: downloads.current, platform: Platform.OS });
+        const fresh = await refreshVideoLibrary(replica, folder.id, { downloads: downloads.current });
         if (!fresh.changed) return;
         await withQueuedPositions(replica, folder.id, fresh.library);
         setVideoData((old) => (old?.key === key && !old.offline ? { key, library: fresh.library, offline: false } : old));
@@ -1129,22 +1109,6 @@ export default function App() {
       if (replica.videoDownloads === manager) replica.videoDownloads = null;
     };
   }, [replica, replica?.scope]);
-  useEffect(() => {
-    if (!replica?.scope || !connected || !Object.values(videoModeOf).includes("keep")) return undefined;
-    let busy = false;
-    const keep = async () => {
-      if (busy || !downloads.current) return;
-      busy = true;
-      await keepVideoLibraries(replica, downloads.current, Platform.OS)
-        .catch(() => {})
-        .finally(() => {
-          busy = false;
-        });
-    };
-    keep();
-    const timer = setInterval(keep, VIDEO_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [replica, replica?.scope, connected, status.videos]);
   useEffect(() => {
     if (!replica?.scope) return undefined;
     const manager = createAudioDownloads({ replica, client, onChange: setAudioDownloads });
@@ -1245,13 +1209,6 @@ export default function App() {
   function removeDownloads(volume, items) {
     return Promise.resolve(downloads.current?.removeMany(volume, items.map((item) => item.path))).catch(() => {});
   }
-  function dropDownloads(volume, items) {
-    if (videoModeOf[volume] === "keep") {
-      setError(KEPT_LIBRARY);
-      return Promise.resolve();
-    }
-    return removeDownloads(volume, items);
-  }
   const shownVideo =
     videoData?.key === `${replica?.scope}:${folder?.id}` ? videoData : null;
   const videoArt = (key, size) => {
@@ -1331,7 +1288,7 @@ export default function App() {
       return;
     }
     if (name === "remove-download" || name === "cancel-download") {
-      dropDownloads(volume, downloadTargets(item));
+      removeDownloads(volume, downloadTargets(item));
       return;
     }
     run(
@@ -1788,7 +1745,7 @@ export default function App() {
     (v) => ((isVideoFolder(catalog, v.id) && videoHeld(v.id)) || (isMusicFolder(catalog, v.id) && streamedSet.has(v.id))) && !locals.some((f) => f.id === v.id),
   );
   const streamedCaption = (v) => {
-    if (isVideoFolder(catalog, v.id)) return `${folderSize(v)} · ${videoModeOf[v.id] === "keep" ? "Kept on this phone" : "Streams from hub"}`;
+    if (isVideoFolder(catalog, v.id)) return `${folderSize(v)} · Streams from hub`;
     const saved = [...audioDownloads.values()].filter((row) => row.volume === v.id && row.state === "done");
     return saved.length ? `${fileCount(saved.length)} · ${bytes(saved.reduce((total, row) => total + (row.size || 0), 0))} local` : "Streams from hub";
   };
@@ -3285,8 +3242,9 @@ export default function App() {
                             openDevices={() => setView("Devices")}
                             download={videoDownload}
                             startDownload={startDownload}
-                            cancelDownload={(items) => dropDownloads(folder.id, items)}
+                            cancelDownload={(items) => removeDownloads(folder.id, items)}
                             canDownload={(item) => downloadable(item, Platform.OS)}
+                            kept={!!currentFolder?.selected}
                             scrollRef={galleryScroll}
                             scrollY={galleryScrollY}
                           />
@@ -3761,7 +3719,6 @@ export default function App() {
                       catalog={catalog}
                       free={status.free}
                       audioStreams={playerAvailable}
-                      sizes={keptSizes}
                       busy={actionLocked}
                       start={() =>
                         run(() =>
@@ -3787,7 +3744,7 @@ export default function App() {
                           });
                           r.scope = client.state().connection.hubId;
                           await r.store.set("scope", r.scope);
-                          await selectFirstFolders(r, client.state().catalog, ids, modes, Platform.OS);
+                          await selectFirstFolders(r, client.state().catalog, ids, modes);
                           setView("Folders");
                           r.sync();
                         })
@@ -4436,6 +4393,9 @@ export default function App() {
             resolve={(session) =>
               playbackSource({
                 downloads: downloads.current,
+                kept: locals.some((f) => f.id === session.volume && f.selected)
+                  ? keptSource(engine.current.files, engine.current.scope, session.volume, session.item, Platform.OS)
+                  : null,
                 volume: session.volume,
                 item: session.item,
                 mode: session.mode || "auto",
@@ -4748,7 +4708,7 @@ export default function App() {
                           }}
                         />
                       )}
-                      {writable && !musicFolder && (
+                      {writable && !musicFolder && !videoFolder && (
                         <ActionRow
                           label="Add photos…"
                           icon="image"
@@ -4856,6 +4816,7 @@ export default function App() {
                   act={(name) => videoAction(name, shownSheet)}
                   download={videoDownload}
                   canDownload={(item) => downloadable(item, Platform.OS)}
+                  kept={!!currentFolder?.selected}
                 />
               )}
               {shownSheet.kind === "select" && (
@@ -4887,7 +4848,7 @@ export default function App() {
                         busy={busy}
                         onPress={() =>
                           run(async () => {
-                            if (selectMedia === "video") await engine.current.startVideo(shownSheet.volume, "stream", Platform.OS);
+                            if (selectMedia === "video") await engine.current.streamVideo(shownSheet.volume);
                             else await engine.current.streamMusic(shownSheet.volume);
                             setSheet(null);
                             startSync();
@@ -4899,15 +4860,13 @@ export default function App() {
                     <>
                       <Card title={selectMedia ? "Keep on this phone" : "Start syncing"}>
                         <Text style={s.text}>
-                          {selectMedia === "video"
-                            ? "Every movie and episode, new ones too."
-                            : selectMedia
-                              ? "A full copy that syncs both ways."
-                              : "Download this folder and keep it in sync."}
+                          {selectMedia
+                            ? "A full copy that syncs both ways."
+                            : "Download this folder and keep it in sync."}
                         </Text>
                         <Text style={s.caption}>
-                          {Number.isFinite(selectNeeds)
-                            ? `Needs ${bytes(selectNeeds)} · `
+                          {Number.isFinite(shownSheet.volume.bytes)
+                            ? `Needs ${bytes(shownSheet.volume.bytes)} · `
                             : ""}
                           {bytes(status.free)} free
                         </Text>
@@ -4919,8 +4878,7 @@ export default function App() {
                         busy={busy}
                         onPress={() =>
                           run(async () => {
-                            if (selectMedia === "video") await engine.current.startVideo(shownSheet.volume, "keep", Platform.OS);
-                            else await engine.current.select(shownSheet.volume);
+                            await engine.current.select(shownSheet.volume);
                             setSheet(null);
                             startSync();
                           })

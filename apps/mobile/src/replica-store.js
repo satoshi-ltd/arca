@@ -158,6 +158,13 @@ export class ReplicaStore {
   async forgetHash(uri) {
     await this.db.runAsync("DELETE FROM scan_cache WHERE uri=?", uri);
   }
+  async forgetVolumeHashes(scope, volume) {
+    await this.db.runAsync(
+      "DELETE FROM scan_cache WHERE json_extract(row,'$.scope')=? AND json_extract(row,'$.volume')=?",
+      scope,
+      volume,
+    );
+  }
   async pruneHashes(scope, roots = []) {
     const legacy = roots.length
       ? ` AND NOT (json_extract(row,'$.scope') IS NULL AND json_extract(row,'$.path') IS NULL AND (${roots.map(() => "substr(uri,1,length(?))=?").join(" OR ")}))`

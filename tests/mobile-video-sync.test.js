@@ -8,7 +8,6 @@ import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import { createClient } from "../apps/mobile/src/client.js";
 import {
   PART_GRACE,
-  acceptsWrites,
   cachedVideoLibrary,
   createArtLoader,
   isVideoFolder,
@@ -220,13 +219,6 @@ test("a private hub on the local network is never streamed over mobile data", as
 test("an unlinked phone never streams and asks for the hub", async () => {
   const offline = { state: () => ({ connection: null }), stream: async () => assert.fail("no hub request") };
   await assert.rejects(videoSource({ client: offline, volume: "v1", item: { path: "Movies/A.mkv", hash: "h1" }, networkType: async () => null }), { message: "Connect to your hub to watch", code: "HUB_UNREACHABLE" });
-});
-
-test("a Movies & TV folder takes no writes on the phone, even when an old copy is still selected", () => {
-  const catalog = { video: true, volumes: [{ id: "v1", video: true }, { id: "f1" }] };
-  assert.equal(acceptsWrites(catalog, { id: "v1", selected: 1 }), false);
-  assert.equal(acceptsWrites(catalog, { id: "f1", selected: 1 }), true);
-  assert.equal(acceptsWrites(catalog, { id: "f1", selected: 0 }), false);
 });
 
 test("positions and watched marks go to the hub routes from the contract", async () => {

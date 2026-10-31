@@ -225,25 +225,26 @@ test("Start syncing an Audio library asks Stream or Keep: Keep shows today's des
   assert.equal(ui.posts.some(([path]) => path === "/v1/sync"), false, "nothing to sync when streaming");
 });
 
-test("Start syncing a Movies & TV library defaults to Stream, and Keep shows only the size and free-space line", async (t) => {
+test("Start syncing a Movies & TV library defaults to Stream, and Keep asks for a destination like an Audio library", async (t) => {
   const ui = await boot(t, { status: replicaStatus() });
   await until(() => row(ui, "videos"));
   await ui.click(row(ui, "videos").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
-  assert.deepEqual(ui.$$("#dialog .role-card p").map((el) => el.textContent), ["Download titles to watch offline.", "Every movie and episode, new ones too."]);
+  assert.deepEqual(ui.$$("#dialog .role-card p").map((el) => el.textContent), ["Download titles to watch offline.", "A full copy that syncs both ways."]);
   assert.equal(ui.$('#dialog [name="mode"]:checked').value, "stream", "Movies & TV defaults to Stream");
-  assert.equal(ui.$("#selection-path"), null, "a Movies & TV library never has a destination");
-  assert.equal(ui.$("#dialog .callout"), null);
-  assert.equal(shown(ui.$("#selection-space")), false);
+  assert.equal(shown(ui.$("#selection-path")), false, "streaming needs no destination");
   assert.equal(submit(ui).textContent, "Start streaming");
   await ui.choose("keep");
-  await until(() => /Needs 9\.6 GB · 589\.0 GB free/.test(ui.$("#selection-space").textContent));
-  assert.ok(shown(ui.$("#selection-space")));
+  assert.ok(shown(ui.$("#selection-path")));
+  assert.equal(ui.$("#selection-path").value, "/Users/javi/arca/videos");
+  assert.ok(shown(ui.$("#dialog .callout")), "with the .arcaignore callout");
+  await until(() => /New folder · Needs 9\.6 GB/.test(ui.$("#folder-path-status").textContent));
   assert.equal(submit(ui).textContent, "Start syncing");
   await ui.click("#submit-dialog", () => !ui.$("#dialog[open]"));
-  assert.deepEqual(ui.posts.filter(([path]) => path === "/v1/select"), [["/v1/select", { id: "vid", mode: "keep" }]]);
+  assert.deepEqual(ui.posts.filter(([path]) => path === "/v1/select"), [["/v1/select", { id: "vid", mode: "keep", path: "/Users/javi/arca/videos" }]]);
+  assert.ok(ui.posts.some(([path]) => path === "/v1/sync"), "a kept library starts syncing");
 });
 
-test("an ordinary folder's Start syncing shows no cards, and a web session streams Movies & TV without a Keep card", async (t) => {
+test("an ordinary folder's Start syncing shows no cards, and a web session keeps Movies & TV too", async (t) => {
   const ui = await boot(t, { status: replicaStatus() });
   await until(() => row(ui, "documents"));
   await ui.click(row(ui, "documents").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
@@ -255,8 +256,7 @@ test("an ordinary folder's Start syncing shows no cards, and a web session strea
   const web = await boot(t, { status: replicaStatus(), web: true });
   await until(() => row(web, "videos"));
   await web.click(row(web, "videos").querySelector('[data-action="add"]'), () => web.$("#dialog[open] .folder-selection"));
-  assert.equal(web.$("#dialog .role-card"), null, "Keep for Movies & TV is the desktop app's only");
-  assert.equal(web.$("#selection-path"), null);
+  assert.deepEqual(web.$$("#dialog .role-card strong").map((el) => el.textContent), ["Stream from the hub", "Keep on this device"], "a server can keep Movies & TV");
   assert.equal(submit(web).textContent, "Start streaming");
 });
 
@@ -322,15 +322,6 @@ test("switching back to Keep after a failed destination check keeps Start syncin
   assert.equal(submit(ui).disabled, false, "streaming needs no destination");
   await ui.choose("keep");
   assert.equal(submit(ui).disabled, true, "the failed check still blocks Keep");
-});
-
-test("Keep's free-space line falls back to the size when the free space cannot be read", async (t) => {
-  const ui = await boot(t, { status: replicaStatus(), freeSpace: () => Promise.reject(new Error("offline")) });
-  await until(() => row(ui, "videos"));
-  await ui.click(row(ui, "videos").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
-  await ui.choose("keep");
-  await until(() => !/Checking/.test(ui.$("#selection-space").textContent));
-  assert.equal(ui.$("#selection-space").textContent, "Needs 9.6 GB");
 });
 
 test("a kept title that is downloading offers no Cancel download", async (t) => {
@@ -496,4 +487,31 @@ test("when a later batch fails, the tracks already queued still show their glyph
   await until(() => ui.idle() && !ui.$("#content .music-tracks")?.dataset.stale && glyphs(ui)[0] === "Waiting");
   assert.equal(ui.posts.filter(([path]) => path === "/v1/music/download").length, 2);
   assert.deepEqual(itemsOf(headMenu(ui, "Album actions")), ["Download", "Cancel download"]);
+});
+
+test("a Movies & TV library kept as a folder lists in its kind, and View folder opens its files with Open in Finder", async (t) => {
+  const status = replicaStatus();
+  status.volumes = [{ id: "vid", name: "videos", video: true, selected: true, path: "/Users/javi/Arca/videos", ...counted, sync: { state: "synced" } }];
+  const ui = await boot(t, { status });
+  await until(() => row(ui, "videos"));
+  assert.ok(section(ui, "Movies & TV").contains(row(ui, "videos")));
+  assert.doesNotMatch(row(ui, "videos").textContent, /Streams from hub|Kept on this device/);
+  await ui.click(row(ui, "videos"), () => ui.$('#content [data-action="video-mode"]'));
+  assert.equal(ui.$('#content [data-action="video-mode"]').textContent, "View folder");
+  await ui.click('#content [data-action="video-mode"]', () => /local/.test(ui.$("#content .detail-title p")?.textContent || ""));
+  assert.equal(ui.$("#content .detail-title p").textContent, "1,284 files · 9.6 GB local", "View folder switches to its files as for Audio");
+  assert.equal(ui.$('#content [data-action="open"]').textContent, "Open in Finder");
+});
+
+test("a Movies & TV library kept as a folder offers no per-title Download", async (t) => {
+  const movie = sampleLibrary().movies[0];
+  const status = replicaStatus();
+  status.volumes = [{ id: "vid", name: "videos", video: true, selected: true, path: "/Users/javi/Arca/videos", ...counted, sync: { state: "synced" } }];
+  const ui = await boot(t, { status });
+  await until(() => row(ui, "videos"));
+  await ui.click(row(ui, "videos"), () => ui.$(".video-page .music-card"));
+  await ui.click(`[data-action="video-title"][data-id="${movie.id}"]`, () => ui.$(".video-backdrop h2"));
+  const items = ui.$$(".video-backdrop .video-menu .menu-items button").map((el) => el.textContent);
+  assert.ok(items.length, "the title still has its menu");
+  assert.equal(items.some((text) => /Download|Remove from this device|Cancel download/.test(text)), false, "its files are already here");
 });

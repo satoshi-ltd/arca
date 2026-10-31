@@ -166,7 +166,7 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 - **DEC-VIDEO-INTEGRITY** — Require full-file integrity for Movies & TV?
   `decision · maintainer · high`
-  accept: decide whether video identity and completed-download verification must cover every byte. The current quick identity hashes only the size and first/last 4 MiB, so a same-size change or download corruption confined to the middle is undetected; it also cannot distinguish those versions for resume. If full integrity is required, approve a bounded background full hash and a protocol field for clients to verify, with regression cases changing only the middle and measurements of hub I/O and phone verification cost. Keep this separate from the fast scan fingerprint.
+  accept: decide whether video identity and completed-download verification must cover every byte. The video fingerprint hashes only the size and first/last 4 MiB, and it now drives two-way sync of kept Movies & TV libraries: a same-size edit confined to the middle of a file never syncs to the hub or other devices, and download or upload corruption there is undetected; it also cannot distinguish those versions for resume. If full integrity is required, approve a bounded background full hash and a protocol field for clients to verify, with regression cases changing only the middle and measurements of hub I/O and phone verification cost. Keep this separate from the fast scan fingerprint.
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
@@ -190,9 +190,9 @@ Suggested order for approval: exposed security boundaries and preservation of us
 - **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting in a folder that is no longer a video library gets the hub's video-library message
   `bug · agent · low`
   The hub's `/v1/delete-file` answers a linked replica outside a video library with "Local administrator credential required" instead of "This folder is not a video library", which a stale replica catalog can surface. Accept: the hub's linked branch fails with the video-library message (404), with a test through a replica's `/v1/video/delete`.
-- **VIDEO-DELETE-SELECTED-REPLICA** — A replica that selected a video folder keeps its local delete checks
-  `bug · agent · low`
-  `/v1/video/delete` on a replica always forwards to the hub, so a selected copy skips the local rescan, signature check, Trash for unsynced content and Windows "in use", and the local file goes on the next cycle. Accept: either the selected path keeps `engine.deleteFile` locally (then forgets the download) or SPEC states the trade-off; a selected-replica test proves a local unsynced edit is preserved. Drop the desktop `/v1/history` rev fallback, which sends a local rev to the hub.
+- **VIDEO-DELETE-SELECTED-REPLICA** — A replica that keeps a Movies & TV library keeps its local delete checks
+  `bug · agent · normal`
+  Every desktop or server replica that keeps a Movies & TV library is affected: Delete movie, episode, season or show (`/v1/video/delete`) always forwards to the hub, so the kept copy skips the local rescan, signature check, Trash for unsynced content and Windows "in use", and the local file goes on the next cycle. Accept: the kept path deletes through `engine.deleteFile` locally and lets sync carry the deletion (the hub then keeps the version beside the folder), with a kept-replica test proving a local unsynced edit is preserved. Drop the desktop `/v1/history` rev fallback, which sends a local rev to the hub.
 - **VIDEO-DELETE-TESTS** — Error paths of a replica's video delete
   `chore · agent · low`
   Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
@@ -331,11 +331,11 @@ These are the parts of the desktop and mobile sizing audit that are not purely v
 
 ### Media libraries: Stream or Download per device (proposal 2026-10-30)
 
-Desktop and server replicas choose **Stream from the hub** or **Keep on this device** at Start syncing, and Android phones and the Fold stream the Audio libraries they start and download per artist, album, show or track, while a library they kept before stays a complete copy (SPEC Audio libraries, Music on the phone). The hub always holds everything and never asks; players (arca TV) and the hub's web admin are unchanged. What remains is the device evidence.
+Desktop and server replicas choose **Stream from the hub** or **Keep on this device** at Start syncing for Audio and Movies & TV alike, where Keep is a complete two-way folder, and Android phones and the Fold stream the Audio libraries they start and download per artist, album, show or track, while a library they kept before stays a complete copy (SPEC Audio libraries, Video libraries, Music on the phone). The hub always holds everything and never asks; players (arca TV) and the hub's web admin are unchanged. What remains is the device evidence.
 
 - **VERIFY-MEDIA-MODE** — Stream and Keep on real devices
   `verify · maintainer · normal`
-  accept: after a hub redeploy, a desktop build and an Android build: a desktop replica starts an Audio library as Stream, downloads an album and plays it with the hub away, then Stop syncing and again as Keep; the Fold streams an Audio library with the screen off, over Bluetooth and in Android Auto, downloads an album, an artist and a show and plays them in airplane mode, and a library it kept before stays untouched; desktop Keep on a Movies & TV library fills, survives a restart, stops at the space floor and follows a title added and one deleted on the hub.
+  accept: after a hub redeploy, a desktop build and an Android build: a desktop replica starts an Audio library as Stream, downloads an album and plays it with the hub away, then Stop syncing and again as Keep; the Fold streams an Audio library with the screen off, over Bluetooth and in Android Auto, downloads an album, an artist and a show and plays them in airplane mode, and a library it kept before stays untouched; a desktop app and a server replica keep a Movies & TV library as a folder at its destination (View folder and Open in Finder work), play a title from it with the hub away, add a film that reaches the hub and delete one, after which the hub's Version history restores it from `.arca-versions` on Atlas's media disk with no copy into the state directory; a library kept the old way keeps its downloads until Stop syncing.
 
 ## Later phases
 

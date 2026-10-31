@@ -372,7 +372,7 @@ function Seasons({ show, season, choose }) {
   );
 }
 
-function TitlePage({ library, item, route, setRoute, art, play, more, mark, open, download, startDownload, cancelDownload, canDownload }) {
+function TitlePage({ library, item, route, setRoute, art, play, more, mark, open, download, startDownload, cancelDownload, canDownload, kept }) {
   const { s, wide, compact } = useDesign();
   const back = () => setRoute(route.slice(0, 1));
   const actions = titleActions(item);
@@ -404,8 +404,8 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
   );
   const row = show ? null : download(item);
   const allowed = show ? false : canDownload(item);
-  const tile = show ? null : downloadTile(row, allowed);
-  const note = show ? "" : downloadNote(row, allowed, item, Platform.OS);
+  const tile = show || kept ? null : downloadTile(row, allowed);
+  const note = show || kept ? "" : downloadNote(row, allowed, item, Platform.OS);
   const tileAction = { start: () => startDownload([item]), cancel: () => cancelDownload([item]), manage: () => more(item), none: undefined };
   const playRow = target && (
     <View style={s.videoDock}>
@@ -564,6 +564,7 @@ export function VideoLibrary({
   startDownload = () => {},
   cancelDownload = () => {},
   canDownload = () => false,
+  kept = false,
   scrollRef = null,
   scrollY = null,
 }) {
@@ -600,6 +601,7 @@ export function VideoLibrary({
           startDownload={startDownload}
           cancelDownload={cancelDownload}
           canDownload={canDownload}
+          kept={kept}
         />
       );
     return (
@@ -672,7 +674,7 @@ export function VideoLibrary({
   );
 }
 
-export function VideoSheet({ sheet, locked, act, download, canDownload }) {
+export function VideoSheet({ sheet, locked, act, download, canDownload, kept = false }) {
   const { s } = useDesign();
   if (sheet.kind === "video-watch")
     return (
@@ -685,7 +687,7 @@ export function VideoSheet({ sheet, locked, act, download, canDownload }) {
   const row = show ? null : download(sheet.item);
   const saved = show ? downloadTargets(sheet.item).some((target) => !!download(target)) && "remove-download" : downloadAction(row);
   const blocked = !show && !canDownload(sheet.item);
-  const actions = titleActions(sheet.item, saved);
+  const actions = titleActions(sheet.item, kept ? null : saved);
   const removals = deleteChoices(sheet.item, sheet.season);
   const labels = {
     watched: ["Mark as watched", "check"],

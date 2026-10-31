@@ -8860,15 +8860,31 @@ test("the Folders step says what it has not counted, starts a folder with a poli
   }
 });
 
-test("a server's Folders step streams Movies & TV with no Keep to choose", async () => {
+test("a server's Folders step keeps Movies & TV at a destination like Audio", async () => {
   const ui = await folderStep({ web: true, folders: hubFolders(1024 ** 3) });
   try {
-    assert.equal(ui.named("videos").querySelector(".segmented"), null, "a server cannot keep Movies & TV");
-    assert.match(ui.named("videos").textContent, /Streams from hub/);
+    assert.equal(ui.named("videos").querySelector(".segmented .active").textContent, "Stream");
     assert.equal(ui.named("music").querySelector(".segmented .active").textContent, "Keep");
+    ui.named("videos").querySelector('[data-mode="keep"]').click();
+    assert.match(ui.line(), /^Not enough space/, "a kept library counts toward the download");
+    ui.named("videos").querySelector('[data-mode="stream"]').click();
     ui.action().click();
     await until(() => ui.selected.length === 4);
     assert.deepEqual(ui.plain().at(-1), { id: "vid", mode: "stream" });
+  } finally {
+    ui.w.close();
+  }
+});
+
+test("a kept Movies & TV library starts at its own folder under the root", async () => {
+  const gb = 1024 ** 3;
+  const ui = await folderStep({ folders: [{ id: "vid", name: "videos", video: true, files: 3, bytes: gb }] });
+  try {
+    ui.named("videos").querySelector('[data-mode="keep"]').click();
+    assert.match(ui.named("videos").textContent, /3 files · 1\.0 GB/);
+    ui.action().click();
+    await until(() => ui.selected.length === 1);
+    assert.deepEqual(ui.plain(), [{ id: "vid", mode: "keep", path: `${path.join("tmp", "arca")}/videos` }]);
   } finally {
     ui.w.close();
   }

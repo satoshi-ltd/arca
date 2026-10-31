@@ -7,7 +7,8 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { Replica, CHUNK, HEADROOM, VIDEO_STOPPED } from "../apps/mobile/src/replica.js";
+import { quickHashFile } from "../packages/daemon/storage.js";
+import { Replica, CHUNK, HEADROOM } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import {
   gallerySettingsChanged,
@@ -6151,28 +6152,29 @@ test("mobile pulls the newer own edit after an already accepted edit is retried"
   assert.equal(fs.readdirSync(volume.path).some((name) => name.includes(".conflict-")), false);
 });
 
-test("a phone never keeps a Movies & TV folder: selecting is refused and an earlier copy stops syncing without being deleted", async (t) => {
+test("a phone keeps a Movies & TV folder as a complete two-way copy fingerprinted like the hub", async (t) => {
   const f = await fixture(t),
     { volume, replica, files, daemon } = f;
   fs.writeFileSync(path.join(volume.path, "Heat (1995).mp4"), "film");
+  daemon.engine.video.mark(volume.id);
   await daemon.engine.cycle();
   await f.client.refresh();
-  await replica.select(f.client.state().catalog.volumes[0]);
+  const remote = f.client.state().catalog.volumes.find((v) => v.id === volume.id);
+  assert.equal(remote.video, true);
+  await replica.select(remote);
   await sync(f);
-  const local = files.work(replica.scope, volume.id, "Heat (1995).mp4");
-  assert.equal(fs.readFileSync(local, "utf8"), "film");
-  daemon.engine.video.mark(volume.id);
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "Heat (1995).mp4"), "utf8"), "film");
   fs.writeFileSync(path.join(volume.path, "Up (2009).mp4"), "second");
   await daemon.engine.cycle();
   await f.client.refresh();
   await sync(f);
-  assert.equal(fs.existsSync(files.work(replica.scope, volume.id, "Up (2009).mp4")), false, "nothing new arrives once it is a video library");
-  assert.equal(fs.readFileSync(local, "utf8"), "film", "and the copy it had stays");
-  assert.equal((await f.store.folder(replica.scope, volume.id)).issue, VIDEO_STOPPED, "the folder says why it stopped");
-  assert.equal(VIDEO_STOPPED, "Stopped syncing: Movies & TV live only on the hub");
-  const remote = f.client.state().catalog.volumes.find((v) => v.id === volume.id);
-  assert.equal(remote.video, true);
-  await assert.rejects(replica.select(remote), /live only on the hub/);
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "Up (2009).mp4"), "utf8"), "second", "new titles arrive");
+  fs.writeFileSync(files.work(replica.scope, volume.id, "Alien (1979).mp4"), "third");
+  await sync(f);
+  await daemon.engine.cycle();
+  assert.equal(fs.readFileSync(path.join(volume.path, "Alien (1979).mp4"), "utf8"), "third", "a file added on the phone reaches the hub");
+  assert.equal((await f.store.current(replica.scope, volume.id, "Alien (1979).mp4")).hash, quickHashFile(path.join(volume.path, "Alien (1979).mp4")));
+  assert.equal((await f.store.folder(replica.scope, volume.id)).issue ?? null, null);
   await replica.unselect(volume.id);
-  assert.ok(!(await f.store.folder(replica.scope, volume.id)), "Stop syncing still removes the old copy");
+  assert.ok(!(await f.store.folder(replica.scope, volume.id)), "Stop syncing removes the copy");
 });

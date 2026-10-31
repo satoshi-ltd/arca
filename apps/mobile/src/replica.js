@@ -33,8 +33,8 @@ import {
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 import { REPORTABLE_VERSION } from "./device-line.js";
-import { isVideoFolder, refreshVideoLibrary, videoModes, videoModesKey } from "./video-sync.js";
-import { playableBytes, subtitleFile } from "./video-downloads.js";
+import { isVideoFolder, videoModes, videoModesKey } from "./video-sync.js";
+import { quickHash, subtitleFile } from "./video-downloads.js";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
 export { validPath, validRow } from "./validation.js";
@@ -48,8 +48,6 @@ const blockTimeout = (length) => 15000 + Math.ceil(length / 32768) * 1000;
 const transientSnapshot = (error) =>
   ["SNAPSHOT_BUSY", "SNAPSHOT_EXPIRED"].includes(error?.code);
 
-export const STREAM_ONLY = "Movies & TV folders live only on the hub. Play them from the library.";
-export const VIDEO_STOPPED = "Stopped syncing: Movies & TV live only on the hub";
 export class Replica {
   constructor({
     store,
@@ -305,11 +303,12 @@ export class Replica {
       await this.requireActiveReplica();
       if (!this.scope) throw new Error("Connect to a hub first");
       if (this.removing) throw new Error("Wait for the current operation to finish.");
-      if (volume.video) throw new Error(STREAM_ONLY);
       if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
         throw new Error(
           "Remove the remaining local copy before selecting this folder again.",
         );
+      if ((await videoModes(this))[volume.id] === "keep")
+        throw new Error("This library is kept on this device. Stop syncing it to remove its titles.");
       const folders = await this.store.selectionBytes(this.scope);
       const catalog = new Map(
         (this.client.state().catalog?.volumes || []).map((folder) => [folder.id, folder]),
@@ -324,6 +323,12 @@ export class Replica {
       await this.space(required);
       await this.files.mkdir(this.files.folder(this.scope, volume.id));
       await this.store.select(this.scope, volume);
+      const modes = await videoModes(this);
+      if (modes[volume.id]) {
+        delete modes[volume.id];
+        await this.store.set(videoModesKey(this.scope), modes);
+        await this.dropVideoDownloads(volume.id);
+      }
       if ((await streamedIds(this)).includes(volume.id)) {
         await this.dropAudioDownloads(volume.id);
         await this.store.set(
@@ -349,47 +354,45 @@ export class Replica {
       await this.store.set(streamedKey(this.scope), [...ids, volume.id]);
     this.changed();
   }
-  async startVideo(volume, mode, platform = null) {
+  async streamVideo(volume) {
     await this.requireActiveReplica();
     if (!this.scope) throw new Error("Connect to a hub first");
     if (this.removing) throw new Error("Wait for the current operation to finish.");
     if (!isVideoFolder(this.client.state().catalog, volume.id))
-      throw new Error("Only Movies & TV libraries stream or keep from the hub.");
-    if (mode === "keep") await this.space(await this.keptBytes(volume, platform));
-    await this.store.set(videoModesKey(this.scope), {
-      ...(await videoModes(this)),
-      [volume.id]: mode === "keep" ? "keep" : "stream",
-    });
+      throw new Error("Only Movies & TV libraries stream from the hub.");
+    if ((await this.store.folder(this.scope, volume.id))?.selected)
+      throw new Error("This library is already kept on this phone.");
+    await this.store.set(videoModesKey(this.scope), { ...(await videoModes(this)), [volume.id]: "stream" });
     this.changed();
-  }
-  async keptBytes(volume, platform) {
-    if (!platform) return volume.bytes || 0;
-    const library = await refreshVideoLibrary(this, volume.id).then((fresh) => fresh.library, () => null);
-    return playableBytes(library, platform) ?? (volume.bytes || 0);
   }
   async stopVideo(id) {
     await this.requireActiveReplica();
     if (this.removing || this.importing)
       throw new Error("Wait for the current operation to finish.");
     const scope = this.scope;
+    if ((await this.store.folder(scope, id))?.selected)
+      throw new Error("This library is kept on this phone. Use Stop syncing to remove its copy.");
     this.removing = true;
     try {
       const modes = await videoModes(this);
       delete modes[id];
       await this.store.set(videoModesKey(scope), modes);
-      if (this.videoDownloads) await this.videoDownloads.removeVolume(id);
-      else
-        for (const row of (await this.store.videoDownloads(scope)).filter((item) => item.volume === id)) {
-          const media = this.files.videoDownload(scope, id, `${row.hash}.${row.ext}`);
-          await this.files.remove(`${media}.part`);
-          await this.files.remove(media);
-          for (const key of row.subtitles || [])
-            await this.files.remove(this.files.videoDownload(scope, id, subtitleFile(row, key)));
-          await this.store.forgetVideoDownload(scope, id, row.path);
-        }
+      await this.dropVideoDownloads(id);
     } finally {
       this.removing = false;
       this.changed();
+    }
+  }
+  async dropVideoDownloads(id) {
+    const scope = this.scope;
+    if (this.videoDownloads) return this.videoDownloads.removeVolume(id);
+    for (const row of (await this.store.videoDownloads(scope)).filter((item) => item.volume === id)) {
+      const media = this.files.videoDownload(scope, id, `${row.hash}.${row.ext}`);
+      await this.files.remove(`${media}.part`);
+      await this.files.remove(media);
+      for (const key of row.subtitles || [])
+        await this.files.remove(this.files.videoDownload(scope, id, subtitleFile(row, key)));
+      await this.store.forgetVideoDownload(scope, id, row.path);
     }
   }
   async stopStreaming(id) {
@@ -512,14 +515,27 @@ export class Replica {
     }
     this.check();
   }
-  async download(hash, size) {
+  async fingerprint(uri, volume) {
+    if (!volume || !isVideoFolder(this.client.state().catalog, volume)) return this.files.hash(uri);
+    const { size } = await this.files.stat(uri);
+    return quickHash((at, length) => this.files.read(uri, at, length), size);
+  }
+  async matchFingerprint(volume) {
+    const key = `fingerprint:${this.scope}:${volume}`;
+    const kind = isVideoFolder(this.client.state().catalog, volume) ? "video" : "sha256";
+    if ((await this.store.get(key, "sha256")) === kind) return;
+    for (const [uri, record] of this.hashCache) if (record.volume === volume) this.hashCache.delete(uri);
+    await this.store.forgetVolumeHashes(this.scope, volume);
+    await this.store.set(key, kind);
+  }
+  async download(hash, size, volume = null) {
     if (!this.client.state().catalog?.blobRanges)
       throw new Error(
         "Update your hub to a release with mobile transfer support before downloading files.",
       );
     const object = this.files.object(this.scope, hash);
     if (await this.files.exists(object)) {
-      if ((await this.files.hash(object)) === hash) return object;
+      if ((await this.fingerprint(object, volume)) === hash) return object;
       this.verified.delete(object);
       await this.files.remove(object);
     }
@@ -570,7 +586,7 @@ export class Replica {
         bytesTotal: size,
       });
     }
-    if ((await this.files.hash(tmp)) !== hash) {
+    if ((await this.fingerprint(tmp, volume)) !== hash) {
       await this.files.remove(tmp);
       throw new Error("File verification failed. Retry to download it again.");
     }
@@ -579,7 +595,7 @@ export class Replica {
     return object;
   }
   async snapshotLocal(volume, path, file, base) {
-    const hash = await this.files.hash(file),
+    const hash = await this.fingerprint(file, volume),
       size = (await this.files.stat(file)).size;
     this.check();
     const object = this.files.object(this.scope, hash);
@@ -589,7 +605,7 @@ export class Replica {
       await this.files.copy(file, object);
       this.check();
     }
-    if ((await this.files.hash(object)) !== hash)
+    if ((await this.fingerprint(object, volume)) !== hash)
       throw new Error("File changed while reading. Retry synchronization.");
     this.verified.add(object);
     this.pulling?.retained.add(hash);
@@ -602,7 +618,7 @@ export class Replica {
     const remote = versions[0],
       file = this.files.work(this.scope, folder.id, ".arcaignore");
     const present = await this.files.exists(file),
-      local = present ? await this.files.hash(file) : null;
+      local = present ? await this.fingerprint(file, folder.id) : null;
     if (present && (await this.files.stat(file)).size > 65536)
       throw new Error(".arcaignore exceeds 64 KiB");
     const known = await this.store.current(
@@ -691,7 +707,7 @@ export class Replica {
       return cached.hash;
     }
     if (stat?.directory) return "directory";
-    const hash = await this.files.hash(uri);
+    const hash = await this.fingerprint(uri, volume);
     const after = await this.files.stat(uri);
     if (!after || after.size !== stat.size || after.mtime !== stat.mtime)
       throw new Error("File changed while being checked. Sync will retry.");
@@ -741,7 +757,7 @@ export class Replica {
     }
     let hash;
     try {
-      hash = await this.files.hash(uri);
+      hash = await this.fingerprint(uri, record.volume);
     } catch {
       await this.forgetHash(key);
       return false;
@@ -895,7 +911,7 @@ export class Replica {
   async upload(op, source = null, verifiedOriginal = false) {
     const object = source || this.files.object(this.scope, op.hash);
     if (!(verifiedOriginal && source) && !this.verified.has(object)) {
-      if ((await this.files.hash(object)) !== op.hash)
+      if ((await this.fingerprint(object, op.volume)) !== op.hash)
         throw new Error("Queued upload failed verification");
       if (!source) this.verified.add(object);
     }
@@ -1046,7 +1062,7 @@ export class Replica {
         throw new Error(`Path type conflicts with local content: ${row.path}`);
       if (info.directory) await this.files.removeDirectory(target);
       else {
-        const actual = await this.files.hash(target);
+        const actual = await this.fingerprint(target, row.volume);
         if (actual !== (current.localHash ?? current.hash)) {
           const conflict = `${row.path}.conflict-mobile-${actual.slice(0, 12)}`;
           const kept = this.files.work(this.scope, row.volume, conflict);
@@ -1105,10 +1121,10 @@ export class Replica {
           placed &&
           placed !== target &&
           (await this.files.exists(placed)) &&
-          (await this.files.hash(placed)) === row.hash
+          (await this.fingerprint(placed, row.volume)) === row.hash
             ? placed
             : null;
-        const object = source ?? (await this.download(row.hash, row.size));
+        const object = source ?? (await this.download(row.hash, row.size, row.volume));
         if (pulling && !source && !pulling.retained.has(row.hash)) {
           this.verified.delete(object);
           await this.files.move(object, temp);
@@ -1126,7 +1142,7 @@ export class Replica {
       actual = seen ? await this.localHash(target, row.volume, row.path) : null;
       // A size/mtime cache hit cannot prove a file is unedited before it is replaced or removed.
       if (seen && actual !== row.hash && actual === baseline)
-        actual = await this.files.hash(target);
+        actual = await this.fingerprint(target, row.volume);
       const known = (hash) => !hash || hash === row.hash || hash === baseline;
       const preserve = async (hash) => {
         if (!staged || known(hash)) return;
@@ -1145,7 +1161,7 @@ export class Replica {
           latest.size !== seen.size ||
           latest.mtime !== seen.mtime)
       ) {
-        const now = await this.files.hash(target);
+        const now = await this.fingerprint(target, row.volume);
         if (now !== actual) await preserve(now);
         actual = now;
       }
@@ -1593,11 +1609,7 @@ export class Replica {
           settled.add(folder.id);
           continue;
         }
-        if (catalog.volumes.some((v) => v.id === folder.id && v.video)) {
-          settled.add(folder.id);
-          if (folder.issue !== VIDEO_STOPPED) await this.store.issue(this.scope, folder.id, VIDEO_STOPPED);
-          continue;
-        }
+        await this.matchFingerprint(folder.id);
         if (!catalog.volumes.some((v) => v.id === folder.id)) {
           settled.add(folder.id);
           await this.store.issue(
@@ -1787,7 +1799,7 @@ export class Replica {
     if (!folder?.selected) throw new Error("Start syncing this folder first");
     const size = (await this.files.stat(source)).size;
     await this.space(size * 2);
-    const incoming = await this.files.hash(source);
+    const incoming = await this.fingerprint(source, volume);
     const conflict = `${name}.conflict-import-${incoming.slice(0, 12)}`;
     const candidates = [
       name,
@@ -1805,7 +1817,7 @@ export class Replica {
       if (
         !present.directory &&
         present.size === size &&
-        (await this.files.hash(target)) === incoming
+        (await this.fingerprint(target, volume)) === incoming
       )
         return;
     }
@@ -1925,7 +1937,7 @@ export class Replica {
     }
     // A same-size edit within one mtime tick would otherwise reuse the stale cached hash and never sync.
     const stat = await this.files.stat(target);
-    await this.rememberHash(target, target, stat, await this.files.hash(target), volume, path);
+    await this.rememberHash(target, target, stat, await this.fingerprint(target, volume), volume, path);
   }
   async playlistEdit(volume, path, work) {
     if (this.renaming || this.removing || this.importing || this.picking)

@@ -24,3 +24,4 @@ export const sameDetail = (sheet, target) =>
   sheet?.kind === "history" &&
   sheet.volume === target.volume &&
   sheet.path === target.path;
+export const restorable = (row) => !row.deleted && row.kept !== false;

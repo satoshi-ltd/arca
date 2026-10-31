@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { offlineFileHistory, sameDetail } from "../apps/mobile/src/file-history.js";
+import { offlineFileHistory, restorable, sameDetail } from "../apps/mobile/src/file-history.js";
+import fs from "node:fs";
 
 const saved = { rev: 5, size: 12, deleted: 0 };
 const entry = { path: "a.txt", mtime: Date.UTC(2026, 8, 30, 10) };
@@ -49,4 +50,13 @@ test("a quiet refresh only applies while the same file detail is still open", ()
   assert.equal(sameDetail({ kind: "history", volume: "v", path: "a.txt" }, target), true);
   for (const moved of [null, undefined, { kind: "conflict", volume: "v", path: "a.txt" }, { kind: "rename-file", volume: "v", path: "a.txt" }, { kind: "history", volume: "v", path: "b.txt" }, { kind: "history", volume: "w", path: "a.txt" }])
     assert.equal(sameDetail(moved, target), false, JSON.stringify(moved));
+});
+
+test("a version the hub no longer keeps offers no Restore, like a deletion", () => {
+  assert.equal(restorable(row(4)), true);
+  assert.equal(restorable({ ...row(4), kept: true }), true);
+  assert.equal(restorable({ ...row(4), kept: false }), false, "a Movies & TV version whose content is gone");
+  assert.equal(restorable({ ...row(4), deleted: 1 }), false);
+  const screen = fs.readFileSync(new URL("../apps/mobile/src/FileHistory.jsx", import.meta.url), "utf8");
+  assert.match(screen, /restorable\(row\) && \(\s*<Button[\s\S]*?label="Restore"/, "the history screen asks before offering Restore");
 });

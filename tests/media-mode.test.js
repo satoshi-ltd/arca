@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import ffmpeg from "ffmpeg-static";
 import { digest, init, Store, SCHEMA_VERSION, token } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
-import { VideoDownloads, keptTitles } from "../packages/daemon/video-downloads.js";
+import { VideoDownloads } from "../packages/daemon/video-downloads.js";
 import { api, clip, hub, image } from "./video-support.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-media-mode-"));
@@ -53,7 +53,7 @@ async function musicHub(t) {
 async function replicaOf(t, f, options = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-media-replica-"));
   init(home, { port: 0, name: "Desk", role: "replica" });
-  const replica = await start(home, { timer: false, videoDownloads: { chunk: 4 * 1024, poll: 20, keepEvery: 0, ...options } });
+  const replica = await start(home, { timer: false, videoDownloads: { chunk: 4 * 1024, poll: 20, ...options } });
   t.after(async () => {
     await replica.close();
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -293,7 +293,11 @@ async function showLibrary(f) {
   await f.daemon.engine.cycle();
   return { files, library: await f.settled() };
 }
-const titlesOf = (library) => keptTitles(library);
+const titlesOf = (library) => [
+  ...library.movies,
+  ...library.other,
+  ...library.shows.flatMap((show) => show.seasons.flatMap((season) => season.episodes)),
+];
 
 test("a streamed Movies & TV library downloads a movie and an episode that then play offline", async (t) => {
   const f = await hub(t);
@@ -318,147 +322,6 @@ test("a streamed Movies & TV library downloads a movie and an episode that then 
   assert.equal((await r.call(`/v1/video/downloads?volume=${f.v.id}`)).downloads.length, 1, "per-title Remove works while streaming");
 });
 
-test("Keep on the desktop app follows the hub: queues every title in order, replaces a changed one once complete, removes a gone one only after two complete reads", async (t) => {
-  const f = await hub(t);
-  const { files, library } = await showLibrary(f);
-  const r = await replicaOf(t, f);
-  r.replica.engine.config.installation = "desktop";
-  await assert.rejects(f.call("/v1/select", { id: f.v.id, mode: "keep" }), { status: 403 }, "the hub answers 403 to keep");
-  await r.call("/v1/select", { id: f.v.id, mode: "keep" });
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  await idle(r);
-  const rows = () => r.downloads.rows(f.v.id);
-  assert.deepEqual(rows().map((row) => row.state), ["done", "done", "done"], "every title is kept");
-  assert.deepEqual(rows().map((row) => row.path), titlesOf(library).map((item) => item.path), "queued newest first");
-  const movie = "Movies/Heat (1995)/Heat (1995).mp4";
-  await assert.rejects(r.call("/v1/video/download/remove", { volume: f.v.id, paths: [movie] }), { status: 409 }, "a kept title is not removed by hand");
-
-  const changed = clip({ seconds: 3, tone: 650 });
-  fs.writeFileSync(path.join(f.v.path, ...movie.split("/")), changed);
-  await f.daemon.engine.cycle();
-  await f.settled();
-  const stored = r.downloads.row(f.v.id, movie);
-  const held = r.downloads.halt();
-  await held;
-  r.downloads.halting = true;
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.equal(r.downloads.row(f.v.id, movie).state, "queued", "the changed file is queued again");
-  assert.deepEqual(fs.readFileSync(r.downloads.where(stored)), files[movie], "the old copy stays until the new one is complete");
-  const playsOld = async (message) => {
-    const current = (await r.call(`/v1/video/library?volume=${f.v.id}`)).movies.find((item) => item.path === movie);
-    away(r);
-    const { url } = await r.call(`/v1/video/playback?${new URLSearchParams({ volume: f.v.id, path: movie, hash: current.hash })}`);
-    const response = await fetch(url, { headers: { Range: "bytes=0-7" } });
-    assert.equal(response.status, 206, message);
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), files[movie].subarray(0, 8));
-    const saved = r.replica.engine.store.db.prepare("SELECT key,value,used FROM remote_views").all();
-    r.replica.engine.store.db.exec("DELETE FROM remote_views");
-    assert.ok((await r.call(`/v1/video/library?volume=${f.v.id}`)).movies.some((item) => item.path === movie), "the offline library still lists it");
-    for (const row of saved) r.replica.engine.store.db.prepare("INSERT INTO remote_views(key,value,used) VALUES(?,?,?)").run(row.key, row.value, row.used);
-    back(r);
-  };
-  await playsOld("the old copy plays offline while its replacement waits");
-  const online = await fetch(`${r.base}/v1/video/media?${new URLSearchParams({ volume: f.v.id, path: movie, hash: stored.hash })}`, {
-    headers: { Authorization: `Bearer ${r.replica.engine.config.adminToken}`, Range: "bytes=2-9" },
-  });
-  assert.equal(online.status, 206, "with the hub online the old copy still plays under its own hash");
-  assert.deepEqual(Buffer.from(await online.arrayBuffer()), files[movie].subarray(2, 10));
-  await assert.rejects(r.call("/v1/video/download/cancel", { volume: f.v.id, paths: [movie] }), { status: 409 }, "a kept title cannot be cancelled");
-  assert.deepEqual(fs.readFileSync(r.downloads.where(stored)), files[movie], "and its old copy stays");
-  const rename = fs.renameSync;
-  t.after(() => {
-    fs.renameSync = rename;
-  });
-  fs.renameSync = () => {
-    throw Object.assign(new Error(`ENOSPC: no space left, rename '${r.home}'`), { code: "ENOSPC" });
-  };
-  r.downloads.halting = false;
-  await idle(r);
-  fs.renameSync = rename;
-  assert.equal(r.downloads.row(f.v.id, movie).state, "failed", "the replacement failed");
-  await playsOld("the old copy still plays offline after a failed replacement");
-  r.downloads.halting = true;
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.equal(r.downloads.row(f.v.id, movie).state, "failed", "a failed replacement is not downloaded again while the hub's file stays the same");
-  const again = clip({ seconds: 3, tone: 660 });
-  fs.writeFileSync(path.join(f.v.path, ...movie.split("/")), again);
-  await f.daemon.engine.cycle();
-  await f.settled();
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.equal(r.downloads.row(f.v.id, movie).state, "queued", "a new file on the hub is tried");
-  await playsOld("the original copy still stands in");
-  r.downloads.platform = "win32";
-  let busy = 0;
-  fs.renameSync = (...args) => {
-    if (!busy++) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${args[0]}'`), { code: "EPERM" });
-    return rename(...args);
-  };
-  r.downloads.halting = false;
-  await idle(r);
-  const waiting = r.downloads.row(f.v.id, movie);
-  assert.equal(waiting.state, "queued", "an open copy on Windows never fails the download");
-  assert.equal(waiting.error, "Close the video on this device so its new copy can replace the old one");
-  assert.doesNotMatch(waiting.error, /EPERM|\//);
-  await idle(r);
-  fs.renameSync = rename;
-  assert.equal(r.downloads.row(f.v.id, movie).state, "done");
-  assert.equal(r.downloads.row(f.v.id, movie).previous, null);
-  assert.deepEqual(fs.readFileSync(r.downloads.where(stored)), again, "and is replaced once complete");
-
-  const up = "Movies/Up (2009)/Up (2009).mp4";
-  const rev = f.s.current(f.v.id, up).rev;
-  await f.call("/v1/video/delete", { volume: f.v.id, path: up, rev });
-  await f.settled();
-  away(r);
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.ok(r.downloads.row(f.v.id, up), "an offline read never removes");
-  back(r);
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.ok(r.downloads.row(f.v.id, up), "one complete read without it keeps it");
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.ok(r.downloads.row(f.v.id, up), "an unchanged read seconds later keeps it");
-  r.replica.engine.store.db.prepare("UPDATE video_keep_missing SET at=at-61000").run();
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.equal(r.downloads.row(f.v.id, up), undefined, "an unchanged read a minute after the first removes it");
-  assert.equal(r.replica.engine.store.db.prepare("SELECT count(*) AS n FROM video_keep_missing").get().n, 0, "its mark goes with it");
-
-  const result = await r.call("/v1/unselect", { id: f.v.id, deleteFiles: true });
-  assert.equal(result.deleted, 2);
-  assert.deepEqual(rows(), []);
-  assert.deepEqual(fs.readdirSync(path.join(r.home, "video-downloads")), [], "Stop syncing and delete removes the kept copies");
-});
-
-test("Keep stops queuing at the free-space floor without evicting anything", async (t) => {
-  const f = await hub(t);
-  const { library } = await showLibrary(f);
-  const [first] = titlesOf(library);
-  const gib = 1024 ** 3;
-  const space = { bsize: 1, blocks: 20 * gib, bavail: 5 * gib + first.size + 10 };
-  const r = await replicaOf(t, f, { space: () => space });
-  r.replica.engine.config.installation = "desktop";
-  await r.call("/v1/select", { id: f.v.id, mode: "keep" });
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  await idle(r);
-  assert.deepEqual(r.downloads.rows(f.v.id).map((row) => row.path), [first.path], "only what fits above 5 GB free is queued");
-  space.bavail = 3 * gib;
-  space.blocks = 40 * gib;
-  await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.deepEqual(r.downloads.rows(f.v.id).map((row) => [row.path, row.state]), [[first.path, "done"]], "below the floor nothing new is queued and nothing is removed");
-});
-
-test("Continue watching and Next up are kept first, then the newest added", () => {
-  const item = (id, added) => ({ id, path: `${id}.mp4`, hash: digest(id), added });
-  const library = {
-    movies: [item("old", "2020-01-01"), item("new", "2026-01-01"), item("paused", "2019-01-01")],
-    shows: [{ seasons: [{ episodes: [item("next", "2018-01-01"), item("later", "2025-01-01")] }] }],
-    other: [],
-    continue: ["paused"],
-    nextUp: ["next"],
-  };
-  assert.deepEqual(keptTitles(library).map((entry) => entry.id), ["paused", "next", "new", "later", "old"]);
-});
-
 test("the index records its media modes under schema 2, and an older download table gains its kind", (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-media-schema-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -475,21 +338,6 @@ test("the index records its media modes under schema 2, and an older download ta
   new VideoDownloads({ store, config: store.config });
   assert.equal(store.db.prepare("SELECT kind FROM video_downloads").get().kind, "video", "existing downloads are video downloads");
   store.db.close();
-});
-
-test("Keep never fails a library read when free space cannot be read, and queues nothing then", async (t) => {
-  const f = await hub(t);
-  await showLibrary(f);
-  const r = await replicaOf(t, f, {
-    space: () => {
-      throw Object.assign(new Error("EIO: statfs"), { code: "EIO" });
-    },
-  });
-  r.replica.engine.config.installation = "desktop";
-  await r.call("/v1/select", { id: f.v.id, mode: "keep" });
-  const library = await r.call(`/v1/video/library?volume=${f.v.id}`);
-  assert.equal(library.movies.length, 2, "the library still answers");
-  assert.deepEqual(r.downloads.rows(f.v.id), [], "nothing is queued without knowing the free space");
 });
 
 test("Stop syncing a streamed Audio library removes its downloads even when the files are kept", async (t) => {
@@ -515,20 +363,6 @@ test("Stop syncing a streamed Movies & TV library without deleting keeps its dow
   await idle(r);
   await r.call("/v1/unselect", { id: f.v.id });
   assert.equal(r.downloads.rows(f.v.id)[0].state, "done");
-});
-
-test("the missing marks of Keep go with another hub and with a folder the catalog no longer lists as Movies & TV", async (t) => {
-  const f = await hub(t);
-  await showLibrary(f);
-  const r = await replicaOf(t, f);
-  const marks = r.replica.engine.store.db;
-  const insert = marks.prepare("INSERT INTO video_keep_missing(hub,volume,path,at) VALUES(?,?,?,?)");
-  insert.run("old-hub", f.v.id, "a.mp4", 1);
-  insert.run(r.replica.engine.config.hub.id, "gone", "b.mp4", 1);
-  insert.run(r.replica.engine.config.hub.id, f.v.id, "c.mp4", 1);
-  r.downloads.pruneHubs();
-  r.downloads.pruneCatalog([{ id: f.v.id, video: true }]);
-  assert.deepEqual(marks.prepare("SELECT volume,path FROM video_keep_missing").all().map((row) => ({ ...row })), [{ volume: f.v.id, path: "c.mp4" }]);
 });
 
 test("on Windows a copy that cannot be replaced while open waits without holding up the next download", async (t) => {
@@ -575,39 +409,20 @@ test("outside Windows a refused rename is a real failure", async (t) => {
   assert.equal(r.downloads.row(f.v.id, "Movies/Heat (1995)/Heat (1995).mp4").state, "failed");
 });
 
-test("a replacement whose new file is already in place, after a crash or a hub that reverted, clears its stand-in", async (t) => {
+test("a library kept the old way keeps its downloads through library reads, and only Stop syncing removes them", async (t) => {
   const f = await hub(t);
-  const { library } = await showLibrary(f);
+  await showLibrary(f);
   const r = await replicaOf(t, f);
   const heat = "Movies/Heat (1995)/Heat (1995).mp4";
+  await r.call("/v1/select", { id: f.v.id, mode: "stream" });
   await r.call("/v1/video/download", { volume: f.v.id, paths: [heat] });
   await idle(r);
-  const item = titlesOf(library).find((entry) => entry.path === heat);
-  const store = r.replica.engine.store.db;
-  store
-    .prepare("UPDATE video_downloads SET state='queued',previous=? WHERE path=?")
-    .run(JSON.stringify({ hash: "0".repeat(64), size: item.size, item: { ...item, hash: "0".repeat(64) }, show: null }), heat);
-  await idle(r);
-  const row = r.downloads.row(f.v.id, heat);
-  assert.equal(row.state, "done");
-  assert.equal(row.previous, null, "the copy on disk is the current one, so nothing stands in for it");
-  assert.equal(r.downloads.local(f.v.id, heat, "0".repeat(64)), null);
-});
-
-test("Stop syncing a kept library counts the old copies of pending replacements as deleted", async (t) => {
-  const f = await hub(t);
-  const { library } = await showLibrary(f);
-  const r = await replicaOf(t, f);
-  r.replica.engine.config.installation = "desktop";
-  await r.call("/v1/select", { id: f.v.id, mode: "keep" });
+  const { size } = r.downloads.row(f.v.id, heat);
+  r.replica.engine.store.db.prepare("UPDATE media_modes SET mode='keep' WHERE volume=?").run(f.v.id);
+  r.replica.engine.store.db.prepare("UPDATE video_downloads SET path='Movies/Gone (2001)/Gone (2001).mp4' WHERE path=?").run(heat);
   await r.call(`/v1/video/library?volume=${f.v.id}`);
   await idle(r);
-  const heat = "Movies/Heat (1995)/Heat (1995).mp4";
-  const item = titlesOf(library).find((entry) => entry.path === heat);
-  r.replica.engine.store.db
-    .prepare("UPDATE video_downloads SET state='queued',hash=?,previous=? WHERE path=?")
-    .run("1".repeat(64), JSON.stringify({ hash: item.hash, size: item.size, item, show: null }), heat);
-  const total = titlesOf(library).reduce((sum, entry) => sum + entry.size, 0);
-  r.downloads.halting = true;
-  assert.deepEqual(await r.call("/v1/unselect", { id: f.v.id, deleteFiles: true }), { deleted: 3, deletedBytes: total, kept: 0 });
+  assert.deepEqual(r.downloads.rows(f.v.id).map((row) => [row.path, row.state]), [["Movies/Gone (2001)/Gone (2001).mp4", "done"]], "nothing new is queued and nothing is removed");
+  assert.deepEqual(await r.call("/v1/unselect", { id: f.v.id, deleteFiles: true }), { deleted: 1, deletedBytes: size, kept: 0 });
+  assert.deepEqual(r.downloads.rows(f.v.id), []);
 });

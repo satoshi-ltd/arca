@@ -374,8 +374,8 @@ test("Set up as library replaces the Enable items and asks what the folder holds
   assert.equal(ui.text("#dialog .modal-title p"), "documents · 8 files · 12.4 GB");
   assert.deepEqual(ui.texts("#dialog .role-card strong"), ["Photos", "Audio", "Movies & TV"]);
   assert.deepEqual(ui.$$('#dialog .role-card input[type="radio"]').map((el) => el.value), ["gallery", "music", "video"]);
-  assert.deepEqual(ui.texts("#dialog .role-card p"), ["Photos and videos by date.", "Music and podcasts, with playlists.", "Films and series. Stays on the hub and streams to your devices; no older versions."]);
-  assert.equal(ui.text("#dialog-content > .hint"), "This can’t be changed later. Your files stay as they are; Movies & TV also removes the folder’s older versions, and other devices stop syncing it and stream it instead.");
+  assert.deepEqual(ui.texts("#dialog .role-card p"), ["Photos and videos by date.", "Music and podcasts, with playlists.", "Films and series, streamed or kept on your devices."]);
+  assert.equal(ui.text("#dialog-content > .hint"), "This can’t be changed later. Your files stay as they are; Movies & TV also removes the folder’s older versions.");
   assert.equal(ui.text("#submit-dialog"), "Set up");
   assert.equal(ui.$("#submit-dialog").disabled, true, "Set up waits for a choice");
   const video = ui.$('#dialog input[value="video"]');
@@ -775,10 +775,10 @@ test("Search Arca lists Videos and opens a title page", async (t) => {
   assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "TV Shows", "Breaking Bad"]);
 });
 
-test("a selected replica shows the item menu without hub-only actions", async (t) => {
+test("a replica that keeps the library shows the item menu without hub-only actions or downloads", async (t) => {
   const ui = await boot(t, { status: { ...hubStatus(), id: "mac", name: "Mac", role: "replica", hub: "http://casa", hubId: "hub" } });
   await openMovie(ui);
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Download", "Delete movie…"]);
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Delete movie…"], "a kept library has its files, so there is nothing to download");
   const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
@@ -1303,18 +1303,17 @@ test("embedded MKV subtitles are listed and extracted from the hub only when cho
   assert.equal(ui.video().querySelectorAll("track")[0].getAttribute("src"), null);
 });
 
-test("a Movies & TV folder shows no version history to keep and its Delete movie… says it cannot be undone", async (t) => {
+test("a Movies & TV folder on the hub keeps versions like any folder and its Delete movie… says history can restore it", async (t) => {
   const ui = await boot(t);
   await library(ui);
   await ui.click('[data-action="video-mode"]', () => ui.$(".folder-history-status"));
-  assert.equal(ui.text(".folder-history-status strong"), "Off");
-  assert.equal(ui.text(".folder-history-status p"), "Movies & TV keep current files only");
-  assert.equal(ui.$("#folder-retention"), null, "no retention control for a folder that keeps no versions");
+  assert.equal(ui.text(".folder-history-status p"), "Older versions kept");
+  assert.ok(ui.$("#folder-retention"), "the hub's retention control applies to it");
   assert.doesNotMatch(ui.text("#content"), /Hub working copy/, "nor a way to stop the hub's own copy");
   await ui.click('[data-action="video-mode"]', () => ui.$(".video-tools"));
   await openMovie(ui);
   await ui.click('.video-menu [data-action="video-delete"]', () => ui.$("#dialog[open]"));
-  assert.match(ui.text("#dialog"), /cannot be undone/);
+  assert.match(ui.text("#dialog"), /Retained history can restore it/);
   assert.equal(ui.text("#dialog-title"), "Delete “Inception”?");
   assert.equal(ui.text("#submit-dialog"), "Delete movie");
   assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
@@ -1353,7 +1352,7 @@ test("on the hub an episode row holds the watched toggle and one ⋯ whose Delet
   assert.ok(remove.classList.contains("danger") && remove.classList.contains("menu-item-separated"));
   assert.equal(remove.querySelector("[data-icon]").dataset.icon, "trash-2");
   await ui.click(remove, () => ui.$("#dialog[open]"));
-  assert.match(ui.text("#dialog"), /cannot be undone/);
+  assert.match(ui.text("#dialog"), /Retained history can restore it/);
   assert.equal(ui.text("#submit-dialog"), "Delete episode");
   assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
   await ui.click("#submit-dialog", () => deletions(ui).length === 1);
@@ -1388,7 +1387,7 @@ test("a show's ⋯ ends with Delete show…, naming the show and counting every 
   assert.ok(ui.$('[data-action="video-delete-show"]').classList.contains("menu-item-separated"));
   await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
   assert.equal(ui.text("#dialog-title"), "Delete “Breaking Bad”?");
-  assert.match(ui.text("#dialog"), /Removes the file from the hub for every device and cannot be undone: Movies & TV keeps no copies or history\. The download on this device goes with it\./);
+  assert.match(ui.text("#dialog"), /Removes the file from the hub for every device\. Retained history can restore it\. The download on this device goes with it\./);
   assert.equal(ui.text("#submit-dialog"), "Delete 7 episodes");
   assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
   await ui.click("#submit-dialog", () => deletions(ui).length === 7 && /7 episodes deleted\./.test(ui.text("#notice") || ""));
@@ -1708,7 +1707,15 @@ test("an embedded track the hub is still preparing loads once it is ready, askin
   assert.ok(asked.every((route) => route.includes("poll=1")));
 });
 
-const replicaStatus = () => ({ ...hubStatus(), id: "mac", name: "Mac", role: "replica", hub: "http://casa", hubId: "hub" });
+const replicaStatus = () => ({
+  ...hubStatus([{ ...base, id: "vid", name: "video", video: true, selected: 0, path: null, mode: "stream" }]),
+  id: "mac",
+  name: "Mac",
+  role: "replica",
+  hub: "http://casa",
+  hubId: "hub",
+  media: { vid: "stream" },
+});
 function fakeDownloads(rows = []) {
   const state = { rows };
   const answer = (route, method, body) => {

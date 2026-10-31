@@ -15,8 +15,6 @@ export function isVideoFolder(catalog, id) {
   return !!catalog?.video && !!catalog.volumes?.some((v) => v.id === id && v.video);
 }
 
-export const acceptsWrites = (catalog, folder) => !!folder?.selected && !isVideoFolder(catalog, folder.id);
-
 export async function cachedVideoLibrary(replica, volume) {
   const saved = replica?.scope ? await replica.store.videoLibrary(replica.scope, volume).catch(() => null) : null;
   return saved ? normalizeLibrary(saved.value) : null;
@@ -41,17 +39,10 @@ export async function videoModes(replica) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-export async function refreshVideoLibrary(replica, volume, { signal, downloads = null, platform = null } = {}) {
+export async function refreshVideoLibrary(replica, volume, { signal, downloads = null } = {}) {
   const fresh = await readVideoLibrary(replica, volume, { signal });
   await downloads?.prune(volume, fresh.library);
-  const kept = async () => !replica.removing && (await videoModes(replica))[volume] === "keep";
-  if (downloads && platform && (await kept())) await downloads.keep(volume, fresh.library, platform, kept);
   return fresh;
-}
-
-export async function keepVideoLibraries(replica, downloads, platform) {
-  for (const [volume, mode] of Object.entries(await videoModes(replica)))
-    if (mode === "keep" && !replica.removing) await refreshVideoLibrary(replica, volume, { downloads, platform }).catch(() => null);
 }
 
 async function readVideoLibrary(replica, volume, { signal } = {}) {

@@ -49,8 +49,7 @@ import {
   init,
   digest,
   fail,
-  hashFile,
-  hashFileAsync,
+  fingerprintMatches,
   validPath,
   atomic,
   requireSpace,
@@ -73,7 +72,6 @@ function fileDate(file) {
     ? new Date(time).toISOString()
     : null;
 }
-export const STREAM_ONLY = "Movies & TV folders live only on the hub. Play them from the library.";
 export const MEDIA_MODES = ["stream", "keep"];
 export const MEDIA_SWITCH = "Stop syncing this library before choosing again.";
 export const STREAMED_EDIT = "Keep this folder on this device to edit it";
@@ -485,7 +483,7 @@ export class Engine {
   async download(hash, size) {
     const file = this.store.blob(hash);
     if (fs.existsSync(file)) {
-      if ((await hashFileAsync(file)) === hash) return;
+      if (await fingerprintMatches(file, hash)) return;
       // Keep the damaged object until a verified replacement is ready.
     }
     if (this.progress)
@@ -546,7 +544,7 @@ export class Engine {
         clearTimeout(idle);
       }
     }
-    if (fs.statSync(tmp).size !== size || (await hashFileAsync(tmp)) !== hash) {
+    if (fs.statSync(tmp).size !== size || !(await fingerprintMatches(tmp, hash))) {
       fs.unlinkSync(tmp);
       fail("Downloaded content failed integrity verification", 409);
     }
@@ -1060,6 +1058,14 @@ export class Engine {
               .slice(0, 200)
               .map(({ id, name }) => ({ id, name: name.slice(0, 100) }))
           : [];
+        if (this.config.role === "replica")
+          for (const v of catalog.volumes) {
+            const local = s.volumes().find((row) => row.id === v.id && row.path);
+            if (local && !!v.video !== s.videoFolder(v.id)) {
+              const prefix = `${local.path}${path.sep}`.replace(/[!%_]/g, (c) => `!${c}`);
+              s.db.prepare("DELETE FROM scan_cache WHERE path LIKE ? ESCAPE '!'").run(`${prefix}%`);
+            }
+          }
         this.config.catalog = catalog.volumes.map((v) =>
           this.catalogEntry(v),
         );
@@ -1072,9 +1078,7 @@ export class Engine {
           s.db
             .prepare("UPDATE volumes SET name=? WHERE id=?")
             .run(remote.name, remote.id);
-        const activeIds = new Set(
-          catalog.volumes.filter((v) => !v.video).map((v) => v.id),
-        );
+        const activeIds = new Set(catalog.volumes.map((v) => v.id));
         if (this.config.role === "replica") {
           for (const local of s.volumes()) {
             if (!activeIds.has(local.id)) {
@@ -1906,6 +1910,8 @@ export class Engine {
     this.store.recover();
     // A hub serves content from its object store, which a replica only fills for transfers.
     this.store.db.exec("DELETE FROM scan_cache");
+    for (const v of this.store.volumes().filter((v) => this.store.videoFolder(v.id)))
+      this.store.forgetVolume(v.id);
     const scans = [];
     for (const v of this.store.volumes().filter((v) => v.selected))
       scans.push([v, await this.scanner.scan(v)]);
@@ -2521,14 +2527,12 @@ export class Engine {
       if (mode !== undefined) fail("The hub holds every library; it never streams or keeps one", 403);
     } else if (v.music || v.video) {
       mode ??= v.video ? "stream" : "keep";
-      const chosen = s.mediaMode(id) || (s.volumes().find((row) => row.id === id)?.selected ? "keep" : null);
-      if (chosen && chosen !== mode) fail(MEDIA_SWITCH, 409);
-      if (v.video && mode === "keep" && this.config.installation !== "desktop")
-        fail("Keep Movies & TV on the desktop app. A server streams them from the hub.", 409);
-      if (v.video || mode === "stream") {
+      const saved = s.mediaMode(id);
+      const chosen = saved || (s.volumes().find((row) => row.id === id)?.selected ? "keep" : null);
+      if ((chosen && chosen !== mode) || saved === "keep") fail(MEDIA_SWITCH, 409);
+      if (mode === "stream") {
         this.rememberCatalogVolume(v);
         s.db.prepare("INSERT OR IGNORE INTO media_modes(volume,mode) VALUES(?,?)").run(id, mode);
-        if (v.video && mode === "keep") void this.videoDownloads?.wake();
         return { id, name: v.name, mode };
       }
     } else if (mode === "stream") fail("Only Audio and Movies & TV libraries stream", 400);
@@ -2611,7 +2615,7 @@ export class Engine {
         )
       )
         fail("A file or folder with that name already exists", 409);
-      if (!fs.lstatSync(file).isFile() || (!rewrites && hashFile(file) !== current.hash))
+      if (!fs.lstatSync(file).isFile() || (!rewrites && this.store.contentHash(volume, file) !== current.hash))
         fail("Local file changed. Sync before renaming.", 409);
       if (this.config.role !== "hub") {
         if (name.toLowerCase() === destination.toLowerCase())
@@ -2798,7 +2802,8 @@ export class Engine {
     if (current.directory) fail("Use file deletion only for files", 409);
     if (current.rev !== Number(rev))
       fail("File changed. Reload before deleting.", 409);
-    if (this.config.role === "hub")
+    if (this.config.role === "hub") {
+      this.store.assertVersionBeside(volume, name);
       return this.store.commit(
         volume,
         name,
@@ -2807,6 +2812,7 @@ export class Engine {
         true,
         current.hash,
       );
+    }
     const file = this.store.filePath(v, name);
     const local = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!local) fail(MISSING_LOCAL, 409);
@@ -2849,14 +2855,19 @@ export class Engine {
   async restore(volume, name, rev) {
     if (this.config.role !== "hub")
       return this.hubAction("/v1/restore", { volume, path: name, rev }, 25000);
-    if (this.store.streamOnly(volume))
-      fail("Movies & TV folders keep no older versions to restore.", 409);
     await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
     const version = this.store
       .history(volume, name)
       .find((r) => r.rev === Number(rev));
     if (!version || version.deleted) fail("Restorable version not found", 404);
+    if (!version.directory) {
+      const source = this.store.contentFile(version.hash);
+      if (!fs.existsSync(source) || !(await fingerprintMatches(source, version.hash)))
+        fail("This version is no longer kept", 409);
+      if (source === this.store.versionFile(volume, version.hash)) this.store.verifiedVersions.add(source);
+    }
     const old = this.store.current(volume, name);
+    if (old && !old.deleted) this.store.assertVersionBeside(volume, name);
     return this.store.commit(
       volume,
       name,

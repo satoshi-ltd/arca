@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
+export const VIDEO_VERSIONS = ".arca-versions";
 export const TRANSFER_TEMP =
   /^\.arca-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sweepTemp = (file, olderThan) => {
@@ -133,6 +134,9 @@ export async function hashFileAsync(file) {
   for await (const chunk of input) hash.update(chunk);
   return hash.digest("hex");
 }
+export async function fingerprintMatches(file, hash) {
+  return quickHashFile(file) === hash || (await hashFileAsync(file)) === hash;
+}
 export function requireSpace(location, additionalBytes) {
   let directory = location;
   while (!fs.existsSync(directory)) {
@@ -208,7 +212,7 @@ export async function deleteSyncedCopy({ root, files, directories }) {
         !before ||
         fs.statSync(item.file).size !== item.size ||
         fs.realpathSync(path.dirname(item.file)) !== path.dirname(item.file) ||
-        (await hashFileAsync(item.file)) !== item.hash ||
+        (item.quick ? quickHashFile(item.file) : await hashFileAsync(item.file)) !== item.hash ||
         fileSignature(item.file) !== before
       )
         continue;
@@ -324,6 +328,7 @@ export class Store {
     this.config = JSON.parse(fs.readFileSync(this.configPath));
     this.objects = path.join(this.home, "objects");
     this.uploads = path.join(this.home, "uploads");
+    this.verifiedVersions = new Set();
     fs.mkdirSync(this.objects, { recursive: true });
     fs.mkdirSync(this.uploads, { recursive: true });
     this.db = new DatabaseSync(path.join(this.home, "index.sqlite"));
@@ -537,6 +542,7 @@ export class Store {
     const v = this.volume(id);
     this.assertVolume(v);
     const excluded = this.ignoreRules(v);
+    const quick = this.videoFolder(id);
     const files = [],
       directories = new Set([v.path]);
     for (const row of this.db
@@ -552,7 +558,7 @@ export class Store {
         continue;
       }
       if (row.directory) directories.add(file);
-      else if (row.hash) files.push({ file, hash: row.hash, size: row.size });
+      else if (row.hash) files.push({ file, hash: row.hash, size: row.size, quick });
       for (
         let parent = path.dirname(file);
         parent.startsWith(v.path + path.sep);
@@ -834,21 +840,98 @@ export class Store {
     if (!/^[a-f0-9]{64}$/.test(hash || "")) fail("Invalid content hash");
     return path.join(this.objects, hash);
   }
+  videoFolder(id) {
+    return this.config.role === "hub"
+      ? !!this.db.prepare("SELECT 1 FROM video_folders WHERE volume=?").get(id)
+      : !!this.config.catalog?.find((row) => row.id === id)?.video;
+  }
   streamOnly(id) {
-    return (
-      this.config.role === "hub" &&
-      !!this.db.prepare("SELECT 1 FROM video_folders WHERE volume=?").get(id)
-    );
+    return this.config.role === "hub" && this.videoFolder(id);
   }
   contentHash(volume, file) {
-    return this.streamOnly(volume) ? quickHashFile(file) : hashFile(file);
+    return this.videoFolder(volume) ? quickHashFile(file) : hashFile(file);
   }
   async holds(volume, file, hash) {
-    if (this.streamOnly(volume) && quickHashFile(file) === hash) return true;
+    if (this.videoFolder(volume) && quickHashFile(file) === hash) return true;
     return (await hashFileAsync(file)) === hash;
   }
-  capture(file, accepted = null, inPlace = false) {
-    const hashOf = inPlace ? quickHashFile : hashFile;
+  versionFile(volume, hash) {
+    return path.join(this.volume(volume).path, VIDEO_VERSIONS, hash);
+  }
+  contentFile(hash) {
+    const object = this.blob(hash);
+    if (fs.existsSync(object) || this.config.role !== "hub") return object;
+    for (const row of this.db
+      .prepare(
+        "SELECT volume,path FROM files WHERE hash=? AND deleted=0 AND directory=0 AND volume IN (SELECT volume FROM video_folders)",
+      )
+      .all(hash)) {
+      const file = this.localContent(row.volume, row.path, hash);
+      if (file) return file;
+    }
+    for (const row of this.db
+      .prepare(
+        "SELECT DISTINCT volume FROM revisions WHERE hash=? AND volume IN (SELECT volume FROM video_folders)",
+      )
+      .all(hash)) {
+      const file = this.versionFile(row.volume, hash);
+      if (fs.existsSync(file)) return file;
+    }
+    return object;
+  }
+  assertVersionBeside(volume, name) {
+    if (!this.streamOnly(volume) || this.config.folderRetention?.[volume] === "off") return;
+    const file = this.filePath(this.volume(volume), name);
+    const directory = path.dirname(this.versionFile(volume, "probe"));
+    const probe = path.join(path.dirname(file), `.arca-${crypto.randomUUID()}`);
+    const target = path.join(directory, path.basename(probe));
+    try {
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(probe, "");
+      fs.renameSync(probe, target);
+    } catch (error) {
+      fail(
+        `Could not keep the older version beside the file in ${VIDEO_VERSIONS} (${error.code || error.message}). Keep the Movies & TV folder on one disk.`,
+        409,
+      );
+    } finally {
+      fs.rmSync(probe, { force: true });
+      fs.rmSync(target, { force: true });
+    }
+  }
+  retire(side, volume, hash) {
+    if (this.config.folderRetention?.[volume] === "off") {
+      fs.unlinkSync(side);
+      return true;
+    }
+    const target = this.versionFile(volume, hash);
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(side);
+      return true;
+    }
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.renameSync(side, target);
+    } catch {
+      return false;
+    }
+    const now = new Date();
+    fs.utimesSync(target, now, now);
+    syncDirectory(path.dirname(target));
+    return true;
+  }
+  dropVideoVersions(volume) {
+    const directory = path.dirname(this.versionFile(volume, "probe"));
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+      if (entry.isFile() && (/^[a-f0-9]{64}$/.test(entry.name) || TRANSFER_TEMP.test(entry.name)))
+        fs.rmSync(path.join(directory, entry.name), { force: true });
+    try {
+      fs.rmdirSync(directory);
+    } catch {}
+  }
+  capture(file, accepted = null, inPlace = false, quick = inPlace) {
+    const hashOf = quick ? quickHashFile : hashFile;
     const signature = () => {
       const s = fs.statSync(file, { bigint: true });
       return [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(":");
@@ -878,11 +961,16 @@ export class Store {
       if (
         (hashOf(file) === cached.hash || (inPlace && hashFile(file) === cached.hash)) &&
         signature() === before &&
-        (inPlace || !fs.existsSync(object) || hashFile(object) === cached.hash)
+        (inPlace || !fs.existsSync(object) || hashOf(object) === cached.hash)
       ) {
         record([file, before, cached.hash, cached.size, Date.now()]);
         return { hash: cached.hash, size: cached.size };
       }
+    }
+    if (quick && accepted && !inPlace && quickHashFile(file) === accepted && signature() === before) {
+      const size = fs.statSync(file).size;
+      record([file, before, accepted, size, Date.now()]);
+      return { hash: accepted, size };
     }
     if (inPlace) {
       const hash = quickHashFile(file);
@@ -900,10 +988,10 @@ export class Store {
       fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
       if (before !== signature())
         fail("File changed during scan; retrying", 409);
-      const hash = hashFile(tmp),
+      const hash = hashOf(tmp),
         size = fs.statSync(tmp).size;
       const object = this.blob(hash);
-      if (!fs.existsSync(object) || hashFile(object) !== hash) {
+      if (!fs.existsSync(object) || hashOf(object) !== hash) {
         const fd = fs.openSync(tmp, "r+");
         try {
           fs.fsyncSync(fd);
@@ -1003,6 +1091,7 @@ export class Store {
   scan(v, scopes = null, checkpoint = () => {}) {
     this.assertVolume(v);
     const inPlace = this.streamOnly(v.id);
+    const quick = this.videoFolder(v.id);
     const result = new Map();
     const excluded = this.ignoreRules(v);
     const names = new Map();
@@ -1066,6 +1155,7 @@ export class Store {
             this.filePath(v, name),
             known && !known.deleted ? known.hash : null,
             inPlace,
+            quick,
           ),
         );
       } else fail(`Unsupported file: ${name}`, 409);
@@ -1260,10 +1350,11 @@ export class Store {
     } catch {
       actual = null;
     }
-    if (known(actual)) {
+    if (known(actual) && !(volume && this.streamOnly(volume))) {
       fs.unlinkSync(side);
       return null;
     }
+    if (known(actual) && this.retire(side, volume, actual)) return null;
     syncDirectory(path.dirname(side));
     return side;
   }
@@ -1401,8 +1492,16 @@ export class Store {
           this.markDirty(row.volume, row.path);
       } else fs.mkdirSync(file, { recursive: true });
     } else {
-      if (!row.deleted) requireSpace(path.dirname(file), row.size);
-      if (!row.deleted && hashFile(this.blob(row.hash)) !== row.hash)
+      const retired = !row.deleted && this.streamOnly(row.volume) ? this.versionFile(row.volume, row.hash) : null;
+      const version = !!retired && fs.existsSync(retired);
+      const source = row.deleted ? null : version ? retired : this.contentFile(row.hash);
+      if (!row.deleted && !version) requireSpace(path.dirname(file), row.size);
+      if (
+        source &&
+        this.contentHash(row.volume, source) !== row.hash &&
+        !(version && this.verifiedVersions.has(source)) &&
+        (version || hashFile(source) !== row.hash)
+      )
         fail("Historical object corruption detected", 409);
       if (fs.existsSync(file) && !fs.lstatSync(file).isFile())
         fail(`Path is not a regular file: ${row.path}`, 409);
@@ -1415,6 +1514,17 @@ export class Store {
             this.markDirty(row.volume, row.path);
           } else keep(side);
         }
+      } else if (version) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        const side = fs.existsSync(file) ? this.displace(file, row) : null;
+        try {
+          fs.renameSync(source, file);
+        } catch (error) {
+          if (side && !fs.existsSync(file)) fs.renameSync(side, file);
+          throw error;
+        }
+        this.verifiedVersions.delete(source);
+        if (side) keep(this.settle(side, known, row.volume));
       } else {
         fs.mkdirSync(path.dirname(file), { recursive: true });
         const tmp = path.join(
@@ -1422,7 +1532,7 @@ export class Store {
           `.arca-${crypto.randomUUID()}`,
         );
         try {
-          fs.copyFileSync(this.blob(row.hash), tmp);
+          fs.copyFileSync(source, tmp);
           fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
           const fd = fs.openSync(tmp, "r+");
           try {

@@ -114,7 +114,7 @@ export const deleteVideo = ({ title, season = null, unit, items }) => {
   const what = unit === "movie" ? "the file" : `${count(items.length, "episode", "episodes")}`;
   return {
     title: `Delete “${title}”${season == null ? "" : ` season ${season}`}?`,
-    message: `Removes ${what} from the hub for every device and cannot be undone: Movies & TV keeps no copies or history. The download${items.length === 1 ? "" : "s"} on this device ${items.length === 1 ? "goes" : "go"} with it.`,
+    message: `Removes ${what} from the hub for every device. Retained history can restore it. The download${items.length === 1 ? "" : "s"} on this device ${items.length === 1 ? "goes" : "go"} with it.`,
     label: unit === "movie" ? "Delete movie" : `Delete ${count(items.length, "episode", "episodes")}`,
     icon: "trash",
     destructive: true,

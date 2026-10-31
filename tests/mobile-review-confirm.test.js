@@ -151,7 +151,6 @@ test("onboarding offers Stream or Keep for media, sizes only what downloads and 
   const folders = [{ id: "a", bytes: 10 }, { id: "v", bytes: 100 }, { id: "d", bytes: 5 }];
   assert.equal(downloadBytes(folders, { a: "stream", v: "stream", d: "keep" }), 5);
   assert.equal(downloadBytes(folders, { a: "keep", v: "keep", d: "keep" }), 115);
-  assert.equal(downloadBytes(folders, { a: "keep", v: "keep", d: "keep" }, { v: 60 }), 75, "a known playable size replaces the folder size");
   assert.deepEqual(startLabel([], {}), { label: "Choose folders", icon: null });
   assert.deepEqual(startLabel(folders.slice(0, 2), { a: "stream", v: "stream" }), { label: "Start streaming", icon: "play" });
   assert.deepEqual(startLabel(folders, { a: "stream", v: "stream", d: "keep" }), { label: "Start syncing 3 folders", icon: "refresh" });
@@ -160,10 +159,10 @@ test("onboarding offers Stream or Keep for media, sizes only what downloads and 
   assert.match(screen, /const folders = catalog\?\.volumes \|\| \[\];/, "Movies & TV libraries are offered too");
   assert.match(screen, /description=\{folder\.policyError \|\| \(modes\[folder\.id\] === "stream" \? "Streams from hub" : folderSize\(folder\)\)\}/);
   assert.match(screen, /\{!!kinds\[folder\.id\] && selected\.includes\(folder\.id\) && \(\s+<SegmentedControl/);
-  assert.match(screen, /\{bytes\(downloadBytes\(chosen, modes, sizes\)\)\} to download ·/);
+  assert.match(screen, /\{bytes\(downloadBytes\(chosen, modes\)\)\} to download ·/);
   assert.match(screen, /label=\{action\.label\}\s+icon=\{action\.icon\}\s+primary\s+disabled=\{!chosen\.length\}[\s\S]{0,60}onPress=\{\(\) => download\(chosen\.map\(\(folder\) => folder\.id\), modes\)\}/);
-  assert.match(read("App.jsx"), /audioStreams=\{playerAvailable\}\s+sizes=\{keptSizes\}/);
-  assert.match(read("App.jsx"), /download=\{\(ids, modes\) =>[\s\S]{0,600}await selectFirstFolders\(r, client\.state\(\)\.catalog, ids, modes, Platform\.OS\);/);
+  assert.match(read("App.jsx"), /audioStreams=\{playerAvailable\}/);
+  assert.match(read("App.jsx"), /download=\{\(ids, modes\) =>[\s\S]{0,600}await selectFirstFolders\(r, client\.state\(\)\.catalog, ids, modes\);/);
 });
 
 test("tapping the scrim or dragging the grabber down dismisses a sheet unless it is busy", async () => {
