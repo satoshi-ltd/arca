@@ -414,10 +414,53 @@ test("the tabs and the sort share one row; Movies sorts and stacks a saga, and H
   assert.equal(ui.text(".video-more .section-label"), "Related");
   assert.deepEqual(ui.texts(".video-more .music-card strong"), ["The Two Towers"]);
   await ui.click(ui.$(".video-more .music-card"), () => ui.text(".video-backdrop h2") === "The Two Towers");
-  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "Movies", "The Two Towers"], "a related title opens its own page");
+  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "The Two Towers"], "a related title opens its own page");
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
   assert.match(css, /\.video-tools \{\s*flex-wrap: wrap;\s*\}\s*\.video-tools > \.segmented\.video-sort \{\s*margin-left: auto;/, "a narrow window wraps the sort to its own row, aligned right");
   assert.doesNotMatch(css, /video-chip|video-genres|video-filters/);
+});
+
+test("a title with a TMDB trailer offers Trailer, opened outside Arca, never for kids or offline", async (t) => {
+  const withTrailer = (extra = {}) => () => {
+    const data = sampleLibrary();
+    for (const item of data.movies) item.trailer = item.title === "Inception" ? "dQw4w9WgXcQ" : null;
+    for (const show of data.shows) show.trailer = show.title === "Breaking Bad" ? "breakingBad" : null;
+    for (const item of data.movies) if (extra.kids && item.title === "Inception") item.kids = true;
+    return { ...data, ...(extra.offline ? { offline: true } : {}) };
+  };
+  const ui = await boot(t, { library: withTrailer() });
+  await openMovie(ui);
+  const link = ui.$('.video-backdrop .heading-actions a[data-trailer]');
+  assert.equal(link.textContent, "Trailer");
+  assert.equal(link.getAttribute("href"), "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  assert.equal(link.getAttribute("target"), "_blank");
+  assert.equal(link.getAttribute("rel"), "noopener noreferrer");
+  assert.ok(link.classList.contains("secondary") && link.querySelector('[data-icon="external-link"]'));
+  assert.equal(link.previousElementSibling.textContent, "Mark as watched", "after Mark as watched");
+  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
+  await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
+  await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
+  await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
+  const show = ui.$(".video-backdrop .heading-actions a[data-trailer]");
+  assert.equal(show.getAttribute("href"), "https://www.youtube.com/watch?v=breakingBad");
+  assert.equal(show.previousElementSibling.dataset.action, "video-quick-watched", "a show offers it after Mark all episodes");
+
+  const kids = await boot(t, { library: withTrailer({ kids: true }) });
+  await openMovie(kids, "Inception", "kids");
+  assert.equal(kids.$("a[data-trailer]"), null, "a kids title never links out");
+  const offline = await boot(t, { library: withTrailer({ offline: true }) });
+  await openMovie(offline);
+  assert.equal(offline.$("a[data-trailer]"), null, "a cached answer from an unreachable hub hides it");
+
+  const app = source("app.js");
+  assert.match(app, /const videoLive = \(entry\) => !!entry && !entry\.offline && !hubOffline\(\) && navigator\.onLine !== false;/);
+  assert.match(app, /const before = JSON\.stringify\(\[known\?\.indexing, known\?\.matching, known\?\.offline\]\);/, "a hub coming back repaints the page even when the library is unchanged");
+  assert.match(app, /JSON\.stringify\(\[entry\.indexing, entry\.matching, entry\.offline\]\) !== before/);
+  assert.match(app, /for \(const name of \["online", "offline"\]\)\n  window\.addEventListener\(name, \(\) => \{\n    if \(videoShowing\(detailId\)\) renderVideo\(folderVolume\(detailId\)\);/, "losing the internet repaints the page");
+  assert.match(app, /const link = event\.target\.closest\?\.\("a\[data-trailer\]"\);\n  if \(!link \|\| !native\) return;\n  event\.preventDefault\(\);\n  invoke\("open_trailer", \{ key: link\.dataset\.trailer \}\)/, "the desktop app hands the key to the system browser");
+  const rust = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(rust, /async fn open_trailer\(key: String\)[\s\S]*?trailer_url\(&key\)\.ok_or\("Invalid trailer"\)\?/);
+  assert.match(rust, /open_maps,\s+open_trailer,/);
 });
 
 test("a movie banner holds title, facts with badges, languages, overview, cast, buttons and ⋯ with nothing below it", async (t) => {
@@ -442,7 +485,7 @@ test("a movie banner holds title, facts with badges, languages, overview, cast, 
   assert.deepEqual(ui.texts(".video-backdrop .heading-actions > button"), ["Resume from 1:02:10", "Start over", "Mark as watched"]);
   assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete movie…"]);
   assert.ok(ui.$('.video-menu [data-action="video-delete"]').classList.contains("menu-item-separated"));
-  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "Movies", "Inception"]);
+  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "Inception"]);
   assert.equal(ui.$(".video-backdrop > .video-poster .video-watched"), null);
   await ui.click('.video-backdrop [data-action="video-watched"]', () => ui.text('.video-backdrop [data-action="video-watched"]') === "Mark as unwatched");
   assert.ok(ui.$('.video-backdrop > .video-poster .video-watched[aria-label="Watched"]'), "the page's own poster shows the watched mark at once");
@@ -450,7 +493,7 @@ test("a movie banner holds title, facts with badges, languages, overview, cast, 
   assert.equal(ui.text(".video-backdrop .heading-actions > button"), "Play", "a finished movie starts from the beginning");
   await ui.click('.video-menu [data-action="video-kids"]', () => ui.posts.some(([route]) => route === "/v1/video/kids"));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/kids")[1], { volume: "vid", id: "m:inception", kids: true });
-  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
+  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   assert.equal(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Arrival")).querySelector(":scope > span:last-child").textContent, "2016", "the caption is the year alone");
   assert.equal(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Arrival")).querySelector(".video-poster > .video-rating").textContent, "★ 7.9");
@@ -772,14 +815,14 @@ test("Search Arca lists Videos and opens a title page", async (t) => {
   ui.press("ArrowDown", input);
   ui.press("Enter", input);
   await until(() => !dialog().open && ui.text(".video-backdrop h2") === "Breaking Bad" && ui.idle());
-  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "TV Shows", "Breaking Bad"]);
+  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "Breaking Bad"]);
 });
 
 test("a replica that keeps the library shows the item menu without hub-only actions or downloads", async (t) => {
   const ui = await boot(t, { status: { ...hubStatus(), id: "mac", name: "Mac", role: "replica", hub: "http://casa", hubId: "hub" } });
   await openMovie(ui);
   assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Delete movie…"], "a kept library has its files, so there is nothing to download");
-  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
+  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
@@ -904,7 +947,7 @@ test("a file with several audio tracks gets an Audio menu that switches tracks a
   ui.press("Escape");
   await until(() => ui.$("#video-player").hidden && ui.idle());
 
-  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
+  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
@@ -1885,7 +1928,7 @@ test("offline, a downloaded movie still plays and Download waits for the hub", a
   const ui = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, downloads });
   await openMovie(ui, "Arrival");
   assert.equal(ui.$('.video-backdrop .video-menu [data-action="video-download"]').getAttribute("aria-disabled"), "true");
-  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
+  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Inception");
   await ui.click(card, () => ui.text(".video-backdrop h2") === "Inception");
@@ -1909,7 +1952,7 @@ test("a copy of an older file stays removable and a row the hub no longer lists 
   await openMovie(ui);
   assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Download", "Remove from this device", "Delete movie…"], "the newer file can be downloaded and the older copy removed");
 
-  await ui.click('[data-action="video-crumb"][data-id="root"]', () => ui.$(".video-shelves"));
+  await ui.click('[data-action="video-crumb"][data-id="tab"]', () => ui.$(".video-tools .video-sort"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
   const gray = ui.$$(".video-episode").find((row) => row.textContent.includes("Gray Matter"));

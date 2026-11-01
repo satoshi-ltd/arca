@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.27 — 2026-11-01
+
+- Movies and shows matched on TMDB offer Trailer on desktop, web, phones and the Fold, which opens the official trailer on YouTube outside Arca. The hub gets it in the TMDB request it already makes, so nothing else leaves it; kids titles never show it, and it is hidden while the hub or the internet is away.
+- A video title's trail reads Folders › library › title, without the tab it was opened from, and the library crumb returns to that tab. Music and video trails share a quieter style: soft crumbs, even gaps around the chevrons and the current place in bold, cut with an ellipsis when long.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.26 — 2026-11-01
 
 - The phone's share picker no longer shows Close beside Back, so leaving the picker never throws away the files being saved; Close stays on the Save step.

@@ -73,6 +73,8 @@ function file(raw) {
   };
 }
 
+export const trailerUrl = (item, online) => (online && item?.trailer && !item.kids ? `https://www.youtube.com/watch?v=${item.trailer}` : null);
+
 function titleFields(raw) {
   return {
     title: text(raw.title) || "Untitled",
@@ -83,6 +85,7 @@ function titleFields(raw) {
     rating: number(raw.rating),
     cast: strings(raw.cast).slice(0, 5),
     kids: raw.kids === true,
+    trailer: typeof raw.trailer === "string" && /^[A-Za-z0-9_-]{11}$/.test(raw.trailer) ? raw.trailer : null,
     poster: artKey(raw.poster),
     backdrop: artKey(raw.backdrop),
     tmdb: Number.isSafeInteger(raw.tmdb) ? raw.tmdb : null,

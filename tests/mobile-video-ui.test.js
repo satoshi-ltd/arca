@@ -373,3 +373,22 @@ test("the episode sheet lists Mark as watched, the download action for its state
   const pane = library.slice(library.indexOf("const episodesPane"), library.indexOf("const heroActions"));
   assert.doesNotMatch(pane, /Button|cancelDownload|startDownload/, "the season holds no progress line, no Cancel and no Download season");
 });
+
+test("a title with a TMDB trailer offers Trailer on the phone and the Fold, opened on YouTube, never for kids or offline", async () => {
+  const { normalizeLibrary, trailerUrl } = await import("../apps/mobile/src/video-library.js");
+  const raw = (trailer, kids = false) => ({ movies: [{ id: "m:a", path: "A.mp4", title: "A", trailer, kids }], shows: [], other: [] });
+  const movie = (value) => normalizeLibrary(value).movies[0];
+  assert.equal(movie(raw("dQw4w9WgXcQ")).trailer, "dQw4w9WgXcQ");
+  assert.equal(movie(raw("bad/key/../")).trailer, null, "only a YouTube key survives normalisation");
+  assert.equal(trailerUrl(movie(raw("dQw4w9WgXcQ")), true), "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  assert.equal(trailerUrl(movie(raw("dQw4w9WgXcQ")), false), null, "offline the button is gone");
+  assert.equal(trailerUrl(movie(raw("dQw4w9WgXcQ", true)), true), null, "a kids title never links out");
+  assert.equal(trailerUrl(movie(raw(null)), true), null);
+  assert.match(library, /const trailer = trailerUrl\(item, online\);\s+const watchTrailer = \(\) => Linking\.openURL\(trailer\)\.catch\(\(\) => \{\}\);/);
+  assert.match(library, /onPress=\{\(\) => mark\(item, !watched\)\} \/>\s+\{!!trailer && <DockTile label="Trailer" icon="external" spoken="Watch the trailer on YouTube" onPress=\{watchTrailer\} \/>\}/, "the phone's dock tile comes after Watched");
+  assert.equal((library.match(/\{trailerButton\}/g) || []).length, 2, "the Fold's hero offers it for movies and shows");
+  assert.match(library, /cancelDownload=\{cancelDownload\}\s+online=\{!!live && !offline\}/);
+  assert.match(app, /offline=\{!!shownVideo\?\.offline \|\| !connected\}\s+live=\{!!shownVideo\?\.live && connected\}/);
+  assert.match(app, /\{ key, library: cached, offline: false, live: false \}/, "the cached library shown before the hub answers offers no trailer");
+  assert.equal((app.match(/\{ key, library: fresh\.library, offline: false, live: true \}/g) || []).length, 2, "only a fresh answer does");
+});

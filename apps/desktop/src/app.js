@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.26";
+const APP_VERSION = "0.8.27";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7192,6 +7192,7 @@ async function loadVideoLibrary(volume) {
     known.indexing = data.indexing || false;
     known.matching = data.matching || false;
     if (data.tmdb !== undefined) known.tmdb = data.tmdb;
+    known.offline = !!data.offline;
     known.checked = Date.now();
     return known;
   }
@@ -7202,6 +7203,7 @@ async function loadVideoLibrary(volume) {
     checked: Date.now(),
     stamp: 0,
     tmdb: data.tmdb,
+    offline: !!data.offline,
     library: buildVideoLibrary(data),
   };
   videoLibraries.delete(key);
@@ -7293,7 +7295,7 @@ function refreshVideo(volume, force = false) {
   return job;
 }
 async function readVideo(volume, key, known) {
-  const before = JSON.stringify([known?.indexing, known?.matching]);
+  const before = JSON.stringify([known?.indexing, known?.matching, known?.offline]);
   try {
     const entry = await loadVideoLibrary(volume);
     const downloadsChanged = await loadVideoDownloads(volume);
@@ -7301,7 +7303,7 @@ async function readVideo(volume, key, known) {
     if (tmdbChanged) videoTouched(volume);
     videoFailures.delete(key);
     armVideoIndex(volume, videoWorking(entry) ? 5000 : VIDEO_IDLE_REFRESH);
-    if ((entry !== known || tmdbChanged || downloadsChanged || JSON.stringify([entry.indexing, entry.matching]) !== before) && videoShowing(volume)) {
+    if ((entry !== known || tmdbChanged || downloadsChanged || JSON.stringify([entry.indexing, entry.matching, entry.offline]) !== before) && videoShowing(volume)) {
       if (known && !videoWorking(entry) && (videoMenuOpen() || videoPlayer)) videoStale.add(volume);
       else renderVideo(folderVolume(volume));
     }
@@ -7464,13 +7466,18 @@ function videoBand(v, item, actions) {
   const cast = (item.cast || []).slice(0, 5);
   return `<div class="video-backdrop">${videoArt(v.id, item.backdrop, "arca", " video-backdrop-art", "large")}${videoArt(v.id, item.poster, videoSymbol(item), " video-poster", "small", videoWatchedMark(item))}<div class="music-head-info"><div><h2>${escape(item.title)}</h2>${facts ? `<p class="video-facts">${facts}</p>` : ""}${spoken ? `<p class="video-languages">${spoken}</p>` : ""}${item.overview ? `<p class="video-hero-overview">${escape(item.overview)}</p>` : ""}${cast.length ? `<p class="video-line video-cast"><strong>Cast</strong>${escape(cast.join(", "))}</p>` : ""}<div class="heading-actions">${actions}</div></div></div></div>`;
 }
-function videoMovie(v, item) {
+const videoLive = (entry) => !!entry && !entry.offline && !hubOffline() && navigator.onLine !== false;
+function videoTrailer(item, live) {
+  if (!item.trailer || item.kids || !live) return "";
+  return `<a class="secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(item.trailer)}" target="_blank" rel="noopener noreferrer" data-trailer="${escape(item.trailer)}">${icon("external-link")}Trailer</a>`;
+}
+function videoMovie(v, item, live) {
   const play = inProgress(item)
     ? button(`Resume from ${videoClock(item.position.position)}`, "video-resume", item.id, "primary", "play") +
       button("Start over", "video-start", item.id, "secondary", "rotate-ccw")
     : button("Play", "video-start", item.id, "primary", "play");
   const watched = button(item.watched ? "Mark as unwatched" : "Mark as watched", "video-watched", item.id, "secondary", item.watched ? "eye-off" : "check");
-  return videoBand(v, item, play + watched + downloadState(videoDownloadOf(v.id, item)) + videoMenu(v, item, "Movie actions"));
+  return videoBand(v, item, play + watched + videoTrailer(item, live) + downloadState(videoDownloadOf(v.id, item)) + videoMenu(v, item, "Movie actions"));
 }
 const downloadStateLabel = (row) =>
   row?.state === "done" ? "Downloaded" : row?.state === "downloading" ? `Downloading ${videoDownloadPercent(row)}%` : row?.state === "queued" ? "Waiting" : "";
@@ -7495,7 +7502,7 @@ function videoEpisodeRow(v, library, show, episode, current) {
   const actions = `<span class="row-actions">${downloadState(videoDownloadOf(v.id, episode))}${toggle}${videoMenu(v, episode, "Episode actions")}</span>`;
   return `<div class="video-episode"${current ? ' aria-current="true"' : ""}><button type="button" class="video-episode-play" data-action="video-play" data-id="${escape(episode.id)}" aria-label="${escape(`Play ${episodeName(episode)}, ${episodeMeta(episode)}`)}">${videoArt(v.id, episode.still || show.backdrop, "tv", " video-still", "small", videoBar(episode))}<span class="video-episode-main"><strong>${escape(episodeName(episode))}</strong><span class="video-meta">${escape(episodeMeta(episode))}</span>${episode.overview ? `<span class="video-overview">${escape(episode.overview)}</span>` : ""}</span></button>${actions}</div>`;
 }
-function videoShow(v, library, show) {
+function videoShow(v, library, show, live) {
   const next = nextEpisode(show);
   const play = next ? button(`Play ${episodeCode(next)}`, "video-play", next.id, "primary", "play") : "";
   const seasons = show.seasons.filter((season) => season.episodes.length);
@@ -7512,13 +7519,11 @@ function videoShow(v, library, show) {
   const watched = fullyWatched(show);
   const mark = button(watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
   const bar = control ? `<div class="video-season-bar">${control}</div>` : "";
-  return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + bar + rows;
+  return videoBand(v, show, play + mark + videoTrailer(show, live) + videoMenu(v, show, "Show actions")) + bar + rows;
 }
 function videoTrail(v, library) {
   const item = library && videoView.title && library.items.get(videoView.title);
-  const levels = [];
-  if (item) levels.push([VIDEO_TABS[videoView.tab] || "Home", "video-crumb", "tab"], [item.title]);
-  const crumbs = [["Folders", "back-folders", ""], [v.name, "video-crumb", "root"], ...levels];
+  const crumbs = [["Folders", "back-folders", ""], [v.name, "video-crumb", item ? "tab" : "root"], ...(item ? [[item.title]] : [])];
   return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
     .map(([label, action, id], index) =>
       (index ? icon("chevron-right") : "") +
@@ -7545,8 +7550,8 @@ function videoBody(v, entry) {
   const library = entry.library;
   if (videoView.title) {
     const item = library.items.get(videoView.title);
-    if (item?.kind === "movie") return `<div class="music-view video-view">${videoMovie(v, item)}${videoRelated(v, library, item)}</div>`;
-    if (item?.kind === "show") return `<div class="music-view video-view">${videoShow(v, library, item)}${videoRelated(v, library, item)}</div>`;
+    if (item?.kind === "movie") return `<div class="music-view video-view">${videoMovie(v, item, videoLive(entry))}${videoRelated(v, library, item)}</div>`;
+    if (item?.kind === "show") return `<div class="music-view video-view">${videoShow(v, library, item, videoLive(entry))}${videoRelated(v, library, item)}</div>`;
     videoView.title = null;
   }
   const tabs = videoTabs(library);
@@ -7561,7 +7566,11 @@ function videoBody(v, entry) {
   return `${videoTabsMarkup(tabs)}${videoCaption(entry)}<div class="music-view video-view">${videoTabContent(v, library)}</div>`;
 }
 const videoPlace = (v) => JSON.stringify([v.id, videoView.tab, videoView.title, videoView.season, videoView.sort]);
-const videoState = (v, entry, failure) => JSON.stringify([videoPlace(v), entry?.version, entry?.stamp, videoWorking(entry), failure, videoDownloadStamp(v.id)]);
+const videoState = (v, entry, failure) => JSON.stringify([videoPlace(v), entry?.version, entry?.stamp, videoWorking(entry), failure, videoDownloadStamp(v.id), videoLive(entry)]);
+for (const name of ["online", "offline"])
+  window.addEventListener(name, () => {
+    if (videoShowing(detailId)) renderVideo(folderVolume(detailId));
+  });
 function renderVideo(v, scroll = null) {
   if (!v) return;
   const key = videoKey(v.id);
@@ -8411,6 +8420,12 @@ function videoVolumeBy(delta) {
   } catch {}
   videoControls();
 }
+document.addEventListener("click", (event) => {
+  const link = event.target.closest?.("a[data-trailer]");
+  if (!link || !native) return;
+  event.preventDefault();
+  invoke("open_trailer", { key: link.dataset.trailer }).catch((error) => notice(error?.message || String(error), true, { id: "video" }));
+});
 document.addEventListener("click", (event) => {
   const control = event.target.closest?.("#video-player [data-video]");
   if (!control || !videoPlayer) return;

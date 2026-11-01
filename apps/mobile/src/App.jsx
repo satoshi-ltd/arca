@@ -1055,7 +1055,7 @@ export default function App() {
       const cached = await cachedVideoLibrary(replica, folder.id);
       await withQueuedPositions(replica, folder.id, cached);
       if (!active) return;
-      setVideoData((old) => (old?.key === key && old.library && !cached ? old : { key, library: cached, offline: false }));
+      setVideoData((old) => (old?.key === key && old.library && !cached ? old : { key, library: cached, offline: false, live: false }));
       if (!connected) {
         if (active) setVideoData({ key, library: cached, offline: true });
         return;
@@ -1064,7 +1064,7 @@ export default function App() {
         await flushPositions({ client, replica }).catch(() => 0);
         const fresh = await refreshVideoLibrary(replica, folder.id, { signal: controller.signal, downloads: downloads.current });
         await withQueuedPositions(replica, folder.id, fresh.library);
-        if (active) setVideoData({ key, library: fresh.library, offline: false });
+        if (active) setVideoData({ key, library: fresh.library, offline: false, live: true });
       } catch {
         if (active) setVideoData({ key, library: cached, offline: true });
       }
@@ -1085,7 +1085,7 @@ export default function App() {
         const fresh = await refreshVideoLibrary(replica, folder.id, { downloads: downloads.current });
         if (!fresh.changed) return;
         await withQueuedPositions(replica, folder.id, fresh.library);
-        setVideoData((old) => (old?.key === key && !old.offline ? { key, library: fresh.library, offline: false } : old));
+        setVideoData((old) => (old?.key === key && !old.offline ? { key, library: fresh.library, offline: false, live: true } : old));
       } catch {
       } finally {
         busy = false;
@@ -3224,6 +3224,7 @@ export default function App() {
                           <VideoLibrary
                             library={shownVideo?.library || null}
                             offline={!!shownVideo?.offline || !connected}
+                            live={!!shownVideo?.live && connected}
                             hubName={catalog?.name}
                             route={videoRoute}
                             setRoute={setVideoRoute}

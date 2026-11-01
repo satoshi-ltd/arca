@@ -43,7 +43,7 @@ const NFO_BYTES = 256 * 1024;
 export const SUBTITLE_BYTES = 2 * 1024 ** 2;
 const SUBTITLE_CACHE_BYTES = 64 * 1024 ** 2;
 export const PREPARING = Symbol("preparing");
-const lacksRelations = (job, data) => (job.kind === "movie" || job.kind === "tv") && !!data && !data.none && !(Array.isArray(data.keywords) && Array.isArray(data.recommended) && typeof data.originalLanguage === "string");
+const lacksRelations = (job, data) => (job.kind === "movie" || job.kind === "tv") && !!data && !data.none && !(Array.isArray(data.keywords) && Array.isArray(data.recommended) && typeof data.originalLanguage === "string" && (data.trailer === null || typeof data.trailer === "string"));
 function pruneDirectory(dir, limit, keep = "") {
   const files = fs
     .readdirSync(dir, { withFileTypes: true })
@@ -911,6 +911,7 @@ export class Video {
       counted(start);
       const fields = fileFields(row, details?.originalLanguage);
       const single = directory && entry.videos.length === 1;
+      const kids = kidsOf(override, certification, details?.genreIds, genres, row.path);
       movies.push({
         id: `m:${row.path}`,
         kind: "movie",
@@ -923,8 +924,9 @@ export class Video {
         rating: details?.rating ?? nfo?.rating ?? null,
         cast: details?.cast || [],
         collection: collectionName(nfo?.collection || details?.collection),
-        kids: kidsOf(override, certification, details?.genreIds, genres, row.path),
+        kids,
         kidsOverride: kidsOverride(override),
+        trailer: kids || !this.tmdb.enabled() ? null : details?.trailer || null,
         poster:
           fileArt(pick(entry, [`${stem}-poster`]) || (single ? pick(entry, POSTERS) : null), "poster") ||
           tmdbArt(details?.poster, "poster"),
@@ -1017,6 +1019,7 @@ export class Video {
         cast: details?.cast || [],
         kids: false,
         kidsOverride: null,
+        trailer: this.tmdb.enabled() ? details?.trailer || null : null,
         poster: fileArt(showArt(POSTERS), "poster") || tmdbArt(details?.poster, "poster"),
         backdrop: fileArt(showArt(BACKDROPS), "backdrop") || tmdbArt(details?.backdrop, "backdrop"),
         tmdb: details?.id ?? null,

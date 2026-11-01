@@ -5067,10 +5067,33 @@ dialog.photo-viewer {
 }
 .folder-breadcrumb.music-trail {
   height: auto;
-  min-height: var(--button-small-height);
+  min-height: var(--space-6);
+  min-width: 0;
+  gap: var(--space-1);
+  overflow: hidden;
   padding: 0;
   border-bottom: 0;
-  font-size: var(--text-body);
+  font-size: var(--text-control);
+  line-height: var(--text-control-line);
+}
+.music-trail .small-button {
+  height: var(--space-6);
+  min-height: var(--space-6);
+  padding: 0 var(--space-1);
+  border-radius: var(--r-small);
+  color: var(--soft);
+  font-size: var(--text-control);
+}
+.music-trail > .icon {
+  width: 14px;
+  height: 14px;
+}
+.music-trail [aria-current] {
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
 }
 .music-tracks {
   overflow: visible;

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Platform, Pressable, ScrollView, View } from "react-native";
+import { Image, Linking, Platform, Pressable, ScrollView, View } from "react-native";
 import { Text } from "./Text";
 import {
   Eyebrow,
@@ -41,6 +41,7 @@ import {
   deleteChoices,
   downloadTargets,
   titleActions,
+  trailerUrl,
   videoBackLabel,
   videoShelves,
   videoTabs,
@@ -372,12 +373,15 @@ function Seasons({ show, season, choose }) {
   );
 }
 
-function TitlePage({ library, item, route, setRoute, art, play, more, mark, open, download, startDownload, cancelDownload, canDownload, kept }) {
+function TitlePage({ library, item, route, setRoute, art, play, more, mark, open, download, startDownload, cancelDownload, canDownload, kept, online }) {
   const { s, wide, compact } = useDesign();
   const back = () => setRoute(route.slice(0, 1));
   const actions = titleActions(item);
   const watched = actions[0] === "unwatched";
   const show = item.kind === "show";
+  const trailer = trailerUrl(item, online);
+  const watchTrailer = () => Linking.openURL(trailer).catch(() => {});
+  const trailerButton = !!trailer && <Button label="Trailer" icon="external" onPress={watchTrailer} />;
   const focus = route[1].episode ? library.items.get(route[1].episode) : null;
   const target = playTarget(library, item);
   const season =
@@ -425,6 +429,7 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
           />
         )}
         <DockTile label={watched ? "Unwatch" : "Watched"} icon={watched ? "eye-off" : "check"} spoken={watched ? "Mark as unwatched" : "Mark as watched"} onPress={() => mark(item, !watched)} />
+        {!!trailer && <DockTile label="Trailer" icon="external" spoken="Watch the trailer on YouTube" onPress={watchTrailer} />}
       </View>
       {!!note && <Text style={s.caption}>{note}</Text>}
     </View>
@@ -466,12 +471,16 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
     </View>
   );
   const heroActions = show ? (
-    <Button label={watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched"} icon={watched ? "eye-off" : "check"} onPress={() => mark(item, !watched)} />
+    <>
+      <Button label={watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched"} icon={watched ? "eye-off" : "check"} onPress={() => mark(item, !watched)} />
+      {trailerButton}
+    </>
   ) : (
     <>
       {!!target && <Button primary label={playLabel(library, item)} icon="play" onPress={() => play(target, target.position?.position || 0)} />}
       {tile && <Button label={tile.label} icon={tile.icon} disabled={tile.disabled} onPress={tileAction[tile.action]} />}
       <Button label={watched ? "Mark as unwatched" : "Mark as watched"} icon={watched ? "eye-off" : "check"} onPress={() => mark(item, !watched)} />
+      {trailerButton}
     </>
   );
   const hero = (
@@ -551,6 +560,7 @@ export function VideoOffline({ hubName, openDevices }) {
 export function VideoLibrary({
   library,
   offline,
+  live,
   hubName,
   route,
   setRoute,
@@ -600,6 +610,7 @@ export function VideoLibrary({
           download={download}
           startDownload={startDownload}
           cancelDownload={cancelDownload}
+          online={!!live && !offline}
           canDownload={canDownload}
           kept={kept}
         />

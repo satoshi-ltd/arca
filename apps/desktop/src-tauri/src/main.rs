@@ -317,6 +317,21 @@ async fn open_maps(latitude: f64, longitude: f64) -> Result<(), String> {
     Ok(())
 }
 
+fn trailer_url(key: &str) -> Option<String> {
+    (key.len() == 11 && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .then(|| format!("https://www.youtube.com/watch?v={}", key))
+}
+
+#[tauri::command]
+async fn open_trailer(key: String) -> Result<(), String> {
+    let url = trailer_url(&key).ok_or("Invalid trailer")?;
+    #[cfg(target_os = "macos")] let mut command = Command::new("open");
+    #[cfg(target_os = "linux")] let mut command = Command::new("xdg-open");
+    #[cfg(target_os = "windows")] let mut command = { let mut c = Command::new("rundll32"); c.arg("url.dll,FileProtocolHandler"); c };
+    command.arg(url).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result<(), String> {
     let status=request("/v1/status","GET",None).await?;
@@ -728,6 +743,7 @@ fn main() {
             open_folder,
             open_file,
             open_maps,
+            open_trailer,
             save_file,
             desktop_preferences,
             set_launch_at_login,
@@ -853,6 +869,13 @@ fn main() {
 #[cfg(test)]
 mod tray_tests {
     use super::*;
+    #[test]
+    fn only_youtube_keys_open_as_trailers() {
+        assert_eq!(trailer_url("dQw4w9WgXcQ").as_deref(), Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        for key in ["", "short", "dQw4w9WgXcQx", "dQw4w9WgX/Q", "dQw4w9Wg&cQ", "dQw4w9Wg cQ"] {
+            assert_eq!(trailer_url(key), None);
+        }
+    }
     #[test]
     fn all_tray_assets_decode() {
         for bytes in [include_bytes!("../icons/tray-syncing.png").as_slice(), include_bytes!("../icons/tray-alert.png").as_slice(), include_bytes!("../icons/tray.png").as_slice(), include_bytes!("../icons/tray-paused.png").as_slice(), include_bytes!("../icons/tray-synced.png").as_slice()] {

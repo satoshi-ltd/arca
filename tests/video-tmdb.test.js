@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { closestContent, contentList, kidsCertification, withinLimit } from "../packages/daemon/tmdb.js";
+import { closestContent, contentList, kidsCertification, trailerKey, withinLimit } from "../packages/daemon/tmdb.js";
 import { clip, hub, tmdbServer } from "./video-support.js";
 
 const TOKEN = "eyJhbGciOiJIUzI1NiJ9.test-read-token";
@@ -72,6 +72,13 @@ const CATALOG = {
         ],
       },
       credits: { cast: ["Leonardo DiCaprio", "Joseph Gordon-Levitt", "Elliot Page", "Tom Hardy", "Ken Watanabe", "Cillian Murphy"].map((name) => ({ name })) },
+      videos: {
+        results: [
+          { site: "YouTube", type: "Teaser", key: "teaserKey01", iso_639_1: "es", official: true },
+          { site: "YouTube", type: "Trailer", key: "englishKey1", iso_639_1: "en", official: true },
+          { site: "YouTube", type: "Trailer", key: "spanishKey1", iso_639_1: "es", official: true },
+        ],
+      },
     },
     949: {
       id: 949,
@@ -97,6 +104,7 @@ const CATALOG = {
       belongs_to_collection: { name: "Toy Story Collection" },
       release_dates: { results: [] },
       credits: { cast: [] },
+      videos: { results: [{ site: "YouTube", type: "Trailer", key: "toyStoryKey", iso_639_1: "en", official: true }] },
     },
   },
   tv: {
@@ -113,6 +121,7 @@ const CATALOG = {
       content_ratings: { results: [{ iso_3166_1: "ES", rating: "16" }, { iso_3166_1: "US", rating: "TV-MA" }] },
       credits: { cast: [{ name: "Bryan Cranston" }] },
       seasons: [{ season_number: 1, name: "Temporada 1" }],
+      videos: { results: [{ site: "Vimeo", type: "Trailer", key: "vimeoKey001", iso_639_1: "en" }, { site: "YouTube", type: "Trailer", key: "badKey", iso_639_1: "en" }, { site: "YouTube", type: "Trailer", key: "breakingBad", iso_639_1: "en", official: false }] },
     },
     82728: {
       id: 82728,
@@ -149,6 +158,16 @@ function server() {
   };
   return tmdb;
 }
+
+test("the trailer is one official YouTube trailer, in the content's language, then English, then any", () => {
+  const row = (key, iso_639_1, official = true, type = "Trailer", site = "YouTube") => ({ key, iso_639_1, official, type, site });
+  assert.equal(trailerKey([row("englishKey1", "en"), row("frenchKey01", "fr"), row("spanishKey1", "es", false)], "es-ES"), "spanishKey1");
+  assert.equal(trailerKey([row("frenchKey01", "fr"), row("englishKey1", "en")], "es-ES"), "englishKey1");
+  assert.equal(trailerKey([row("unofficial1", "es", false), row("official001", "es")], "es-ES"), "official001");
+  assert.equal(trailerKey([row("frenchKey01", "fr")], "de-DE"), "frenchKey01");
+  assert.equal(trailerKey([row("teaserKey01", "en", true, "Teaser"), row("vimeoKey001", "en", true, "Trailer", "Vimeo"), row("short", "en"), row("bad key/../", "en")], "en-US"), null);
+  assert.equal(trailerKey(null, "en-US"), null);
+});
 
 test("kids limits compare movie certifications per country", () => {
   assert.equal(withinLimit("ES", "TP", "7"), true);
@@ -277,6 +296,54 @@ test("Refresh metadata forgets cached TMDB answers but keeps fixed matches, and 
   assert.equal(f.s.db.prepare("SELECT count(*) n FROM video_overrides").get().n, 1, "a fixed match survives a refresh");
 });
 
+test("a title TMDB no longer answers keeps its cached details, and a hub without a token offers no trailers", async (t) => {
+  const tmdb = server();
+  const f = await hub(t, { tmdb: { fetch: tmdb.fetch, interval: 0 } });
+  await f.call("/v1/video/mark", { volume: f.v.id });
+  await f.call("/v1/video/settings", { tmdbToken: TOKEN, content: "es-ES" });
+  await f.propose("Inception.2010.1080p.BluRay.x264-GRP.mp4", clip({ tone: 2000 }));
+  assert.equal((await f.settled()).movies[0].trailer, "spanishKey1");
+  const key = "tmdb:movie:27205";
+  const cached = JSON.parse(f.s.db.prepare("SELECT data FROM video_meta WHERE key=?").get(key).data);
+  delete cached.trailer;
+  f.s.db.prepare("UPDATE video_meta SET data=? WHERE key=?").run(JSON.stringify(cached), key);
+  const gone = CATALOG.movies[27205];
+  delete CATALOG.movies[27205];
+  let library;
+  try {
+    const before = tmdb.calls.length;
+    f.daemon.engine.video.generation++;
+    library = await f.settled();
+    assert.ok(tmdb.calls.slice(before).some((call) => call.url.pathname === "/3/movie/27205"), "the missing trailer is asked for");
+  } finally {
+    CATALOG.movies[27205] = gone;
+  }
+  assert.deepEqual([library.movies[0].title, library.movies[0].matched, library.movies[0].trailer], ["Origen", true, null], "a 404 on the refetch never wipes the title's details");
+  assert.equal(JSON.parse(f.s.db.prepare("SELECT data FROM video_meta WHERE key=?").get(key).data).trailer, null);
+  const kept = tmdb.calls.length;
+  f.daemon.engine.video.generation++;
+  await f.settled();
+  assert.equal(tmdb.calls.length, kept, "and it is not asked again");
+  delete CATALOG.movies[27205];
+  try {
+    await f.call("/v1/video/settings", { content: "en-US" });
+    const switched = tmdb.calls.length;
+    await f.settled();
+    for (let read = 0; read < 5; read++) await f.library();
+    assert.ok(tmdb.calls.slice(switched).filter((call) => call.url.pathname === "/3/movie/27205").length <= 1, "a title TMDB no longer answers is asked once after a content change, never in a loop");
+    assert.equal((await f.library()).matching, false);
+  } finally {
+    CATALOG.movies[27205] = gone;
+  }
+  await f.call("/v1/video/settings", { content: "es-ES" });
+  await f.settled();
+  cached.trailer = "spanishKey1";
+  f.s.db.prepare("UPDATE video_meta SET data=? WHERE key=?").run(JSON.stringify(cached), key);
+  await f.call("/v1/video/settings", { tmdbToken: "" });
+  f.daemon.engine.video.generation++;
+  assert.equal((await f.settled()).movies[0].trailer, null, "without a token the cached trailer is not offered");
+});
+
 test("with a token the hub matches titles on TMDB, caches metadata and art, falls back to English overviews and applies certifications", async (t) => {
   const tmdb = server();
   const f = await hub(t, { tmdb: { fetch: tmdb.fetch, interval: 0 } });
@@ -300,8 +367,13 @@ test("with a token the hub matches titles on TMDB, caches metadata and art, fall
   assert.deepEqual(inception.cast, ["Leonardo DiCaprio", "Joseph Gordon-Levitt", "Elliot Page", "Tom Hardy", "Ken Watanabe"]);
   assert.equal(inception.matched, true);
   assert.equal(inception.kids, false);
+  assert.equal(inception.trailer, "spanishKey1", "the trailer in the content's language wins over English and a teaser");
   const toy = library.movies.find((movie) => movie.tmdb === 862);
   assert.equal(toy.kids, true, "the Family genre is kids");
+  assert.equal(toy.trailer, null, "a kids title never links out to YouTube");
+  const detail = tmdb.calls.find((call) => call.url.pathname === "/3/movie/27205" && call.url.searchParams.has("append_to_response"));
+  assert.match(detail.url.searchParams.get("append_to_response"), /(^|,)videos(,|$)/, "the trailer comes in the lookup the hub already makes");
+  assert.equal(detail.url.searchParams.get("include_video_language"), "es,en,null");
   assert.equal(toy.collection, "Toy Story", "TMDB names lose their trailing Collection");
   const heat = library.movies.find((movie) => movie.tmdb === 949);
   assert.ok(heat.related.includes(inception.id), "TMDB recommending Inception for Heat makes them related, worked out on the hub");
@@ -317,6 +389,16 @@ test("with a token the hub matches titles on TMDB, caches metadata and art, fall
   assert.ok(tmdb.calls.slice(asked).some((call) => String(call.url).includes("/movie/949")), "a title cached before relations existed is asked again once");
   assert.ok(Array.isArray(JSON.parse(f.s.db.prepare("SELECT data FROM video_meta WHERE key=?").get(key).data).recommended));
   const [bb, bluey] = [library.shows.find((show) => show.tmdb === 1396), library.shows.find((show) => show.tmdb === 82728)];
+  assert.equal(bb.trailer, "breakingBad", "only a valid YouTube key counts");
+  assert.equal(bluey.trailer, null);
+  assert.equal(library.movies.find((movie) => movie.tmdb === 949).trailer, null);
+  const cachedInception = JSON.parse(f.s.db.prepare("SELECT data FROM video_meta WHERE key='tmdb:movie:27205'").get().data);
+  delete cachedInception.trailer;
+  f.s.db.prepare("UPDATE video_meta SET data=? WHERE key='tmdb:movie:27205'").run(JSON.stringify(cachedInception));
+  const beforeTrailer = tmdb.calls.length;
+  f.daemon.engine.video.generation++;
+  await f.settled();
+  assert.ok(tmdb.calls.slice(beforeTrailer).some((call) => String(call.url).includes("/movie/27205")), "a title cached before trailers is asked again once");
   assert.equal(bb.certification, "16");
   assert.equal(bb.kids, false);
   assert.equal(bluey.kids, false, "a show always stays in TV Shows, even with a kids rating");

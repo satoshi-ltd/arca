@@ -1979,9 +1979,11 @@ test("an audio library has one trail from Folders: the folder header and tabs on
   await ui.up("Folders", () => $(".folder-card"));
 });
 
-test("the library trail reuses the breadcrumb at body size with small ghost links", () => {
+test("the library trail is a quiet path at the control size: soft 24 px crumbs, 4 px gaps, a bold current place cut with an ellipsis", () => {
   const css = source("style.css");
-  assert.match(css, /\n\.folder-breadcrumb\.music-trail \{[^}]*height: auto;[^}]*padding: 0;[^}]*border-bottom: 0;[^}]*font-size: var\(--text-body\);/);
+  assert.match(css, /\n\.folder-breadcrumb\.music-trail \{[^}]*min-height: var\(--space-6\);[^}]*gap: var\(--space-1\);[^}]*overflow: hidden;[^}]*padding: 0;[^}]*border-bottom: 0;[^}]*font-size: var\(--text-control\);/);
+  assert.match(css, /\n\.music-trail \.small-button \{\s+height: var\(--space-6\);\s+min-height: var\(--space-6\);\s+padding: 0 var\(--space-1\);\s+border-radius: var\(--r-small\);\s+color: var\(--soft\);/);
+  assert.match(css, /\n\.music-trail \[aria-current\] \{\s+min-width: 0;\s+flex-shrink: 1;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+font-weight: 600;/);
   assert.doesNotMatch(css, /text-button/);
   assert.match(source("app.js"), /button\(escape\(label\), action, id, "ghost small-button"\)/);
 });

@@ -132,6 +132,17 @@ function tvCertifications(results) {
   return certifications;
 }
 
+const YOUTUBE_KEY = /^[A-Za-z0-9_-]{11}$/;
+export function trailerKey(results, language) {
+  const own = String(language || "").slice(0, 2).toLowerCase();
+  const rank = (row) => (row.iso_639_1 === own ? 0 : row.iso_639_1 === "en" ? 2 : 4) + (row.official === true ? 0 : 1);
+  const trailers = (Array.isArray(results) ? results : []).filter(
+    (row) => row?.site === "YouTube" && row.type === "Trailer" && typeof row.key === "string" && YOUTUBE_KEY.test(row.key),
+  );
+  return trailers.sort((a, b) => rank(a) - rank(b))[0]?.key || null;
+}
+const videoLanguages = (language) => [...new Set([String(language || "").slice(0, 2).toLowerCase(), "en"].filter(Boolean)), "null"].join(",");
+
 export class Tmdb {
   constructor(store, options = {}) {
     this.s = store;
@@ -274,7 +285,10 @@ export class Tmdb {
       else if (job.kind === "contents") this.store(job.key, await this.loadContents());
     } catch (error) {
       if (error.transient) throw error;
-      this.store(job.key, null, Date.now() + MISSING_MS);
+      const known = job.kind === "movie" || job.kind === "tv" ? this.s.db.prepare("SELECT data FROM video_meta WHERE key=?").get(job.key)?.data : null;
+      const details = known ? JSON.parse(known) : null;
+      if (details && !details.none) this.store(job.key, { keywords: [], recommended: [], originalLanguage: "", trailer: null, ...details, language: this.settings().language });
+      else this.store(job.key, null, Date.now() + MISSING_MS);
     }
   }
   contentsRow() {
@@ -330,7 +344,7 @@ export class Tmdb {
   }
   async movie(id) {
     const language = this.settings().language;
-    const body = await this.call(`/movie/${id}`, { language, append_to_response: "release_dates,credits,keywords,recommendations" });
+    const body = await this.call(`/movie/${id}`, { language, append_to_response: "release_dates,credits,keywords,recommendations,videos", include_video_language: videoLanguages(language) });
     return this.english(`/movie/${id}`, {
       id: body.id,
       title: text(body.title, 300) || text(body.original_title, 300),
@@ -347,13 +361,14 @@ export class Tmdb {
       recommended: ids(body.recommendations?.results, 40).map((value) => `movie:${value}`),
       poster: imagePath(body.poster_path),
       backdrop: imagePath(body.backdrop_path),
+      trailer: trailerKey(body.videos?.results, language),
       originalLanguage: originalLanguage(body.original_language),
       language,
     });
   }
   async tv(id) {
     const language = this.settings().language;
-    const body = await this.call(`/tv/${id}`, { language, append_to_response: "content_ratings,credits,keywords,recommendations" });
+    const body = await this.call(`/tv/${id}`, { language, append_to_response: "content_ratings,credits,keywords,recommendations,videos", include_video_language: videoLanguages(language) });
     return this.english(`/tv/${id}`, {
       id: body.id,
       title: text(body.name, 300) || text(body.original_name, 300),
@@ -371,6 +386,7 @@ export class Tmdb {
       seasons: (Array.isArray(body.seasons) ? body.seasons : [])
         .filter((row) => Number.isSafeInteger(row?.season_number))
         .map((row) => ({ season: row.season_number, name: text(row.name, 200) })),
+      trailer: trailerKey(body.videos?.results, language),
       originalLanguage: originalLanguage(body.original_language),
       language,
     });
