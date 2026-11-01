@@ -114,7 +114,7 @@ test("the player streams with the token in a header, saves positions and plays U
   assert.match(player, /\.then\(\(\) => \{\s+if \(!mounted\) return;\s+if \(!engineTrack\.current\)\s+try \{\s+player\.subtitleTrack = null;/, "an engine's default or forced track never shows while the panel says Off");
   assert.match(player, /engineTrack\.current = choice\.track;/);
   assert.match(player, /if \(!option\) \{\s+if \(!engineTrack\.current\)\s+try \{\s+player\.subtitleTrack = null;\s+\} catch \{\}\s+return;\s+\}\s+restored\.current = true;/, "tracks that arrive after loading never bring the engine's default back while the panel says Off");
-  assert.match(theme, /videoCue: \{\s+color: c\.onMedia,\s+backgroundColor: c\.mediaBar,[^}]*fontSize: wide \? 24 : 18,/);
+  assert.match(theme, /videoCue: \{\s+color: c\.onMedia,\s+backgroundColor: c\.mediaBar,[^}]*fontSize: wide \? g\.touchTitleFont : g\.touchHeadingFont,/);
   assert.match(app, /onNext=\{\(item\) => setVideoSession\(\(old\) => \(old \? \{ \.\.\.old, item, at: item\.position\?\.position \|\| 0 \} : old\)\)\}/, "Up next resumes the next episode where it stopped");
   assert.match(player, /\.then\(\(value\) => live && setSource\(\{ key, value \}\)\)/);
   assert.match(player, /\{session && source\?\.key === key \? \(/, "a new episode never mounts with the previous episode's stream");
@@ -158,7 +158,7 @@ test("on the title page only the poster overlaps the backdrop band; the heading 
   const rule = (name) => theme.match(new RegExp(`\\b${name}: \\{[^}]*\\}`))[0];
   assert.doesNotMatch(rule("videoHead"), /marginTop|alignItems: "flex-end"|position/, "the heading row starts where the band ends");
   assert.match(rule("videoHead"), /alignItems: "flex-start"/);
-  assert.match(rule("videoHeadPoster"), /marginTop: -64/);
+  assert.match(rule("videoHeadPoster"), /marginTop: -\(2 \* sp\[7\]\)/);
   assert.doesNotMatch(rule("videoHeadText"), /marginTop: -|position|top:/, "the text column never moves up under the band");
   const head = library.slice(library.indexOf("<View style={s.videoHead}>"), library.indexOf("const playRow"));
   assert.match(head, /<View style=\{s\.videoHeadPoster\}>[\s\S]*<\/View>\s+<View style=\{s\.videoHeadText\}>/);
@@ -178,7 +178,7 @@ test("sort and season pickers use the app's segmented control, there is no genre
   const components = read("components.jsx");
   assert.match(components, /export function SegmentedControl\(\{ options, value, onChange, scroll = false, fit = false, clearable = false \}\)/);
   assert.match(components, /return scroll \|\| fit \? \(\s+<ScrollView\s+horizontal\s+showsHorizontalScrollIndicator=\{false\}/);
-  assert.match(theme, /segmentScroll: \{ flex: 0, paddingHorizontal: 12 \}/, "scrolling segments size to their labels");
+  assert.match(theme, /segmentScroll: \{ flex: 0, paddingHorizontal: sp\[3\] \}/, "scrolling segments size to their labels");
   assert.match(read("video-library.js"), /other: "Others",/);
 });
 
@@ -304,7 +304,7 @@ test("titles this phone cannot play from a file offer Download disabled with the
 });
 
 test("Watch next marks a next episode NEXT and a recent arrival NEW over its still", () => {
-  assert.match(library, /\{\(card\.next \|\| card\.fresh\) && \(\s+<View style=\{s\.videoNext\} pointerEvents="none">\s+<Text style=\{s\.videoRatingText\}>\{card\.next \? "NEXT" : "NEW"\}<\/Text>/);
+  assert.match(library, /\{\(card\.next \|\| card\.fresh\) && \(\s+<View style=\{s\.videoNext\} pointerEvents="none">\s+<Text style=\{s\.videoNextText\}>\{card\.next \? "NEXT" : "NEW"\}<\/Text>/);
   assert.match(theme, /videoNext: \{\s+position: "absolute",\s+left: 6,\s+top: 6,/);
 });
 
@@ -332,7 +332,7 @@ test("the phone's poster grids hold every title without paging: rows are virtual
   assert.match(grid, /rows\.slice\(first, last \+ 1\)/, "only the rows in range are mounted");
   assert.match(library, /\(!!card\.caption \|\| fill\) && \(/, "a card without a year keeps the row height of the others");
   assert.match(app, /<VideoLibrary[\s\S]*?scrollRef=\{galleryScroll\}\s+scrollY=\{galleryScrollY\}/);
-  assert.match(theme, /videoGridRow: \{ flexDirection: "row", gap: 12, marginBottom: 12 \}/);
+  assert.match(theme, /videoGridRow: \{ flexDirection: "row", gap: sp\[3\], marginBottom: sp\[3\] \}/);
 });
 
 test("an open video library refreshes by itself every minute and when the app returns to the foreground, redrawing only when the hub's answer changed", () => {

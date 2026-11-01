@@ -882,7 +882,7 @@ test("native path validation displays string errors instead of a blank disabled 
     script.indexOf("let dismissedStatusError"),
   );
   const checkCode = script.slice(
-    script.indexOf("function checkFolderPath("),
+    script.indexOf("function setMessage("),
     script.indexOf("function codeFields("),
   );
   w.eval(
@@ -890,7 +890,7 @@ test("native path validation displays string errors instead of a blank disabled 
   );
   await until(() =>
     w.document
-      .querySelector(".path-check-error")
+      .querySelector(".message-error")
       ?.textContent.includes("already shared"),
   );
   assert.equal(w.document.querySelector("#submit-dialog").disabled, true);
@@ -908,7 +908,7 @@ test("selecting a folder shows the space it needs next to the free space", async
     script.indexOf("let dismissedStatusError"),
   );
   const checkCode = script.slice(
-    script.indexOf("function checkFolderPath("),
+    script.indexOf("function setMessage("),
     script.indexOf("function codeFields("),
   );
   w.eval(
@@ -2203,7 +2203,7 @@ test("a replica's device rows read the OS under the name, then version, folders 
   assert.deepEqual(cells(hub), ["v0.7.38", ["9 folders", "412.0 GB"], "Connected"]);
   assert.equal(hub.querySelector(".device-seen .status-dot").className, "status-dot", "connected reads the --ok dot");
   assert.deepEqual([...hub.children].map((el) => el.className), ["tile large hub", "row-main", "device-cells", "row-end device-end"], "the cells sit between the name block and the right edge");
-  assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["secondary small-button danger", "role-set"], "Disconnect… sits just before the chip");
+  assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["secondary small-button", "role-set"], "Disconnect… sits just before the chip");
   assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
   const own = rows.find((row) => row.querySelector(".tag.self"));
   assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform]]);

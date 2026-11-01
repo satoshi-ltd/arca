@@ -365,14 +365,14 @@ test("fields and dialog buttons take --control-height from the base rules, with 
   const rule = (selector) =>
     [...css.matchAll(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join("\n");
   assert.match(rule(':where(input:not([type="checkbox"], [type="radio"], [type="range"]), select)'), /min-height: var\(--control-height\);/);
-  assert.match(rule("input,\nselect,\ntextarea"), /padding: 0 11px;/);
-  assert.match(rule("textarea"), /padding: 9px 11px;/);
+  assert.match(rule("input,\nselect,\ntextarea"), /padding: 0 var\(--space-3\);/);
+  assert.match(rule("textarea"), /padding: var\(--space-2\) var\(--space-3\);/);
   assert.match(rule(".field-with-icon"), /min-height: var\(--control-height\);/);
   assert.match(rule(".field-with-icon input"), /min-height: 0;\n  padding: 0;/);
   assert.match(rule(".field-with-icon > .field-picker"), /min-height: 0;/);
-  assert.match(rule(".dialog-actions > button"), /padding: 0 14px;/);
+  assert.match(rule(".dialog-actions > button"), /padding: 0 var\(--space-4\);/);
   assert.doesNotMatch(rule(".dialog-actions > button"), /padding: [1-9]/);
-  assert.match(rule(".setting-row input"), /padding: 0 10px;/);
+  assert.match(rule(".setting-row input"), /padding: 0 var\(--space-3\);/);
 });
 
 test("device rows let the name take the free space and fold their cells into the device line in a 581 to 840 px list", () => {

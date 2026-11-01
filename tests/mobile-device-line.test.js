@@ -35,7 +35,7 @@ test("segments wrap only between each other, never inside one and never with a l
   assert.deepEqual(totals.parts.map(segmentText), ["9\u00a0folders", "412.0\u00a0GB"], "folders and size are separate parts that never break inside");
   const components = read("components.jsx");
   assert.match(components, /<View style=\{s\.deviceLine\}>\s+<View style=\{s\.deviceSegs\}>[\s\S]{0,120}<View key=\{segment\.parts\.join\(\)\} style=\{s\.deviceSeg\}>\s+\{segment\.parts\.map\(\(part\) => \(\s+<React\.Fragment key=\{part\}>\s+<Text style=\{\[s\.caption, s\.deviceSep\]\}>·<\/Text>/, "every part, folders and size included, carries the same separator box inside one unbreakable segment");
-  assert.match(read("theme.js"), /deviceLine: \{ overflow: "hidden" \},\s+deviceSegs: \{ flexDirection: "row", flexWrap: "wrap", marginLeft: -12 \},\s+deviceSeg: \{ flexDirection: "row" \},\s+deviceSep: \{ width: 12, textAlign: "center" \},/, "a wrapped line's first separator sits in the clipped margin");
+  assert.match(read("theme.js"), /deviceLine: \{ overflow: "hidden" \},\s+deviceSegs: \{ flexDirection: "row", flexWrap: "wrap", marginLeft: -sp\[3\] \},\s+deviceSeg: \{ flexDirection: "row" \},\s+deviceSep: \{ width: 12, textAlign: "center" \},/, "a wrapped line's first separator sits in the clipped margin");
   assert.equal(
     machineLabel({ name: "nas", role: "Replica", backup: true, segments: deviceSegments({ platform: "android", version: "0.7.35", hubVersion: "0.7.38" }) }),
     "nas, Replica, Full backup, Android, v0.7.35, older than the hub’s v0.7.38",
@@ -146,20 +146,18 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.match(row, /\[os, address\]\.filter\(Boolean\)/, "the Fold's hub address shares its OS line");
   assert.match(row, /segments: wide \? segments\.filter\(\(segment\) => !segment\.warning && !segment\.version\) : segments,[\s\S]{0,80}version: wide \? cells\?\.version\?\.label : "",/, "the Fold reads the version it shows, once");
   const theme = read("theme.js");
-  assert.match(theme, /presenceBadge: \{\s+position: "absolute",\s+top: -6,\s+right: -6,\s+width: 12,\s+height: 12,\s+borderRadius: 6,\s+borderWidth: 2,\s+borderColor: c\.surface,\s+backgroundColor: c\.accent,\s+\}/);
+  assert.match(theme, /presenceBadge: \{\s+position: "absolute",\s+top: -6,\s+right: -6,\s+width: 12,\s+height: 12,\s+borderRadius: r\.pill,\s+borderWidth: 2,\s+borderColor: c\.surface,\s+backgroundColor: c\.accent,\s+\}/);
   assert.match(theme, /presenceOff: \{ backgroundColor: c\.mute \}/);
   assert.match(theme, /machineTileTop: \{ marginTop: \(g\.touchRowLine \+ g\.touchCaptionLine \+ 4 - 32\) \/ 2 \}/, "the tile centres on the first two lines");
   assert.match(theme, /machineHeadAction: \{ marginVertical: \(g\.touchRowLine - g\.buttonSmallHeight\) \/ 2 \}/, "Disconnect never stretches the name line");
-  assert.match(theme, /machineColumns: \{ gap: 8 \}/);
+  assert.match(theme, /machineColumns: \{ gap: sp\[2\] \}/);
   assert.match(theme, /machineNameBlock: \{ flexGrow: 0, flexShrink: 1, flexBasis: 172, minWidth: 0 \}/, "the name block gives way before the row overflows");
   assert.match(theme, /machineCellSeen: \{ flexGrow: 1, flexShrink: 1, minWidth: 0 \}/, "last seen absorbs the slack, so the other columns align and the right edge never overflows");
   assert.match(theme, /machineCellVersion: \{ width: Math\.ceil\(76 \* fontScale \* textScale\) \}/, "fixed: the 13 dp arrow, a 4 dp gap and v10.10.10 measure 73 dp at the pill font");
   assert.match(theme, /machineCellFolders: \{ width: Math\.ceil\(66 \* fontScale \* textScale\) \}/, "fixed: 100 and 999 folders measure 62 dp and 1023.9 GB 59 dp at the pill font, with room for Android metrics");
   assert.match(theme, /machineCellText: \{\s+fontFamily: "InstrumentSans_400Regular",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.soft,\s+\}/);
-  assert.match(theme, /compactButton: \{ paddingVertical: 0, paddingLeft: g\.pillLeft, paddingRight: g\.pillRight, gap: g\.pillGap \}/);
-  assert.match(theme, /compactLabel: \{ fontSize: g\.pillFont, lineHeight: g\.pillLine \}/);
   const hub = read("HubConnection.jsx");
-  assert.match(hub, /iconOnly=\{!wide\}\s+size=\{wide \? "compact" : "small"\}/, "a 32 caution square on the phone, a compact labelled button on the Fold");
+  assert.match(hub, /iconOnly=\{!wide\}\s+size="small"/, "a 32 square on the phone, a small labelled button on the Fold");
   assert.match(hub, /presence=\{presence\}/);
   const app = read("App.jsx");
   assert.match(app, /const devicePresence = rosterPresence\(machines, \{\s+offline: machinesSaved \|\| status\.offline,\s+connectionId: connection\?\.id,\s+\}\);/);

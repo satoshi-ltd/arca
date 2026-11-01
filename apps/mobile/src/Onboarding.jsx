@@ -4,7 +4,7 @@ import { Text } from "./Text";
 import {
   useDesign,
   Logo,
-  Card,
+  InlineMessage,
   FeatureRow,
   StepIndicator,
   Button,
@@ -69,12 +69,10 @@ export function Onboarding({
             {description}
           </FeatureRow>
         ))}
-        <Card title="You need a hub first">
-          <Text style={s.text}>
-            Install Arca on a computer or a server and make it the hub. Then
-            open Devices → Pair a device there to get a code.
-          </Text>
-        </Card>
+        <InlineMessage>
+          You need a hub first: install Arca on a computer or a server and make
+          it the hub, then open Devices → Pair a device there to get a code.
+        </InlineMessage>
         <View style={s.flex} />
         <Button
           label="Get started"
@@ -127,11 +125,9 @@ export function Onboarding({
       {!catalog ? (
         <Button label="Load folders" onPress={retry} busy={busy} />
       ) : !folders.length ? (
-        <Card>
-          <Text style={s.text}>
-            Your hub has no shared folders yet. Add one on the hub, then choose it here.
-          </Text>
-        </Card>
+        <InlineMessage>
+          Your hub has no shared folders yet. Add one on the hub, then choose it here.
+        </InlineMessage>
       ) : null}
       <View style={s.folderList}>
         {folders.map((folder) => (
@@ -184,7 +180,7 @@ export function Onboarding({
       />
       <Button
         label="Skip for now"
-        quiet
+        ghost
         busy={busy}
         onPress={skip}
       />

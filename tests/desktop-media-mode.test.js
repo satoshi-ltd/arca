@@ -207,13 +207,13 @@ test("Start syncing an Audio library asks Stream or Keep: Keep shows today's des
   assert.equal(ui.$("#dialog .role-card [data-lucide], #dialog .role-card svg, #dialog .role-card .icon"), null, "the cards carry no icon");
   assert.equal(ui.$('#dialog [name="mode"]:checked').value, "keep", "Audio defaults to Keep");
   assert.ok(shown(ui.$("#selection-path")));
-  assert.ok(shown(ui.$("#dialog .callout")));
+  assert.ok(shown(ui.$("#dialog .message:not(#folder-path-status)")));
   await until(() => shown(ui.$("#folder-path-status")) && /Needs 9\.6 GB/.test(ui.$("#folder-path-status").textContent));
   assert.match(submit(ui).textContent, /^Start syncing$/);
   await ui.choose("stream");
   assert.equal(shown(ui.$("#selection-path")), false, "Stream hides the destination");
   assert.equal(shown(ui.$("#folder-path-status")), false, "and the size line");
-  assert.equal(shown(ui.$("#dialog .callout")), false, "and the .arcaignore callout");
+  assert.equal(shown(ui.$("#dialog .message:not(#folder-path-status)")), false, "and the .arcaignore callout");
   assert.equal(submit(ui).textContent, "Start streaming");
   assert.ok(submit(ui).querySelector('[data-lucide="play"], .lucide-play, [data-icon="play"]') || /play/.test(submit(ui).innerHTML));
   await ui.choose("keep");
@@ -236,7 +236,7 @@ test("Start syncing a Movies & TV library defaults to Stream, and Keep asks for 
   await ui.choose("keep");
   assert.ok(shown(ui.$("#selection-path")));
   assert.equal(ui.$("#selection-path").value, "/Users/javi/arca/videos");
-  assert.ok(shown(ui.$("#dialog .callout")), "with the .arcaignore callout");
+  assert.ok(shown(ui.$("#dialog .message:not(#folder-path-status)")), "with the .arcaignore callout");
   await until(() => /New folder · Needs 9\.6 GB/.test(ui.$("#folder-path-status").textContent));
   assert.equal(submit(ui).textContent, "Start syncing");
   await ui.click("#submit-dialog", () => !ui.$("#dialog[open]"));
@@ -316,7 +316,7 @@ test("switching back to Keep after a failed destination check keeps Start syncin
   const ui = await boot(t, { status: replicaStatus(), pathCheck: () => Promise.reject(Object.assign(new Error("Cannot read or write this folder"), { status: 403 })) });
   await until(() => row(ui, "music"));
   await ui.click(row(ui, "music").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
-  await until(() => ui.$("#folder-path-status.path-check-error"));
+  await until(() => ui.$("#folder-path-status.message-error"));
   assert.equal(submit(ui).disabled, true);
   await ui.choose("stream");
   assert.equal(submit(ui).disabled, false, "streaming needs no destination");

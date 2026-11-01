@@ -179,7 +179,7 @@ test("folder browsing groups directories and has no filter of its own", async ()
 });
 
 test("shared chip, badge and surface geometry matches desktop tokens", async () => {
-  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  const { geometry, radius, space } = await import("../apps/mobile/src/design-tokens.js");
   const css = fs.readFileSync(
     new URL("../apps/desktop/src/tokens.css", import.meta.url),
     "utf8",
@@ -191,6 +191,8 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     desktopTitleLine: "text-title-line",
     touchTitleFont: "touch-title-font",
     touchTitleLine: "touch-title-line",
+    touchHeadingFont: "touch-heading-font",
+    touchHeadingLine: "touch-heading-line",
     touchRowFont: "touch-row-font",
     touchRowLine: "touch-row-line",
     touchBodyFont: "touch-body-font",
@@ -214,7 +216,7 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     tagHeight: "tag-height",
     tagFont: "tag-font",
     tagLine: "tag-line",
-    tagRadius: "r-tag",
+    tagRadius: "r-small",
     tagX: "tag-x",
     tagY: "tag-y",
     pillFont: "pill-font",
@@ -226,8 +228,10 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     pillGap: "pill-gap",
     pillIcon: "pill-icon",
     controlRadius: "r-control",
-    cardRadius: "r-card",
-    segmentRadius: "r-segment",
+    cardRadius: "r-surface",
+    surfaceRadius: "r-surface",
+    smallRadius: "r-small",
+    segmentRadius: "r-small",
     iconStroke: "icon-stroke",
   };
   for (const [key, token] of Object.entries(pairs)) {
@@ -266,7 +270,7 @@ test("empty directory entries remain navigable without inflating recursive file 
 });
 
 test("mobile single-line fields reserve stable geometry and grow only for accessibility scaling", async () => {
-  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  const { geometry, radius, space } = await import("../apps/mobile/src/design-tokens.js");
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const source = fs
     .readFileSync(
@@ -279,6 +283,8 @@ test("mobile single-line fields reserve stable geometry and grow only for access
   const context = {
     g: geometry,
     n: noticeMetrics,
+    sp: space,
+    r: radius,
     palettes,
     StyleSheet: { create: (value) => value, absoluteFillObject: {} },
   };
@@ -404,7 +410,7 @@ test("file dropdown stays inside narrow screens and aligns below its trigger", (
 });
 
 test("app text size scales typography without zooming layout or icons", async () => {
-  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  const { geometry, radius, space } = await import("../apps/mobile/src/design-tokens.js");
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const { textSizes, textScale } =
     await import("../apps/mobile/src/text-size.js");
@@ -419,6 +425,8 @@ test("app text size scales typography without zooming layout or icons", async ()
   const context = {
     g: geometry,
     n: noticeMetrics,
+    sp: space,
+    r: radius,
     palettes,
     StyleSheet: { create: (v) => v, absoluteFillObject: {} },
   };
@@ -481,7 +489,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
   assert.match(sheet, /\{subtitle\}[\s\S]*?<Button\s+label="Close"/, "every titled sheet, menus included, has an explicit Close like desktop dialogs");
   assert.doesNotMatch(sheet, /!menu && \(\s*<Button/);
   assert.match(sheet, /contentContainerStyle=\{menu \? s\.sheetMenu : s\.content\}/);
-  assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,[^}]*borderBottomWidth: 1/);
+  assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : sp\[4\],[^}]*borderBottomWidth: 1/);
   assert.match(theme, /actionRow: \{[^}]*minHeight: g\.rowMinHeightCompact,[^}]*paddingHorizontal: wide \? g\.workspaceInset : g\.rowPaddingX,/, "action rows align with the sheet title");
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const header = app.slice(app.indexOf("{shownSheet && (")).match(/\{\.\.\.(\(shownSheet\.kind === "rename-file"[\s\S]*?\))\}\s+busy=/)[1];
@@ -573,7 +581,7 @@ test("offline onboarding selects from the saved catalog and Folders never shows 
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const download = app.slice(app.indexOf("await client.refresh().catch((error) => {"), app.indexOf("await selectFirstFolders("));
   assert.match(download, /!client\.state\(\)\.catalog \|\|\s+!isHubUnreachable\(error\)/);
-  assert.match(app, /connected && !catalog && !status\.offline && \(\s+<Scaffold dashed label="Loading shared folders" \/>/);
+  assert.match(app, /connected && !catalog && !status\.offline && \(\s+<Scaffold available label="Loading shared folders" \/>/);
 });
 
 test("folder problems use notices that reappear when the folder opens, not inline captions", () => {
@@ -743,7 +751,7 @@ test("phone hub-only actions say why they are unavailable offline and use the hu
   const components = read("components.jsx");
   assert.match(gallery, /deletable=\{!!remove && linked\}/);
   assert.match(gallery, /deleteReason=\{linked \? undefined : HUB_ONLY_REASON\}/);
-  assert.match(components, /label="Delete…" danger disabled=\{!linked\} onPress=\{onDelete\} \/>\s+<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{reason\}<\/Text>\}/, "the reason sits under the button row of the pinned selection bar, never inside it");
+  assert.match(components, /label="Delete…" disabled=\{!linked\} onPress=\{onDelete\} \/>\s+<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{reason\}<\/Text>\}/, "the reason sits under the button row of the pinned selection bar, never inside it");
   assert.match(app, /linked=\{connected && !status\.offline\}\s+reason=\{HUB_ONLY_REASON\}/);
   assert.match(components, /accessibilityHint=\{note\}/);
   assert.match(viewer, /deleteReason \|\|\s+"Available after the hub confirms the photo/);
@@ -915,7 +923,7 @@ test("the mobile welcome says where the hub comes from instead of a bare caption
   const welcome = onboarding.slice(onboarding.indexOf('if (step === "welcome")'), onboarding.indexOf('if (step === "pair")')).replace(/\s+/g, " ");
   assert.match(
     welcome,
-    /<Card title="You need a hub first"> <Text style=\{s\.text\}> Install Arca on a computer or a server and make it the hub\. Then open Devices → Pair a device there to get a code\. <\/Text> <\/Card>/,
+    /<InlineMessage> You need a hub first: install Arca on a computer or a server and make it the hub, then open Devices → Pair a device there to get a code\. <\/InlineMessage>/,
   );
   assert.ok(welcome.indexOf("You need a hub first") > welcome.indexOf("FeatureRow"), "the card follows the feature rows");
   assert.ok(welcome.indexOf("You need a hub first") < welcome.indexOf('label="Get started"'), "and leads to the action");
@@ -935,7 +943,6 @@ test("the mobile pairing form says where the hub shows its details, asks in the 
   assert.ok(order.every((at) => at > 0), "every element of the form is there");
   assert.deepEqual(order, [...order].sort((a, b) => a - b), "address and its transport note, code and expiry hint, name, then the action");
   assert.match(pair, /placeholder="https:\/\/arca\.your-network"/);
-  assert.match(pair, /<Icon name="clock" size=\{16\} \/>/);
   assert.match(pair, /disabled=\{ blocked \|\| !name\.trim\(\) \|\| !address\.trim\(\) \|\| code\.length !== 6 \}/, "the same validation guards Pair");
   assert.match(pair, /label=\{`Name this \$\{device\}`\} icon="phone" value=\{name\} onChangeText=\{setName\}/, "the name keeps its state and its default");
   assert.match(step, /<PairingForm [^>]*pair=\{pair\} \/> <StepIndicator step=\{1\} \/>/, "Onboarding draws the form then the progress dots");
@@ -1004,7 +1011,7 @@ test("phone buttons, rows, tabs and photo tiles show a pressed state", () => {
   const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const components = read("components.jsx");
   assert.match(read("theme.js"), /pressed: \{ backgroundColor: c\.hover \},\s+pressedFade: \{ opacity: 0\.85 \},/);
-  assert.match(components, /pressed && !disabled && !busy && \(primary \? s\.pressedFade : s\.pressed\)/, "primary buttons fade, the others fill");
+  assert.match(components, /pressed && !disabled && !busy && \(filled \? s\.pressedFade : s\.pressed\)/, "filled buttons fade, the others fill");
   assert.match(components, /pressed && !disabled && s\.pressed,\s+disabled && s\.disabled/, "action rows fill");
   assert.match(components, /divider && s\.separator,\s+pressed && !disabled && s\.pressed,/, "folder rows fill");
   assert.match(components, /pressed && s\.pressed,\s+view === tab && !box && s\.navSelected/, "tabs fill without hiding the selection");
@@ -1069,7 +1076,9 @@ test("a wide History row keeps its revision cell on one line up to seven digits 
   const rule = theme.match(/historyRevision: \{ width: ([^,]+), flexShrink: 0 \}/);
   assert.ok(rule, "the revision cell never shrinks below its width");
   const widthAt = new Function("fontScale", "textScale", `return ${rule[1]};`);
-  const font = Number(theme.match(/mono: \{\s*fontFamily: "FragmentMono_400Regular",\s*fontSize: (\d+),/)[1]);
+  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  assert.match(theme, /mono: \{\s*fontFamily: "FragmentMono_400Regular",\s*fontSize: g\.touchCaptionFont,/);
+  const font = geometry.touchCaptionFont;
   const advance = 0.618;
   const { textSizes } = await import("../apps/mobile/src/text-size.js");
   for (const fontScale of [1, 1.3, 2])

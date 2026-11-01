@@ -160,7 +160,7 @@ function VideoCard({ card, wide, art, open, fill, hold }) {
         {card.saved && <Saved />}
         {(card.next || card.fresh) && (
           <View style={s.videoNext} pointerEvents="none">
-            <Text style={s.videoRatingText}>{card.next ? "NEXT" : "NEW"}</Text>
+            <Text style={s.videoNextText}>{card.next ? "NEXT" : "NEW"}</Text>
           </View>
         )}
         {!wide && !!card.rating && (

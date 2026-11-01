@@ -90,7 +90,7 @@ body.kit {
   border-bottom: 1px solid var(--div);
 }
 .kit-section > h2 span {
-  font: 12px var(--font-mono);
+  font: var(--text-body) var(--font-mono);
   color: var(--mute);
   letter-spacing: 0;
 }
@@ -116,7 +116,7 @@ body.kit {
 .kit-card {
   background: var(--surface);
   border: 1px solid var(--div);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
@@ -124,7 +124,7 @@ body.kit {
   min-width: 0;
 }
 .kit-card > h3 {
-  font: 11px var(--font-mono);
+  font: var(--text-caption) var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--mute);
@@ -203,14 +203,14 @@ body.kit {
 }
 .kit-theme {
   padding: var(--space-5);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   border: 1px solid var(--div);
   background: var(--paper);
   color: var(--ink);
 }
 .kit-window {
   border: 1px solid var(--div);
-  border-radius: var(--r-window);
+  border-radius: var(--r-surface);
   overflow: hidden;
   box-shadow: var(--shadow-window);
   background: var(--paper);
@@ -226,7 +226,7 @@ body.kit {
   display: flex;
   justify-content: center;
   padding: var(--space-6);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--backdrop);
 }
 .kit-dialog-stage dialog {
@@ -236,7 +236,7 @@ body.kit {
 .kit-notices {
   display: flex;
   flex-direction: column;
-  gap: var(--notice-gap);
+  gap: var(--space-3);
   width: var(--notice-width);
   max-width: 100%;
 }
@@ -277,7 +277,7 @@ body.kit {
   gap: var(--space-2);
   padding: var(--space-6);
   border: 1px dashed var(--line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--surface);
 }
 .kit-empty strong {
@@ -295,7 +295,7 @@ body.kit {
   gap: var(--space-4);
   padding: var(--space-5);
   border: 1px solid var(--div);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--surface);
   min-width: 0;
 }
@@ -327,7 +327,7 @@ body.kit {
   min-width: 0;
 }
 .kit-board-pair figcaption {
-  font: 11px var(--font-mono);
+  font: var(--text-caption) var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--mute);
@@ -385,7 +385,7 @@ body.kit {
 .kit-board-pair .detail-head {
   padding: var(--space-4);
   border: 1px solid var(--div);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--paper);
 }
 .kit-board-pair .file-header-actions,
@@ -425,7 +425,7 @@ body.kit {
   min-height: 0;
   grid-template-columns: 168px minmax(0, 1fr);
   border: 1px solid var(--div);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   overflow: hidden;
 }
 .kit-board-pair .onboarding .onboarding-body {
@@ -447,7 +447,7 @@ body.kit {
   padding: 8px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
 }
 @media (max-width: 760px) {
   .kit-header {
@@ -860,9 +860,9 @@ body.kit {
   font-size: var(--text-title);
   line-height: var(--text-title-line);
 }
-.kit-text-dialog {
-  font-size: var(--dialog-title);
-  line-height: var(--dialog-title-line);
+.kit-text-heading {
+  font-size: var(--text-heading);
+  line-height: var(--text-heading-line);
 }
 .kit-text-row {
   font-size: var(--text-row);
@@ -903,25 +903,25 @@ body.kit {
   width: var(--space-6);
   height: var(--space-6);
 }
-.kit-scale .kit-radius-tag,
+.kit-scale .kit-space-7 {
+  width: var(--space-7);
+  height: var(--space-7);
+}
+.kit-scale .kit-radius-small,
 .kit-scale .kit-radius-control,
-.kit-scale .kit-radius-card,
-.kit-scale .kit-radius-dialog,
+.kit-scale .kit-radius-surface,
 .kit-scale .kit-radius-pill {
   width: calc(var(--space-6) * 2);
   height: calc(var(--space-4) * 2);
 }
-.kit-scale .kit-radius-tag {
-  border-radius: var(--r-tag);
+.kit-scale .kit-radius-small {
+  border-radius: var(--r-small);
 }
 .kit-scale .kit-radius-control {
   border-radius: var(--r-control);
 }
-.kit-scale .kit-radius-card {
-  border-radius: var(--r-card);
-}
-.kit-scale .kit-radius-dialog {
-  border-radius: var(--r-dialog);
+.kit-scale .kit-radius-surface {
+  border-radius: var(--r-surface);
 }
 .kit-scale .kit-radius-pill {
   border-radius: var(--r-pill);
@@ -1212,7 +1212,7 @@ body.kit {
   gap: var(--space-5);
   min-height: calc(var(--detail-tile) * 7);
   padding: var(--space-5);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: linear-gradient(transparent, var(--mediaFade)), linear-gradient(135deg, var(--green), var(--ink));
   color: var(--onMedia);
 }
@@ -1283,7 +1283,7 @@ body.kit {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--media);
   color: var(--onMedia);
 }
@@ -1316,7 +1316,7 @@ body.kit {
   bottom: calc(var(--space-6) * 4);
   transform: translateX(-50%);
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-small);
   background: var(--mediaNav);
   font-size: var(--text-title);
   text-align: center;
@@ -1379,7 +1379,7 @@ body.kit {
   gap: var(--space-3);
   width: calc(var(--detail-tile) * 9);
   padding: var(--space-3);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: var(--notice-surface);
   color: var(--ink);
   box-shadow: var(--shadow-menu);
@@ -1431,7 +1431,7 @@ body.kit {
   gap: var(--space-6);
   min-height: calc(var(--detail-tile) * 10);
   padding: var(--space-6);
-  border-radius: var(--r-card);
+  border-radius: var(--r-surface);
   background: linear-gradient(90deg, var(--media), var(--mediaFade) 55%, transparent), linear-gradient(transparent, var(--mediaFade)), linear-gradient(135deg, var(--wa), var(--erFg));
   color: var(--onMedia);
 }
@@ -1468,7 +1468,7 @@ body.kit {
   align-items: center;
   padding: 0 var(--space-1);
   border: 1px solid var(--onMedia);
-  border-radius: var(--r-tag);
+  border-radius: var(--r-small);
   font: 600 var(--text-caption) var(--font-mono);
   line-height: 1.5;
 }
@@ -1513,7 +1513,6 @@ body.kit {
   opacity: 1;
 }
 
-
 .kit-media {
   padding: var(--space-3);
   border-radius: var(--r-control);
@@ -1527,7 +1526,6 @@ body.kit {
   width: var(--space-4);
   height: var(--space-4);
 }
-
 
 .kit-dl-ring {
   width: var(--space-4);

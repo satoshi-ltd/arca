@@ -54,7 +54,7 @@ test("photo selection pins its bar above the tab bar and unselected tiles show t
   const bar = components.slice(components.indexOf("export function SelectionBar("), components.indexOf("export function ActionRow("));
   assert.match(bar, /`\$\{count\} selected`/);
   assert.match(bar, /label="Clear"/);
-  assert.match(bar, /label="Delete…" danger disabled=\{!linked\}/);
+  assert.match(bar, /label="Delete…" disabled=\{!linked\}/, "the bar asks; only the confirmation that follows fills danger");
   assert.match(bar, /!linked && <Text style=\{s\.caption\}>\{reason\}/);
   const app = read("App.jsx");
   assert.ok(app.indexOf("<SelectionBar") < app.indexOf("<Navigation\n                    view={view}"));
@@ -82,8 +82,8 @@ test("a rejected pairing code is explained under the field and offers no retry",
   assert.match(redeem, /setCode\(""\);\s*setPairError\(message\);\s*return false;/);
   assert.match(app, /codeError=\{pairError\}/);
   const form = read("PairingForm.jsx");
-  assert.match(form, /codeError \? \(/);
-  assert.match(form, /Use HTTPS or Tailscale\.<\/Text>/);
+  assert.match(form, /hint="Single use · valid ten minutes"\s+error=\{codeError\}/, "a rejected code replaces the field's hint");
+  assert.match(form, /hint="Use HTTPS or Tailscale\."/);
   assert.doesNotMatch(form.replace(/\{details && \([\s\S]*?\)\}/, ""), /private\s+IPv4/);
   assert.match(form, /\{!!back && \(\s*<Button label="Back"/);
   assert.match(read("Onboarding.jsx"), /back=\{back\}/);
@@ -174,7 +174,7 @@ test("tapping the scrim or dragging the grabber down dismisses a sheet unless it
   const components = read("components.jsx");
   const sheet = components.slice(components.indexOf("export function Sheet("), components.indexOf("export function ConfirmDialog("));
   assert.match(sheet, /const dismiss = \(\) => \{\s+if \(busy \|\| leaving\.current\) return;\s+onClose\?\.\(\);/);
-  assert.match(sheet, /onPress=\{dismiss\}\s+style=\{s\.modalScrim\}/);
+  assert.match(sheet, /onPress=\{retreat\}\s+style=\{s\.modalScrim\}/, "the scrim dismisses, or steps back in a picker");
   assert.match(sheet, /if \(draggedDown\(gesture\)\) dismissRef\.current\(\)/);
   assert.match(sheet, /<View \{\.\.\.grabber\.panHandlers\} style=\{s\.sheetGrabber\}>\s+<View style=\{s\.sheetHandle\} \/>/);
 });
@@ -222,7 +222,7 @@ test("a mounted notice is announced with its title and body", async () => {
 });
 
 test("segmented controls meet the touch height, the Text size control scrolls and labels stay on one line", () => {
-  assert.match(read("theme.js"), /segment: \{\s+flex: wide \? 0 : 1,\s+paddingHorizontal: wide \? 12 : 0,\s+minHeight: g\.touchHeight,/);
+  assert.match(read("theme.js"), /segment: \{\s+flex: wide \? 0 : 1,\s+paddingHorizontal: wide \? sp\[3\] : 0,\s+minHeight: g\.touchHeight,/);
   assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+style=\{\[\s+s\.buttonLabel,\s+s\.segmentText,/);
   assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+maxFontSizeMultiplier=\{wide && compact \? railLabelFontCap : undefined\}\s+style=\{\[\s+wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : s\.caption,/);
   assert.match(read("App.jsx"), /options=\{textSizes\}\s+scroll\s+value=\{textScale\(prefs\.textSize\)\}/);
@@ -350,7 +350,7 @@ test("the music grids keep their page size and scroll offset per route entry", a
 
 test("the music Loading the library state uses the shared scaffold with Sync now as a secondary action", () => {
   const library = read("MusicLibrary.jsx");
-  assert.match(library, /<Scaffold label="Loading the library" \/>[\s\S]*?<Button label="Sync now" icon="refresh" quiet onPress=\{sync\} \/>/);
+  assert.match(library, /<Scaffold label="Loading the library" \/>[\s\S]*?<Button label="Sync now" icon="refresh" ghost onPress=\{sync\} \/>/);
   assert.doesNotMatch(library, /title="Loading the library"/);
 });
 

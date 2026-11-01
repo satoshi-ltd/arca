@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.24 — 2026-11-01
+
+- Desktop and phones now draw from one design system: a single token source sets the same spacing scale (4 to 32), four radii and six type roles on both, replacing the one-off sizes that made spacing and corners differ from screen to screen. Captions on the phone are a step smaller, dialogs, notices and sheets share the 12 corner, onboarding and sign-in titles use the title size, and pairing and access codes use one display size on every device.
+- Notices, dialog titles and segmented controls sit balanced: the close button no longer leaves extra space under a notice's text, a dialog's title line centres on its icon tile on desktop and phone, and segmented controls stand exactly at the control height.
+- One set of components on both: buttons are primary, secondary, ghost or danger in two sizes, with danger only on the button that confirms a deletion; rows share one geometry and folders not selected lose the dashed outline; one inline message in neutral, warning or error tone replaces callouts, path checks and explanation cards; a field's hint or error always sits under it.
+- Phone sheets keep their action in a fixed footer and close by the close button, a swipe or back, without Cancel. Now playing sits on the plain page with only the play button in the accent.
+- Saving a shared file on the phone is one step: "Save to" starts at the last destination used for that hub, Change opens a picker in the same sheet with Recent and New folder…, and the button reads Save N files.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.23 — 2026-10-31
 
 - Keep on a Movies & TV library now works like an Audio library on desktop, servers and phones: a complete two-way folder at a destination, with View folder and Open in Finder, played from the local copy. Libraries kept the old way keep their downloads until Stop syncing.
@@ -16,7 +26,7 @@ Needs: native build · desktop build · hub redeploy
 - Phones can keep again: an Audio library as a full two-way copy, and a Movies & TV library by downloading every movie and episode, new ones too.
 - The last setup step on a desktop or server replica lists the hub's folders with a switch each, and Stream or Keep for media; phone setup offers the same choice and counts only what downloads.
 
-Needs: native build · desktop build
+Needs: native build · desktop build · hub redeploy
 
 ## 0.8.21 — 2026-10-31
 
@@ -137,7 +147,7 @@ Needs: desktop build
 - Downloading a show says what is happening: the episode being downloaded shows "Downloading N%", the ones behind it say Waiting and finished ones say Downloaded, on desktop and on the phone.
 - A season download has its own line under the season picker with its progress ("N of M" on desktop, a bar on both) and a Cancel that stops the queued and running episodes and keeps the finished ones; on the phone it is the only way to cancel an episode.
 
-Needs: native build · desktop build
+Needs: native build · desktop build · hub redeploy
 
 ## 0.8.4 — 2026-10-26
 
@@ -151,7 +161,7 @@ Needs: native build · desktop build
 
 - A refined Arca mark everywhere: the door is now an arch inside the arch, the legs are a little lighter, the tile corners rounder and the door a brighter green, so it reads clearly at every size. The app icons, tray, launch animation, phone splash, favicon and website carry it.
 
-Needs: native build · desktop build
+Needs: native build · desktop build · hub redeploy
 
 ## 0.8.1 — 2026-10-26
 
@@ -414,7 +424,7 @@ Needs: native build
 
 - A podcast show in progress has Remove from Continue in its ⋯ menu on the desktop, the web, the phone and the Fold: it clears that episode's saved position, so the show stops reading as in progress.
 
-Needs: native build · desktop build
+Needs: native build · desktop build · hub redeploy
 
 ## 0.7.53 — 2026-10-12
 
@@ -922,7 +932,7 @@ Needs: native build
 - A phone screen reader hears each photo's kind, name and date and can select it; the selection is cleared with Clear selection.
 - Paused is a warning everywhere, including the tray; a removed device reads Removed; the Arca service is no longer called the daemon; the site says "Your devices" and uses the app's colours.
 
-Needs: native build · desktop build
+Needs: native build · desktop build · hub redeploy
 
 ## 0.6.95 — 2026-10-03
 

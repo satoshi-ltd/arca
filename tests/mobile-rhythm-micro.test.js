@@ -26,7 +26,7 @@ test("Folders and Devices are grouped surfaces: sections for folders, one list w
   assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>\s+f\.streamed \? \(/);
   assert.match(folders, /\{folderRowFor\(f, index\)\}/);
   assert.match(app, /const folderRowFor = \(f, index\) => \{[\s\S]*?<FolderRow\s+grouped\s+divider=\{index > 0\}/);
-  assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+dashedDivider=\{index > 0\}/);
+  assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+divider=\{index > 0\}/);
   const devices = app.slice(app.indexOf('<Eyebrow>Devices</Eyebrow>'), app.indexOf('{screen === "History" && ('));
   assert.ok(devices.indexOf("<HubConnection") < devices.indexOf("self"), "the hub comes first, then this device");
   assert.match(devices, /<View style=\{s\.group\}>\s+<HubConnection\s+grouped/);
@@ -43,9 +43,9 @@ test("Folders and Devices are grouped surfaces: sections for folders, one list w
 test("settings rows centre their content at 48, grow to 74 with a hint, and controls meet the 16 dp edge", () => {
   assert.match(rule("settingRow"), /minHeight: g\.rowMinHeightCompact,\s+justifyContent: "center",/);
   assert.match(rule("settingRowTall"), /minHeight: g\.rowMinHeight/);
-  assert.match(rule("settingWithActions"), /gap: 12/, "segmented controls sit 12 below their hint");
+  assert.match(rule("settingWithActions"), /gap: sp\[3\]/, "segmented controls sit 12 below their hint");
   assert.match(rule("switchTarget"), /alignItems: "flex-end"/, "the switch sits on the row's right padding");
-  assert.match(rule("actionRow"), /gap: 12/, "sheet rows keep the 12 gap after the icon");
+  assert.match(rule("actionRow"), /gap: sp\[3\]/, "sheet rows keep the 12 gap after the icon");
   const components = read("components.jsx");
   assert.match(components, /const tall =\s+grouped &&\s+\(title \? content\.length > 0 : content\.some\(\(child\) => !!child\?\.props\?\.description\)\);/);
   assert.match(components, /tall && s\.settingRowTall,/);
@@ -93,5 +93,5 @@ test("a numbered album row with its actions button stays at the compact 48 heigh
 
 test("folder names stay on one line and the sleep timer chip keeps the header's right inset", () => {
   assert.match(read("components.jsx"), /<Text style=\{s\.rowTitle\} numberOfLines=\{1\}>\{name\}<\/Text>/);
-  assert.match(rule("sleepChip"), /marginRight: 8,/);
+  assert.match(rule("sleepChip"), /marginRight: sp\[2\],/);
 });

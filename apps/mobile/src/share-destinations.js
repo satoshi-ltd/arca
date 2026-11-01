@@ -39,12 +39,25 @@ export function recentDestinations(
     .map((entry) => ({ ...entry, folder: known.get(entry.volume) }));
 }
 const stored = (value) => (Array.isArray(value) ? value : []);
-export async function loadDestinations(store, scope, folders) {
+export async function loadDestinations(store, scope, folders, limit = DESTINATION_LIMIT) {
   return recentDestinations(
     stored(await store.get(destinationsKey(scope), [])),
     folders,
+    limit,
   );
 }
+export function startingDestination(entries, folders) {
+  const latest = [...entries].sort((a, b) => b.last - a.last)[0];
+  if (latest?.folder) return { folder: latest.folder, directory: latest.directory };
+  return folders[0] ? { folder: folders[0], directory: "" } : null;
+}
+export function otherDestinations(entries, volume, directory, limit = SHOWN_DESTINATIONS) {
+  return entries
+    .filter((entry) => entry.volume !== volume || entry.directory !== directory)
+    .slice(0, limit);
+}
+export const placeLabel = (folder, directory) =>
+  directory ? `${folder.name} › ${directory.split("/").join(" › ")}` : folder.name;
 export async function saveDestination(
   store,
   scope,

@@ -137,7 +137,7 @@ test("right-hand controls are 32 px boxes on the 16 px edge, centred between hai
   assert.match(style, /\n\.setting-row \{[^}]*padding: var\(--row-padding-y\) var\(--row-padding-x\);\s*border-bottom/);
   assert.match(style, /\n#service-control \{\s*display: flex;\s*align-items: center;/);
   assert.match(style, /\n\.image-process-hint \{[^}]*margin-bottom: calc\(var\(--space-2\) \* -1\);/);
-  assert.match(style, /\n\.folder-breadcrumb \{[^}]*padding: 6px var\(--row-padding-x\);/);
+  assert.match(style, /\n\.folder-breadcrumb \{\s*height: 37px;\s*min-height: 37px;[^}]*padding: 0 var\(--row-padding-x\);/, 'a fixed 37 px bar centres its 24 px controls without vertical padding');
 });
 
 test("captions under a list sit 8 below it at 12 px with the row inset; side sections are 24 apart", () => {

@@ -1,6 +1,6 @@
 import { brandMark, palettes } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
-import { geometry as g, motion } from "./design-tokens.js";
+import { geometry as g, motion, radius } from "./design-tokens.js";
 import { railLabelFontCap } from "./text-size.js";
 import { ChangeFade, Pop, RollText, useBreathe, useFlight, useMotion } from "./motion";
 import {
@@ -19,6 +19,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -52,7 +53,7 @@ export const useDesign = () => useContext(Design);
 // One representative row for pending lists, matching desktop scaffold geometry.
 export function Scaffold({
   kind = "card",
-  dashed = false,
+  available = false,
   grouped = false,
   label = "Loading content",
 }) {
@@ -62,7 +63,7 @@ export function Scaffold({
       accessible
       accessibilityLabel={label}
       accessibilityRole="progressbar"
-      style={[s.scaffoldRow, dashed && s.scaffoldDashed, grouped && s.scaffoldGrouped]}
+      style={[s.scaffoldRow, available && s.scaffoldAvailable, grouped && s.scaffoldGrouped]}
     >
       <View style={[s.scaffoldMark, kind === "history" && s.scaffoldDot]} />
       <View style={s.scaffoldCopy}>
@@ -88,7 +89,7 @@ const busyStyles = StyleSheet.create({
   grid: { width: 16, height: 16, gap: 2 },
   small: { transform: [{ scale: 0.875 }], width: 16, height: 16 },
   row: { flexDirection: "row", gap: 2 },
-  dot: { width: 4, height: 4, borderRadius: 3 },
+  dot: { width: 4, height: 4, borderRadius: radius.pill },
 });
 export function Busy({ color, style, size, accessibilityLabel = "Loading" }) {
   const { c } = useDesign();
@@ -413,7 +414,6 @@ export function Button({
   disabled = false,
   busy = false,
   icon,
-  quiet = false,
   size = "normal",
   danger = false,
   activity = false,
@@ -424,7 +424,9 @@ export function Button({
 }) {
   const { s, c } = useDesign();
   const explained = disabled && !!reason;
-  const ink = primary ? c.onAccent : danger ? c.danger : ghost ? c.mute : c.ink;
+  const filled = primary || danger;
+  const ink = filled ? c.onAccent : c.ink;
+  const small = size === "small";
   return (
     <PressScale
       scale={!disabled && !busy && !ghost}
@@ -437,83 +439,72 @@ export function Button({
       }}
       disabled={(disabled && !explained) || busy}
       onPress={explained ? () => onReason?.(reason) : onPress}
-      hitSlop={size !== "normal" ? 6 : undefined}
+      hitSlop={small ? 8 : undefined}
       style={({ pressed }) => [
         s.button,
-        iconOnly && s.iconButton,
-        size !== "normal" && s.smallButton,
-        size === "small" && iconOnly && s.smallIconButton,
-        size === "compact" && s.compactButton,
+        small && s.smallButton,
+        iconOnly && (small ? s.smallIconButton : s.iconButton),
         primary && s.primary,
-        quiet && s.quietButton,
         danger && s.dangerButton,
-        danger && primary && s.destructivePrimary,
         ghost && s.ghostButton,
-        pressed && !disabled && !busy && (primary ? s.pressedFade : s.pressed),
+        pressed && !disabled && !busy && (filled ? s.pressedFade : s.pressed),
         (disabled || busy) && s.disabled,
       ]}
     >
       {busy || activity ? (
-        <Busy color={primary ? c.onAccent : danger ? c.danger : c.ink} />
+        <Busy color={ink} />
       ) : icon ? (
         swap ? (
           <Pop key={icon}>
-            <Icon
-              name={icon}
-              size={size !== "normal" ? g.buttonSmallIcon : g.buttonIcon}
-              color={ink}
-            />
+            <Icon name={icon} size={small ? g.buttonSmallIcon : g.buttonIcon} color={ink} />
           </Pop>
         ) : (
-          <Icon
-            name={icon}
-            size={size !== "normal" ? g.buttonSmallIcon : g.buttonIcon}
-            color={ink}
-          />
+          <Icon name={icon} size={small ? g.buttonSmallIcon : g.buttonIcon} color={ink} />
         )
       ) : null}
       {!iconOnly && (
-        <Text
-          style={[
-            s.buttonLabel,
-            primary && s.primaryLabel,
-            quiet && s.active,
-            danger && !primary && s.errorText,
-            size === "compact" && s.compactLabel,
-          ]}
-        >
+        <Text style={[s.buttonLabel, filled && s.primaryLabel]}>
           {label}
         </Text>
       )}
     </PressScale>
   );
 }
-export function Field({ label, icon, onFocus, onBlur, ...props }) {
+function FieldNote({ hint, error }) {
+  const { s } = useDesign();
+  if (error) return <InlineMessage tone="error">{error}</InlineMessage>;
+  return hint ? <Text style={s.hint}>{hint}</Text> : null;
+}
+export function Field({ label, icon, hint, error, onFocus, onBlur, ...props }) {
   const input = useRef(null);
   const focus = useContext(FieldFocus);
   const { s, c } = useDesign();
   return (
     <View style={s.section}>
       <Text style={s.heading}>{label}</Text>
-      <View style={icon && s.inputShell}>
-        {icon && <Icon name={icon} color={c.mute} />}
-        <TextInput
-          ref={input}
-          onFocus={(event) => {
-            focus?.focus(input.current);
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            focus?.blur(input.current);
-            onBlur?.(event);
-          }}
-          accessibilityLabel={label}
-          placeholderTextColor={c.mute}
-          style={icon ? [s.input, s.inputEmbedded] : s.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          {...props}
-        />
+      <View style={s.fieldBody}>
+        <View style={icon && [s.inputShell, !!error && s.inputInvalid]}>
+          {icon && <Icon name={icon} color={c.mute} />}
+          <TextInput
+            ref={input}
+            onFocus={(event) => {
+              focus?.focus(input.current);
+              onFocus?.(event);
+            }}
+            onBlur={(event) => {
+              focus?.blur(input.current);
+              onBlur?.(event);
+            }}
+            accessibilityLabel={label}
+            accessibilityHint={error || hint}
+            placeholderTextColor={c.mute}
+            style={icon ? [s.input, s.inputEmbedded] : [s.input, !!error && s.inputInvalid]}
+            autoCapitalize="none"
+            autoCorrect={false}
+            {...props}
+          />
+        </View>
+        <FieldNote hint={hint} error={error} />
       </View>
     </View>
   );
@@ -548,7 +539,7 @@ export function StepIndicator({ step, count = 3 }) {
     </View>
   );
 }
-export function CodeInput({ label, value, onChangeText, editable = true }) {
+export function CodeInput({ label, hint, error, value, onChangeText, editable = true }) {
   const { s, c } = useDesign();
   const [focused, setFocused] = useState(false);
   const input = useRef(null);
@@ -556,62 +547,67 @@ export function CodeInput({ label, value, onChangeText, editable = true }) {
   return (
     <View style={s.section}>
       <Text style={s.heading}>{label}</Text>
-      <Pressable
-        onPress={() => input.current?.focus()}
-        accessible={false}
-        style={s.codeControl}
-      >
-        <View
-          pointerEvents="none"
+      <View style={s.fieldBody}>
+        <Pressable
+          onPress={() => input.current?.focus()}
           accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={s.codeCells}
+          style={s.codeControl}
         >
-          {Array.from({ length: 6 }, (_, index) => (
-            <React.Fragment key={index}>
-              {index === 3 && <Text style={s.codeSeparator}>–</Text>}
-              <View
-                style={[
-                  s.codeCell,
-                  focused &&
-                    Math.min(value.length, 5) === index &&
-                    s.controlFocused,
-                ]}
-              >
-                <Text style={s.codeDigit}>
-                  {value[index] ||
-                    (focused && value.length === index ? "│" : "")}
-                </Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-        <TextInput
-          ref={input}
-          value={value}
-          editable={editable}
-          accessibilityLabel={label}
-          onChangeText={(next) =>
-            onChangeText(next.replace(/[^0-9]/g, "").slice(0, 6))
-          }
-          keyboardType="number-pad"
-          textContentType="oneTimeCode"
-          autoComplete="one-time-code"
-          autoCorrect={false}
-          caretHidden
-          selectionColor={c.accent}
-          style={s.codeCapture}
-          onFocus={() => {
-            setFocused(true);
-            focus?.focus(input.current);
-          }}
-          onBlur={() => {
-            setFocused(false);
-            focus?.blur(input.current);
-          }}
-        />
-      </Pressable>
+          <View
+            pointerEvents="none"
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={s.codeCells}
+          >
+            {Array.from({ length: 6 }, (_, index) => (
+              <React.Fragment key={index}>
+                {index === 3 && <Text style={s.codeSeparator}>–</Text>}
+                <View
+                  style={[
+                    s.codeCell,
+                    !!error && s.inputInvalid,
+                    focused &&
+                      Math.min(value.length, 5) === index &&
+                      s.controlFocused,
+                  ]}
+                >
+                  <Text style={s.codeDigit}>
+                    {value[index] ||
+                      (focused && value.length === index ? "│" : "")}
+                  </Text>
+                </View>
+              </React.Fragment>
+            ))}
+          </View>
+          <TextInput
+            ref={input}
+            value={value}
+            editable={editable}
+            accessibilityLabel={label}
+            accessibilityHint={error || hint}
+            onChangeText={(next) =>
+              onChangeText(next.replace(/[^0-9]/g, "").slice(0, 6))
+            }
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            autoCorrect={false}
+            caretHidden
+            selectionColor={c.accent}
+            style={s.codeCapture}
+            onFocus={() => {
+              setFocused(true);
+              focus?.focus(input.current);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              focus?.blur(input.current);
+            }}
+          />
+        </Pressable>
+        <FieldNote hint={hint} error={error} />
+      </View>
     </View>
   );
 }
@@ -654,6 +650,22 @@ export function Card({
           {children}
         </>
       )}
+    </View>
+  );
+}
+export function InlineMessage({ tone = "neutral", icon, children }) {
+  const { s, c } = useDesign();
+  const ink = tone === "error" ? c.danger : tone === "warning" ? c.warning : c.soft;
+  return (
+    <View
+      accessibilityRole={tone === "error" ? "alert" : undefined}
+      accessibilityLiveRegion={tone === "error" ? "polite" : undefined}
+      style={[s.message, tone === "warning" && s.messageWarning, tone === "error" && s.messageError]}
+    >
+      <View style={s.messageIcon}>
+        <Icon name={icon || (tone === "neutral" ? "info" : "alert")} size={16} color={ink} />
+      </View>
+      <Text style={[s.messageText, { color: ink }]}>{children}</Text>
     </View>
   );
 }
@@ -871,6 +883,15 @@ export function Breadcrumbs({ name, directory, onChange }) {
 }
 
 const AnimatedSafeArea = Animated.createAnimatedComponent(SafeAreaView);
+const SheetSlot = createContext(null);
+export function SheetFooter({ children }) {
+  const place = useContext(SheetSlot);
+  useLayoutEffect(() => {
+    place?.(children);
+  });
+  useLayoutEffect(() => () => place?.(null), [place]);
+  return place ? null : children;
+}
 export function Sheet({
   overlay,
   title,
@@ -884,6 +905,7 @@ export function Sheet({
   centered = false,
   closing = false,
   onExited,
+  onBack,
 }) {
   const { s, c, wide } = useDesign();
   const { duration, easing } = useMotion();
@@ -891,6 +913,7 @@ export function Sheet({
   const leaving = useRef(false);
   const dialog = wide || centered;
   const [height, setHeight] = useState(null);
+  const [footer, setFooter] = useState(null);
   const animate = (to, ms, then) =>
     Animated.timing(progress, {
       toValue: to,
@@ -916,8 +939,12 @@ export function Sheet({
     if (busy || leaving.current) return;
     onClose?.();
   };
-  const dismissRef = useRef(dismiss);
-  dismissRef.current = dismiss;
+  const retreat = () => {
+    if (busy || leaving.current) return;
+    (onBack || onClose)?.();
+  };
+  const dismissRef = useRef(retreat);
+  dismissRef.current = retreat;
   const grabber = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -955,7 +982,7 @@ export function Sheet({
       supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
       transparent
       presentationStyle="overFullScreen"
-      onRequestClose={dismiss}
+      onRequestClose={retreat}
     >
       <View style={s.modalRoot} pointerEvents={closing ? "none" : "auto"}>
         <Animated.View
@@ -968,7 +995,7 @@ export function Sheet({
           <Pressable
             accessible={false}
             importantForAccessibility="no"
-            onPress={dismiss}
+            onPress={retreat}
             style={s.modalScrim}
           />
           <AnimatedSafeArea
@@ -983,8 +1010,11 @@ export function Sheet({
               </View>
             )}
             {!!title && (
-              <View style={[s.sheetHeader, dialog && s.sheetHeaderDialog]}>
-                {!!icon && (
+              <View style={s.sheetHeader}>
+                {!!onBack && (
+                  <Button label="Back" ghost icon="back" iconOnly disabled={busy} onPress={onBack} />
+                )}
+                {!!icon && !onBack && (
                   <View style={s.tile}>
                     <Icon name={icon} size={16} color={c.accent} />
                   </View>
@@ -1005,7 +1035,7 @@ export function Sheet({
                 </View>
                 <Button
                   label="Close"
-                  quiet
+                  ghost
                   icon="close"
                   iconOnly
                   disabled={busy}
@@ -1024,8 +1054,9 @@ export function Sheet({
                   <Text style={s.text}>{busyLabel}</Text>
                 </View>
               )}
-              {children}
+              <SheetSlot.Provider value={setFooter}>{children}</SheetSlot.Provider>
             </KeyboardScrollView>
+            {footer != null && <View style={s.sheetFooter}>{footer}</View>}
           </AnimatedSafeArea>
           {overlay}
         </KeyboardPane>
@@ -1052,7 +1083,7 @@ export function ConfirmDialog({
         <View style={s.tile}>
           <Icon name={icon} size={16} />
         </View>
-        <View style={[s.flex, s.stack]}>
+        <View style={[s.flex, s.stack, s.confirmCopy]}>
           <Text accessibilityRole="header" style={s.heading}>
             {title}
           </Text>
@@ -1081,7 +1112,7 @@ export function SelectionBar({ count, linked, reason, onClear, onDelete }) {
           {`${count} selected`}
         </Text>
         <Button label="Clear" onPress={onClear} />
-        <Button label="Delete…" danger disabled={!linked} onPress={onDelete} />
+        <Button label="Delete…" disabled={!linked} onPress={onDelete} />
       </View>
       {!linked && <Text style={s.caption}>{reason}</Text>}
     </View>
@@ -1237,7 +1268,6 @@ export function FolderRow({
   disabled,
   conflict,
   progress,
-  dashedDivider = false,
   onLongPress,
   favorite,
   onFavorite,
@@ -1318,7 +1348,7 @@ export function FolderRow({
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
-        ...(grouped ? [s.folderRow, s.availableRow, dashedDivider && s.dashedSeparator] : [s.card, s.available, s.folderRow]),
+        ...(grouped ? [s.folderRow, s.availableRow, divider && s.separator] : [s.card, s.available, s.folderRow]),
         pressed && !disabled && s.pressed,
       ]}
     >
@@ -1891,28 +1921,26 @@ export function ApprovalSheet({
         Grants a 24-hour session on that browser. Browser details are reported
         by the requester.
       </Text>
-      {!!error && (
-        <Text accessibilityRole="alert" style={s.caption}>
-          {error}
-        </Text>
-      )}
-      <View style={s.row}>
-        <View style={s.flex}>
-          <Button
-            label="Deny"
-            disabled={busy}
-            onPress={() => onDecision("deny")}
-          />
+      {!!error && <InlineMessage tone="error">{error}</InlineMessage>}
+      <SheetFooter>
+        <View style={s.row}>
+          <View style={s.flex}>
+            <Button
+              label="Deny"
+              disabled={busy}
+              onPress={() => onDecision("deny")}
+            />
+          </View>
+          <View style={s.flex}>
+            <Button
+              primary
+              label="Allow"
+              disabled={busy || seconds === 0}
+              onPress={() => onDecision("allow")}
+            />
+          </View>
         </View>
-        <View style={s.flex}>
-          <Button
-            primary
-            label="Allow"
-            disabled={busy || seconds === 0}
-            onPress={() => onDecision("allow")}
-          />
-        </View>
-      </View>
+      </SheetFooter>
     </Sheet>
   );
 }

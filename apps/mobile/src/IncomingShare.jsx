@@ -8,29 +8,32 @@ import { AppState, Linking, Platform, View } from "react-native";
 import { Text } from "./Text";
 import * as Sharing from "expo-sharing";
 import {
+  ActionRow,
   Button,
-  Card,
   EmptyState,
   Field,
   FolderRow,
   Icon,
   Sheet,
+  SheetFooter,
   useDesign,
 } from "./components";
 import { runtime } from "./runtime";
-import { bytes, fileCount, unbroken } from "./format";
+import { bytes, count } from "./format";
 import {
   IncomingSession,
   incomingDestination,
   incomingFilenameError,
+  incomingFolderError,
   resolveShared,
 } from "./incoming-files";
 import { native } from "./private-network";
 import {
-  destinationLabel,
-  destinationUsage,
   loadDestinations,
+  otherDestinations,
+  placeLabel,
   saveDestination,
+  startingDestination,
 } from "./share-destinations";
 
 // One share operation; cancellation discards the app-owned temporary copies.
@@ -42,11 +45,15 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   const [volume, setVolume] = useState(null),
     [directory, setDirectory] = useState("");
   const [directories, setDirectories] = useState([]),
+    [filePaths, setFilePaths] = useState([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [parked, setParked] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [recent, setRecent] = useState([]);
+  const [place, setPlace] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [naming, setNaming] = useState(null);
   const receiving = useRef(false),
     saving = useRef(false),
     session = useRef(null),
@@ -54,6 +61,8 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   useEffect(() => {
     setVolume(null);
     setDirectory("");
+    setPlace(null);
+    setNaming(null);
     setRecent([]);
   }, [connection?.hubId]);
   useEffect(() => {
@@ -75,6 +84,8 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
             setError("");
             setVolume(null);
             setDirectory("");
+            setPlace(null);
+            setNaming(null);
             setOpen(true);
           }
           const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -103,6 +114,8 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
         if (active && pending?.length) {
           setVolume(null);
           setDirectory("");
+          setPlace(null);
+          setNaming(null);
           setError("");
           setItems(pending);
           setOpen(true);
@@ -135,28 +148,39 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   }, []);
   useEffect(() => {
     let active = true;
+    setDirectories([]);
+    setFilePaths([]);
     (async () => {
       const r = await runtime();
       const choices = new Set();
-      if (volume && r.scope) {
-        const root = r.files.folder(r.scope, volume.id);
+      const taken = [];
+      const target = place?.folder || volume;
+      if (target && r.scope) {
+        const root = r.files.folder(r.scope, target.id);
         if (await r.files.exists(root))
           for await (const entry of r.files.walk(root)) {
             const parts = entry.path.split("/");
-            if (!entry.directory) parts.pop();
+            if (!entry.directory) {
+              taken.push(entry.path);
+              parts.pop();
+            }
             while (parts.length) {
               choices.add(parts.join("/"));
               parts.pop();
             }
           }
       }
-      if (active) setDirectories([...choices].sort());
+      if (active) {
+        setDirectories([...choices].sort());
+        setFilePaths(taken);
+      }
     })().catch((e) => active && setError(e.message));
     return () => {
       active = false;
     };
-  }, [volume?.id, connection?.hubId]);
+  }, [(place?.folder || volume)?.id, connection?.hubId]);
   useEffect(() => {
+    setLoaded(false);
     if (!open) return;
     let active = true;
     (async () => {
@@ -166,8 +190,14 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
         r.scope && r.scope === connection?.hubId
           ? await loadDestinations(r.store, r.scope, choices)
           : [];
-      if (active) setRecent(entries);
-    })().catch(() => active && setRecent([]));
+      if (!active) return;
+      setRecent(entries);
+      setLoaded(true);
+    })().catch(() => {
+      if (!active) return;
+      setRecent([]);
+      setLoaded(true);
+    });
     return () => {
       active = false;
     };
@@ -211,6 +241,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
       ).catch(() => {});
       const saved = { count: items.length, folder: volume, directory };
       setOpen(false);
+      setPlace(null);
       setVolume(null);
       setDirectory("");
       await onSaved(saved);
@@ -233,6 +264,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
     try {
       await session.current?.cancel();
       setItems([]);
+      setPlace(null);
       setVolume(null);
       setDirectory("");
       Sharing.clearSharedPayloads();
@@ -247,208 +279,252 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   }
   const destinations = locals.filter((f) => !!f.selected && !galleryConfig(f));
   useEffect(() => {
+    if (!open || !loaded || volume) return;
+    const start = startingDestination(recent, destinations);
+    if (!start) return;
+    setVolume(start.folder);
+    setDirectory(start.directory);
+  }, [open, loaded, volume, recent, destinations.map((f) => f.id).join("\0")]);
+  useEffect(() => {
     if (parked && destinations.length && items.length) {
       setParked(false);
       setOpen(true);
     }
   }, [parked, destinations.length]);
+  const at = place?.directory || "";
   const children = directories.filter(
     (p) =>
-      p.startsWith(directory ? `${directory}/` : "") &&
-      !p.slice(directory ? directory.length + 1 : 0).includes("/"),
+      p.startsWith(at ? `${at}/` : "") &&
+      !p.slice(at ? at.length + 1 : 0).includes("/"),
   );
+  const saveLabel = `Save ${count(items.length, "file", "files")}`;
+  const named = naming?.trim() || "";
+  const nameError =
+    naming == null || !named
+      ? ""
+      : incomingFolderError(
+          named,
+          children.map((p) => p.split("/").pop()),
+          filePaths.filter((p) => p.slice(0, p.lastIndexOf("/") + 1) === (at ? `${at}/` : "")).map((p) => p.split("/").pop()),
+        );
+  const back = () =>
+    place.directory
+      ? setPlace({ ...place, directory: place.directory.split("/").slice(0, -1).join("/") })
+      : setPlace(null);
+  const choose = (folder, directory) => {
+    setVolume(folder);
+    setDirectory(directory);
+    setPlace(null);
+  };
   return (
     <>
       {shownOpen && (
         <Sheet
           closing={!open}
           onExited={releaseOpen}
-          title={items.length > 1 ? "Save files" : "Save file"}
-          icon="download"
+          {...(place
+            ? { title: "Save to", subtitle: placeLabel(place.folder, place.directory), onBack: back }
+            : { title: items.length > 1 ? "Save files" : "Save file", icon: "download" })}
           busy={busy}
           onClose={discard}
         >
           <ErrorNotice error={error} />
-          {!!items.length && (
-            <View style={s.group}>
-              {items.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={[s.folderRow, index > 0 && s.separator]}
-                >
-                  <Icon name="file" size={20} />
-                  {item.renameRequired ? (
-                    <View style={s.flex}>
-                      <Field
-                        label="File name"
-                        value={item.name}
-                        editable={!busy}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        onChangeText={(name) => {
-                          setError("");
-                          setItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id ? { ...entry, name } : entry,
-                            ),
-                          );
-                        }}
-                      />
-                      {!!incomingFilenameError(item.name) && (
-                        <Text accessibilityRole="alert" style={s.errorText}>
-                          {incomingFilenameError(item.name)}
-                        </Text>
-                      )}
-                    </View>
-                  ) : (
-                    <Text style={[s.rowTitle, s.flex]}>{item.name}</Text>
-                  )}
-                  <Text style={s.caption}>{bytes(item.size)}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-          {preparing && (
-            <View style={s.row} accessibilityLiveRegion="polite">
-              <Busy />
-              <Text style={s.text}>Preparing files…</Text>
-            </View>
-          )}
-          {!preparing &&
-            !!items.length &&
-            (!connection?.hubId ? (
-              <Text style={s.text}>
-                Pair with your hub, then share the files again.
-              </Text>
-            ) : !volume ? (
-              <>
-                {!!recent.length && (
-                  <Section>
-                    <Eyebrow>Recent destinations</Eyebrow>
-                    <View style={s.group}>
-                      {recent.map((entry, index) => (
-                        <FolderRow
-                          grouped
-                          divider={index > 0}
-                          disabled={busy}
-                          key={`${entry.volume}:${entry.directory}`}
-                          icon="history"
-                          name={destinationLabel(entry)}
-                          description={destinationUsage(entry)}
-                          onPress={() => {
-                            setVolume(entry.folder);
-                            setDirectory(entry.directory);
-                          }}
-                        />
-                      ))}
-                    </View>
-                  </Section>
-                )}
+          {place ? (
+            <>
+              {!!otherDestinations(recent, place.folder.id, place.directory).length && (
                 <Section>
-                  <Eyebrow>Selected folders</Eyebrow>
-                  {!destinations.length && (
-                    <EmptyState
-                      icon="folders"
-                      title="No folder to save into"
-                      text="Start syncing a folder in Folders. The shared files wait here."
-                      action={
-                        <Button
-                          label="Open Folders"
-                          onPress={() => {
-                            setParked(true);
-                            setOpen(false);
-                            onChoose?.();
-                          }}
-                        />
-                      }
-                    />
-                  )}
+                  <Eyebrow>Recent</Eyebrow>
                   <View style={s.group}>
-                    {destinations.map((v, index) => (
+                    {otherDestinations(recent, place.folder.id, place.directory).map((entry, index) => (
+                      <FolderRow
+                        grouped
+                        divider={index > 0}
+                        disabled={busy}
+                        key={`${entry.volume}:${entry.directory}`}
+                        icon="history"
+                        name={entry.folder.name}
+                        description={entry.directory || undefined}
+                        onPress={() => choose(entry.folder, entry.directory)}
+                      />
+                    ))}
+                  </View>
+                </Section>
+              )}
+              <View style={s.group}>
+                {!at &&
+                  destinations
+                    .filter((v) => v.id !== place.folder.id)
+                    .map((v, index) => (
                       <FolderRow
                         grouped
                         divider={index > 0}
                         disabled={busy}
                         key={v.id}
                         name={v.name}
-                        description={Number.isFinite(v.files) ? unbroken(`${fileCount(v.files)} · ${bytes(v.bytes)} local`) : "Not counted yet"}
-                        onPress={() => {
-                          setVolume(v);
-                          setDirectory("");
-                        }}
+                        onPress={() => setPlace({ folder: v, directory: "" })}
                       />
                     ))}
-                  </View>
-                </Section>
-              </>
-            ) : (
-              <>
-                <Button
-                  disabled={busy}
-                  quiet
-                  label="Shared folders"
-                  icon="back"
-                  onPress={() => setVolume(null)}
-                />
-                <Card>
-                  <View style={s.row}>
-                    <View style={s.tile}>
-                      <Icon name="folders" size={16} />
-                    </View>
-                    <View style={[s.flex, s.stack]}>
-                      <Text style={s.rowTitle}>{volume.name}</Text>
-                      <Text style={s.mono}>{directory || "/"}</Text>
-                    </View>
-                  </View>
-                </Card>
-                {directory && (
-                  <Button
+                {children.map((p, index) => (
+                  <FolderRow
+                    grouped
+                    divider={index > 0 || (!at && destinations.some((f) => f.id !== place.folder?.id))}
                     disabled={busy}
-                    label="Parent folder"
-                    icon="back"
-                    onPress={() =>
-                      setDirectory(directory.split("/").slice(0, -1).join("/"))
-                    }
+                    key={p}
+                    icon="folder"
+                    name={p.split("/").pop()}
+                    onPress={() => setPlace({ ...place, directory: p })}
                   />
-                )}
-                {!!children.length && (
-                  <View style={s.group}>
-                    {children.map((p, index) => (
-                      <FolderRow
-                        grouped
-                        divider={index > 0}
-                        disabled={busy}
-                        key={p}
-                        name={p.split("/").pop()}
-                        onPress={() => setDirectory(p)}
-                      />
-                    ))}
-                  </View>
-                )}
-                <Field
-                  editable={!busy}
-                  label="Subfolder (optional)"
-                  placeholder="e.g. workouts/2026"
-                  value={directory}
-                  onChangeText={setDirectory}
+                ))}
+                <ActionRow
+                  label="New folder…"
+                  icon="folder-plus"
+                  divider={!!children.length || (!at && destinations.some((f) => f.id !== place.folder?.id))}
+                  disabled={busy}
+                  onPress={() => setNaming("")}
                 />
-                <Text style={s.caption}>
-                  Saved locally first. Upload waits when offline or paused.
-                  Existing files with different content are kept separately.
-                </Text>
+              </View>
+              <SheetFooter>
                 <Button
                   primary
                   label="Save here"
-                  disabled={
-                    !items.length ||
-                    items.some((item) => incomingFilenameError(item.name))
-                  }
-                  busy={busy}
-                  onPress={save}
+                  icon="check"
+                  disabled={busy}
+                  onPress={() => choose(place.folder, place.directory)}
                 />
-              </>
-            ))}
-          <Button label="Cancel" disabled={busy} onPress={discard} />
+              </SheetFooter>
+            </>
+          ) : (
+            <>
+              {!!items.length && (
+                <View style={s.group}>
+                  {items.map((item, index) => (
+                    <View
+                      key={item.id}
+                      style={[s.folderRow, index > 0 && s.separator]}
+                    >
+                      <Icon name="file" size={20} />
+                      {item.renameRequired ? (
+                        <View style={s.flex}>
+                          <Field
+                            label="File name"
+                            value={item.name}
+                            editable={!busy}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            error={incomingFilenameError(item.name)}
+                            onChangeText={(name) => {
+                              setError("");
+                              setItems((current) =>
+                                current.map((entry) =>
+                                  entry.id === item.id ? { ...entry, name } : entry,
+                                ),
+                              );
+                            }}
+                          />
+                        </View>
+                      ) : (
+                        <Text style={[s.rowTitle, s.flex]}>{item.name}</Text>
+                      )}
+                      <Text style={s.caption}>{bytes(item.size)}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {preparing && (
+                <View style={s.row} accessibilityLiveRegion="polite">
+                  <Busy />
+                  <Text style={s.text}>Preparing files…</Text>
+                </View>
+              )}
+              {!preparing &&
+                !!items.length &&
+                (!connection?.hubId ? (
+                  <Text style={s.text}>
+                    Pair with your hub, then share the files again.
+                  </Text>
+                ) : !destinations.length ? (
+                  <EmptyState
+                    icon="folders"
+                    title="No folder to save into"
+                    text="Start syncing a folder in Folders. The shared files wait here."
+                    action={
+                      <Button
+                        label="Open Folders"
+                        onPress={() => {
+                          setParked(true);
+                          setOpen(false);
+                          onChoose?.();
+                        }}
+                      />
+                    }
+                  />
+                ) : (
+                  !!volume && (
+                    <>
+                      <Section>
+                        <Eyebrow>Save to</Eyebrow>
+                        <View style={[s.group, s.folderRow]}>
+                          <View style={s.tile}>
+                            <Icon name="folder" size={16} />
+                          </View>
+                          <View style={[s.flex, s.stack]}>
+                            <Text numberOfLines={1} style={s.rowTitle}>{volume.name}</Text>
+                            {!!directory && <Text numberOfLines={1} style={s.caption}>{directory}</Text>}
+                          </View>
+                          <Button
+                            ghost
+                            size="small"
+                            label="Change"
+                            disabled={busy}
+                            onPress={() => setPlace({ folder: volume, directory })}
+                          />
+                        </View>
+                      </Section>
+                      <Text style={s.caption}>Saved on this phone first, then uploaded.</Text>
+                      <SheetFooter>
+                        <Button
+                          primary
+                          label={saveLabel}
+                          icon="download"
+                          disabled={
+                            !items.length ||
+                            items.some((item) => incomingFilenameError(item.name))
+                          }
+                          busy={busy}
+                          onPress={save}
+                        />
+                      </SheetFooter>
+                    </>
+                  )
+                ))}
+            </>
+          )}
+          {naming != null && (
+            <Sheet title="New folder" icon="folder-plus" onClose={() => setNaming(null)}>
+              <Field
+                label="Folder name"
+                value={naming}
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                error={nameError}
+                onChangeText={setNaming}
+              />
+              <SheetFooter>
+                <Button
+                  primary
+                  label="Create folder"
+                  disabled={!named || !!nameError}
+                  onPress={() => {
+                    const directory = place.directory ? `${place.directory}/${named}` : named;
+                    setDirectories((current) => [...new Set([...current, directory])].sort());
+                    setPlace({ ...place, directory });
+                    setNaming(null);
+                  }}
+                />
+              </SheetFooter>
+            </Sheet>
+          )}
         </Sheet>
       )}
     </>

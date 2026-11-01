@@ -11,11 +11,11 @@ const read = (...parts) =>
 const pages = ["index.html", "desktop.html", "mobile.html", "auto.html", "proposals.html"];
 const kitStyles = [read("design", "kit.css"), read("design", "mobile.css"), read("design", "auto.css")];
 
-test("the design kit's mobile tokens are generated from the app palette and geometry", () => {
+test("the design kit's mobile tokens are generated from the shared token source", () => {
   assert.equal(
     read("design", "mobile-tokens.css"),
     mobileTokens(),
-    "run `npm run design` after changing palette.js or design-tokens.js",
+    "run `npm run design` after changing packages/core/design-tokens.js",
   );
 });
 

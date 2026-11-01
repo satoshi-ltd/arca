@@ -18,6 +18,7 @@ import {
   Scaffold,
   Section,
   SegmentedControl,
+  SheetFooter,
   useDesign,
 } from "./components";
 import {
@@ -824,7 +825,7 @@ export function MusicLibrary({
         <Text style={s.caption}>
           The hub lists this folder's artists and albums after the next sync.
         </Text>
-        <Button label="Sync now" icon="refresh" quiet onPress={sync} />
+        <Button label="Sync now" icon="refresh" ghost onPress={sync} />
       </>
     );
   if (!library.tracks.size)
@@ -1248,7 +1249,9 @@ function PlaylistName({ name = "", label, locked, submit }) {
         editable={!locked}
         onSubmitEditing={() => ready && submit(clean)}
       />
-      <Button label={label} disabled={!ready} onPress={() => submit(clean)} />
+      <SheetFooter>
+        <Button primary label={label} disabled={!ready} onPress={() => submit(clean)} />
+      </SheetFooter>
     </View>
   );
 }

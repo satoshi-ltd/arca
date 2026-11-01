@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { Text } from "./Text";
-import { useDesign, Field, CodeInput, Button, Icon } from "./components";
+import { useDesign, Field, CodeInput, Button } from "./components";
 
 export function PairingForm({
   name,
@@ -22,7 +22,7 @@ export function PairingForm({
   return (
     <>
       {!!back && (
-        <Button label="Back" icon="back" quiet disabled={busy} onPress={back} />
+        <Button label="Back" icon="back" ghost disabled={busy} onPress={back} />
       )}
       <Text accessibilityRole="header" style={s.title}>
         Pair with your hub
@@ -39,8 +39,8 @@ export function PairingForm({
         placeholder="https://arca.your-network"
         keyboardType="url"
         editable={!busy}
+        hint="Use HTTPS or Tailscale."
       />
-      <Text style={s.caption}>Use HTTPS or Tailscale.</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Using local Wi-Fi?"
@@ -55,28 +55,14 @@ export function PairingForm({
           private IPv4 address. Local HTTP traffic is not encrypted.
         </Text>
       )}
-      <View style={s.section}>
-        <CodeInput
-          label="Pairing code"
-          value={code}
-          onChangeText={setCode}
-          editable={!busy}
-        />
-        {codeError ? (
-          <Text
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={[s.caption, s.errorText]}
-          >
-            {codeError}
-          </Text>
-        ) : (
-          <View style={s.centeredRow}>
-            <Icon name="clock" size={16} />
-            <Text style={s.caption}>Single use · valid ten minutes</Text>
-          </View>
-        )}
-      </View>
+      <CodeInput
+        label="Pairing code"
+        value={code}
+        onChangeText={setCode}
+        editable={!busy}
+        hint="Single use · valid ten minutes"
+        error={codeError}
+      />
       <Field
         label={`Name this ${device}`}
         icon="phone"

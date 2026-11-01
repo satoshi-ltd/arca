@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
+import { geometry as g, radius as r, space as sp } from "./design-tokens.js";
 import { palettes } from "./palette.js";
 import { native } from "./private-network.js";
 import { safeDetails } from "../../desktop/src/notice-contract.js";
@@ -17,25 +18,25 @@ const sheet = (c) =>
     root: {
       flex: 1,
       justifyContent: "center",
-      padding: 24,
-      gap: 16,
+      padding: sp[6],
+      gap: sp[4],
       backgroundColor: c.paper,
     },
-    title: { color: c.ink, fontSize: 20, fontWeight: "600" },
-    text: { color: c.soft, fontSize: 15, lineHeight: 22 },
+    title: { color: c.ink, fontSize: g.touchHeadingFont, lineHeight: g.touchHeadingLine, fontWeight: "600" },
+    text: { color: c.soft, fontSize: g.touchBodyFont, lineHeight: g.touchBodyLine },
     details: { maxHeight: 160 },
-    trace: { color: c.mute, fontSize: 12 },
-    actions: { flexDirection: "row", gap: 12 },
+    trace: { color: c.mute, fontSize: g.touchCaptionFont, lineHeight: g.touchCaptionLine },
+    actions: { flexDirection: "row", gap: sp[3] },
     button: {
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderRadius: 10,
+      paddingHorizontal: sp[4],
+      paddingVertical: sp[3],
+      borderRadius: r.control,
       borderWidth: 1,
       borderColor: c.line,
       backgroundColor: c.surface,
     },
     primary: { backgroundColor: c.accent, borderColor: c.accent },
-    label: { color: c.ink, fontSize: 15, fontWeight: "600" },
+    label: { color: c.ink, fontSize: g.touchControlFont, fontWeight: "600" },
     primaryLabel: { color: c.onAccent },
   });
 const themes = { light: sheet(palettes.light), dark: sheet(palettes.dark) };

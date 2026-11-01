@@ -928,9 +928,9 @@ test("Artists is an A–Z index with # last, track counts and a strip of the nex
 
 test("a focused row at the top or bottom of a rounded card keeps its focus ring inside the card's corners", () => {
   const css = source("style.css");
-  assert.match(css, /\n\.history-group \{[^}]*border-radius: var\(--r-card\);\s*overflow: hidden;/);
-  assert.match(css, /\n\.history-group > :first-child:focus-visible \{\s*border-top-left-radius: calc\(var\(--r-card\) - 1px\);\s*border-top-right-radius: calc\(var\(--r-card\) - 1px\);/);
-  assert.match(css, /\n\.history-group > :last-child:focus-visible \{\s*border-bottom-left-radius: calc\(var\(--r-card\) - 1px\);\s*border-bottom-right-radius: calc\(var\(--r-card\) - 1px\);/);
+  assert.match(css, /\n\.history-group \{[^}]*border-radius: var\(--r-surface\);\s*overflow: hidden;/);
+  assert.match(css, /\n\.history-group > :first-child:focus-visible \{\s*border-top-left-radius: calc\(var\(--r-surface\) - 1px\);\s*border-top-right-radius: calc\(var\(--r-surface\) - 1px\);/);
+  assert.match(css, /\n\.history-group > :last-child:focus-visible \{\s*border-bottom-left-radius: calc\(var\(--r-surface\) - 1px\);\s*border-bottom-right-radius: calc\(var\(--r-surface\) - 1px\);/);
   assert.match(css, /\n\.music-row:focus-visible \{\s*outline-offset: -2px;/, "the picker's rows draw their ring inside, where the card clips");
 });
 
@@ -1979,10 +1979,11 @@ test("an audio library has one trail from Folders: the folder header and tabs on
   await ui.up("Folders", () => $(".folder-card"));
 });
 
-test("the library trail reuses the breadcrumb at body size with accent links", () => {
+test("the library trail reuses the breadcrumb at body size with small ghost links", () => {
   const css = source("style.css");
   assert.match(css, /\n\.folder-breadcrumb\.music-trail \{[^}]*height: auto;[^}]*padding: 0;[^}]*border-bottom: 0;[^}]*font-size: var\(--text-body\);/);
-  assert.match(css, /\n\.folder-breadcrumb\.music-trail \.text-button \{\s*color: var\(--green\);/);
+  assert.doesNotMatch(css, /text-button/);
+  assert.match(source("app.js"), /button\(escape\(label\), action, id, "ghost small-button"\)/);
 });
 
 test("an episode chosen in the search resumes from its synced position, and its row says the time left", async (t) => {

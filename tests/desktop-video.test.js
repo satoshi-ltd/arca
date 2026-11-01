@@ -704,7 +704,7 @@ test("TMDB states: no key shows only the row and Add key…, matching disables R
   assert.equal(matching.$('#video-settings [data-action="video-refresh"]').disabled, true);
   assert.equal(matching.$$("#video-settings .image-process-hint p")[0].textContent, "video · 5 movies · 3 shows · matching 3 of 8 with TMDB…");
   await matching.click('#video-settings [data-action="video-key"]', () => matching.$('#dialog [data-action="video-key-remove"]'));
-  assert.ok(matching.$('[data-action="video-key-remove"]').classList.contains("danger"));
+  assert.equal(matching.$('[data-action="video-key-remove"]').className, "secondary", "a trigger is never a danger button");
   await matching.click('[data-action="video-key-remove"]', () => matching.posts.some(([route]) => route === "/v1/video/settings"));
   assert.deepEqual(matching.posts.find(([route]) => route === "/v1/video/settings")[1], { tmdbToken: "" });
 
@@ -859,7 +859,7 @@ test("an episode row highlights as one, the watched toggle included", () => {
 
 test("the poster rating badge sits bottom-left over a scrim in tokens", () => {
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
-  assert.match(css, /\.video-rating \{\s*position: absolute;\s*left: var\(--space-2\);\s*bottom: var\(--space-2\);[^}]*border-radius: var\(--r-tag\);\s*background: var\(--mediaFade\);\s*color: var\(--onMedia\);\s*font: 600 var\(--text-caption\)/);
+  assert.match(css, /\.video-rating \{\s*position: absolute;\s*left: var\(--space-2\);\s*bottom: var\(--space-2\);[^}]*border-radius: var\(--r-small\);\s*background: var\(--mediaFade\);\s*color: var\(--onMedia\);\s*font: 600 var\(--text-caption\)/);
 });
 
 test("the ⋯ offers Fix match only with a working TMDB key and Mark as kids only for titles without TMDB data", async (t) => {

@@ -1,13 +1,7 @@
 // Platform-neutral notice data. Renderers own interaction and OS presentation.
 export const noticeMetrics = Object.freeze({
   width: 360,
-  inset: 16,
-  radius: 14,
-  padding: 16,
-  gap: 12,
   icon: 20,
-  title: 15,
-  body: 14,
   line: 21,
   detailsHeight: 32,
   duration: 180,

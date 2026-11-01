@@ -377,7 +377,7 @@ test("every show in progress carries its own play, time left and resume sheet; t
   assert.match(grid, /usePaged\(`\$\{memory\}:shows`, 60, 60\)/);
   assert.match(theme, /continuePlay: \{\s+position: "absolute",\s+right: 6,\s+bottom: 8,\s+width: 36,\s+height: 36,/);
   assert.match(theme, /showPlaySlot: \{ position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 \}/, "the play sits on the square cover");
-  assert.match(theme, /musicAlbum: \{ width: wide \? "18%" : "30\.5%", gap: 4 \}/, "five across the Fold root, three on the phone");
+  assert.match(theme, /musicAlbum: \{ width: wide \? "18%" : "30\.5%", gap: sp\[1\] \}/, "five across the Fold root, three on the phone");
   assert.match(theme, /musicAlbumSplit: \{ width: "30\.5%" \}/);
   assert.match(library, /label="Continue"\s+icon="play"[\s\S]*?label="Start over"\s+icon="rotate-ccw"[\s\S]*?label="Open show"[\s\S]*?favorite\.has\(sheet\.favorite\) \? "Remove from Favorites" : "Add to Favorites"/, "the sheet offers Continue, Start over, Open show and the favorite toggle");
   assert.match(library, /entry\.track\.id === playing && at > 0\s+\? player\s+\.command\("state"\)\s+\.then\(\(state\) => !isPlaying\(state\) && command\("toggle"\)\)/, "Continue on the loaded episode only resumes it");

@@ -381,7 +381,7 @@ function InfoPanel({ item, state, folderName, onClose, history }) {
         <Text accessibilityRole="header" style={[s.heading, s.flex]}>
           Photo details
         </Text>
-        <Button label="Close" quiet icon="close" iconOnly onPress={onClose} />
+        <Button label="Close" ghost icon="close" iconOnly onPress={onClose} />
       </View>
       <ScrollView style={s.sheetScroll} contentContainerStyle={s.infoBody}>
         <View style={s.infoIdentity}>

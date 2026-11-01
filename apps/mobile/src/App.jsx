@@ -141,6 +141,7 @@ import {
   Tag,
   Toggle,
   Sheet,
+  SheetFooter,
   ApprovalSheet,
   EmptyState,
   OfflineEmpty,
@@ -2930,7 +2931,7 @@ export default function App() {
                     {detail && (
                       <View style={s.headerBack}>
                       <Button
-                        quiet
+                        ghost
                         label={
                           historyDetail && sheet.originEntry
                             ? "Folder"
@@ -2955,7 +2956,7 @@ export default function App() {
                     {folder && screen === "Folders" && (
                       <View style={s.headerBack}>
                         <Button
-                          quiet
+                          ghost
                           label={
                             musicDeep
                               ? musicBackLabel(
@@ -3310,7 +3311,7 @@ export default function App() {
                                 </View>
                                 {fileView === "recent" && (
                                   <Button
-                                    quiet
+                                    ghost
                                     label="All history"
                                     onPress={() => {
                                       setHistoryVolume(folder.id);
@@ -3551,7 +3552,6 @@ export default function App() {
                                     and history are kept.
                                   </Text>
                                   <Button
-                                    danger
                                     label="Stop syncing…"
                                     icon="unlink"
                                     disabled={busy || !engine.current}
@@ -3620,7 +3620,7 @@ export default function App() {
                                     <FolderRow
                                       key={v.id}
                                       grouped
-                                      dashedDivider={index > 0}
+                                      divider={index > 0}
                                       name={v.name}
                                       available
                                       icon={v.gallery ? "gallery" : isVideoFolder(catalog, v.id) ? "clapperboard" : v.music && catalog?.music ? "music" : "folders"}
@@ -3633,7 +3633,7 @@ export default function App() {
                             </Section>
                           )}
                           {connected && !catalog && !status.offline && (
-                            <Scaffold dashed label="Loading shared folders" />
+                            <Scaffold available label="Loading shared folders" />
                           )}
                           {!locals.length &&
                             !volumes.length &&
@@ -4255,8 +4255,6 @@ export default function App() {
                             <Button
                               label="Erase this device…"
                               icon="trash"
-                              primary
-                              danger
                               busy={actionLocked}
                               onPress={destroy}
                             />
@@ -4542,7 +4540,7 @@ export default function App() {
                   />
                   {!!shownSheet.entry.uri && (
                     <Button
-                      quiet
+                      ghost
                       icon="export"
                       label="Share this file"
                       onPress={() =>
@@ -4570,31 +4568,34 @@ export default function App() {
                     autoCorrect={false}
                     editable={!actionLocked}
                   />
-                  <Button
-                    label="Rename"
-                    disabled={
-                      actionLocked ||
-                      !renameName ||
-                      renameName === shownSheet.path.split("/").at(-1)
-                    }
-                    onPress={() =>
-                      run(
-                        async () => {
-                          const target = shownSheet.returnTo;
-                          await engine.current.renameFile(
-                            target.volume,
-                            target.path,
-                            renameName,
-                            target.currentRev,
-                          );
-                          setSheet(null);
-                          if (folder) await listFiles();
-                          if (connected && !status.paused) startSync();
-                        },
-                        { success: "File renamed" },
-                      )
-                    }
-                  />
+                  <SheetFooter>
+                    <Button
+                      primary
+                      label="Rename"
+                      disabled={
+                        actionLocked ||
+                        !renameName ||
+                        renameName === shownSheet.path.split("/").at(-1)
+                      }
+                      onPress={() =>
+                        run(
+                          async () => {
+                            const target = shownSheet.returnTo;
+                            await engine.current.renameFile(
+                              target.volume,
+                              target.path,
+                              renameName,
+                              target.currentRev,
+                            );
+                            setSheet(null);
+                            if (folder) await listFiles();
+                            if (connected && !status.paused) startSync();
+                          },
+                          { success: "File renamed" },
+                        )
+                      }
+                    />
+                  </SheetFooter>
                 </View>
               )}
               {!!musicSheet(shownSheet) && (
@@ -4834,31 +4835,31 @@ export default function App() {
                   )}
                   {selectMode === "stream" ? (
                     <>
-                      <Card title="Stream from the hub">
-                        <Text style={s.text}>
-                          {selectMedia === "video"
-                            ? "Download titles to watch offline."
-                            : "Download tracks or albums to listen offline."}
-                        </Text>
-                      </Card>
-                      <Button
-                        label="Start streaming"
-                        icon="play"
-                        primary
-                        busy={busy}
-                        onPress={() =>
-                          run(async () => {
-                            if (selectMedia === "video") await engine.current.streamVideo(shownSheet.volume);
-                            else await engine.current.streamMusic(shownSheet.volume);
-                            setSheet(null);
-                            startSync();
-                          })
-                        }
-                      />
+                      <Text style={s.text}>
+                        {selectMedia === "video"
+                          ? "Download titles to watch offline."
+                          : "Download tracks or albums to listen offline."}
+                      </Text>
+                      <SheetFooter>
+                        <Button
+                          label="Start streaming"
+                          icon="play"
+                          primary
+                          busy={busy}
+                          onPress={() =>
+                            run(async () => {
+                              if (selectMedia === "video") await engine.current.streamVideo(shownSheet.volume);
+                              else await engine.current.streamMusic(shownSheet.volume);
+                              setSheet(null);
+                              startSync();
+                            })
+                          }
+                        />
+                      </SheetFooter>
                     </>
                   ) : (
                     <>
-                      <Card title={selectMedia ? "Keep on this phone" : "Start syncing"}>
+                      <View style={s.stack}>
                         <Text style={s.text}>
                           {selectMedia
                             ? "A full copy that syncs both ways."
@@ -4870,20 +4871,22 @@ export default function App() {
                             : ""}
                           {bytes(status.free)} free
                         </Text>
-                      </Card>
-                      <Button
-                        label="Start syncing"
-                        icon="refresh"
-                        primary
-                        busy={busy}
-                        onPress={() =>
-                          run(async () => {
-                            await engine.current.select(shownSheet.volume);
-                            setSheet(null);
-                            startSync();
-                          })
-                        }
-                      />
+                      </View>
+                      <SheetFooter>
+                        <Button
+                          label="Start syncing"
+                          icon="refresh"
+                          primary
+                          busy={busy}
+                          onPress={() =>
+                            run(async () => {
+                              await engine.current.select(shownSheet.volume);
+                              setSheet(null);
+                              startSync();
+                            })
+                          }
+                        />
+                      </SheetFooter>
                     </>
                   )}
                 </>
@@ -4930,24 +4933,26 @@ export default function App() {
                   <Text style={s.caption}>
                     Both copies remain available in history.
                   </Text>
-                  <Button
-                    primary
-                    label="Restore selected"
-                    busy={busy}
-                    disabled={!connected || status.offline || actionLocked}
-                    onPress={() =>
-                      run(() => chooseConflict(shownSheet.choice), {
-                        label: "Restoring selected version…",
-                        hubOnly: true,
-                      })
-                    }
-                  />
-                  <Button
-                    quiet
-                    label="Keep both as they are"
-                    disabled={actionLocked}
-                    onPress={() => setSheet(shownSheet.returnTo || null)}
-                  />
+                  <SheetFooter>
+                    <Button
+                      primary
+                      label="Restore selected"
+                      busy={busy}
+                      disabled={!connected || status.offline || actionLocked}
+                      onPress={() =>
+                        run(() => chooseConflict(shownSheet.choice), {
+                          label: "Restoring selected version…",
+                          hubOnly: true,
+                        })
+                      }
+                    />
+                    <Button
+                      ghost
+                      label="Keep both as they are"
+                      disabled={actionLocked}
+                      onPress={() => setSheet(shownSheet.returnTo || null)}
+                    />
+                  </SheetFooter>
                 </>
               )}
             </Sheet>

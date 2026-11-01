@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState, Eyebrow, Icon, PressScale, Sheet, useDesign } from "./components";
+import { EmptyState, Eyebrow, Icon, InlineMessage, PressScale, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
 import { artistFor, episodeCaption, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
 import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
-import { motion } from "./design-tokens.js";
+import { geometry as g, motion } from "./design-tokens.js";
 import { hasFlight } from "./flight.js";
 import { useMusicPlayer } from "./music-player";
 import { savedPosition } from "./audio-positions.js";
@@ -56,7 +56,7 @@ function SleepButton({ sleep, podcast, onPress }) {
   const label = sleepLabel(sleep, now, podcast);
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`Sleep timer, ${label}`} onPress={onPress} style={s.sleepChip}>
-      <Icon name="moon" size={14} color={c.onAccent} />
+      <Icon name="moon" size={g.pillIcon} color={c.ink} />
       <Text style={s.sleepChipText}>{label}</Text>
     </Pressable>
   );
@@ -200,31 +200,27 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
         <View style={s.nowLinks}>
           {podcast && (
             <Pressable accessibilityRole="link" accessibilityLabel={`Show ${track.artist}`} onPress={() => openShow(track)}>
-              <Text numberOfLines={1} style={[s.text, s.nowLink]}>
+              <Text numberOfLines={1} style={s.text}>
                 {[track.artist, formatDay(track.date)].filter(Boolean).join(" · ")}
               </Text>
             </Pressable>
           )}
           {!podcast && !!(track?.artist || state.artist) && (
             <Pressable accessibilityRole="link" accessibilityLabel={`Artist ${track?.artist || state.artist}`} disabled={!artist} onPress={() => artist && openArtist(artist)}>
-              <Text numberOfLines={1} style={[s.text, artist && s.nowLink]}>
+              <Text numberOfLines={1} style={s.text}>
                 {track?.artist || state.artist}
               </Text>
             </Pressable>
           )}
           {!podcast && !!(track?.album || state.album) && (
             <Pressable accessibilityRole="link" accessibilityLabel={`Album ${track?.album || state.album}`} disabled={!track} onPress={() => track && openAlbum(track)}>
-              <Text numberOfLines={1} style={[s.text, track && s.nowLink]}>
+              <Text numberOfLines={1} style={s.text}>
                 {track?.album || state.album}
               </Text>
             </Pressable>
           )}
         </View>
-        {!!state.error && (
-          <Text accessibilityRole="alert" style={[s.caption, s.errorText, s.centerText]}>
-            {state.error}
-          </Text>
-        )}
+        {!!state.error && <InlineMessage tone="error">{state.error}</InlineMessage>}
       </View>
       <View style={s.playerProgressArea}>
         <Pressable

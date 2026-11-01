@@ -281,18 +281,28 @@ test("cancelling while the share is still being resolved removes the staged file
   await missing(path.join(f.temporary, "late-1-0"));
 });
 
-test("the share sheet offers recent destinations above the folder list and records every save", async () => {
+test("the share sheet saves in one step to the last destination and Change opens the picker in the same sheet", async () => {
   const screen = await fs.readFile(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
-  const list = screen.slice(screen.indexOf(") : !volume ? ("), screen.indexOf('label="Shared folders"'));
-  assert.ok(list.indexOf("Recent destinations") > 0 && list.indexOf("Recent destinations") < list.indexOf("Selected folders"));
-  assert.match(list, /\{!!recent\.length && \(/, "no section without history");
-  assert.match(list, /icon="history"\s+name=\{destinationLabel\(entry\)\}\s+description=\{destinationUsage\(entry\)\}/);
-  assert.match(list, /setVolume\(entry\.folder\);\s+setDirectory\(entry\.directory\);/, "one tap lands on the destination");
+  for (const gone of ['label="Cancel"', "Subfolder", "Parent folder", 'label="Shared folders"', "Recent destinations", "Selected folders", "<Card"])
+    assert.ok(!screen.includes(gone), `${gone} is gone`);
+  assert.match(screen, /const start = startingDestination\(recent, destinations\);\s+if \(!start\) return;\s+setVolume\(start\.folder\);\s+setDirectory\(start\.directory\);/, "it starts on the latest destination, else the first selected folder");
+  const step = screen.slice(screen.indexOf("<Eyebrow>Save to</Eyebrow>"), screen.indexOf("{naming != null && ("));
+  assert.match(step, /label="Change"[\s\S]*?onPress=\{\(\) => setPlace\(\{ folder: volume, directory \}\)\}/);
+  assert.match(step, /Saved on this phone first, then uploaded\./);
+  assert.match(step, /<SheetFooter>\s+<Button\s+primary\s+label=\{saveLabel\}\s+icon="download"/);
+  assert.match(screen, /const saveLabel = `Save \$\{count\(items\.length, "file", "files"\)\}`;/);
+  const picker = screen.slice(screen.indexOf("{place ? ("), screen.indexOf("<Eyebrow>Save to</Eyebrow>"));
+  assert.ok(picker.indexOf("<Eyebrow>Recent</Eyebrow>") < picker.indexOf("children.map(") && picker.indexOf("children.map(") < picker.indexOf('label="New folder…"'));
+  assert.match(picker, /otherDestinations\(recent, place\.folder\.id, place\.directory\)/, "Recent skips the current place");
+  assert.match(picker, /<SheetFooter>\s+<Button\s+primary\s+label="Save here"\s+icon="check"/);
+  assert.match(screen, /\? \{ title: "Save to", subtitle: placeLabel\(place\.folder, place\.directory\), onBack: back \}/);
+  assert.match(screen, /const back = \(\) =>\s+place\.directory\s+\? setPlace\(\{ \.\.\.place, directory: place\.directory\.split\("\/"\)\.slice\(0, -1\)\.join\("\/"\) \}\)\s+: setPlace\(null\);/, "back walks up, and from the root returns to the step");
+  assert.match(screen, /<Sheet title="New folder" icon="folder-plus"/);
   const save = screen.slice(screen.indexOf("async function save()"), screen.indexOf("async function discard()"));
   const remembered = save.search(/await saveDestination\(\s*r\.store,\s*r\.scope,\s*destinations,\s*volume\.id,\s*directory,?\s*\)\.catch\(\(\) => \{\}\);/);
   assert.ok(remembered > save.indexOf("r.importing = false;"), "the destination is remembered only after every file is saved, and never blocks the sheet");
   assert.ok(remembered < save.indexOf("setOpen(false);"));
   const load = screen.slice(screen.indexOf("if (!open) return;"), screen.indexOf("}, [open, connection?.hubId, locals]);"));
   assert.match(load, /r\.scope && r\.scope === connection\?\.hubId\s+\? await loadDestinations\(r\.store, r\.scope, choices\)/);
-  assert.match(screen, /setDirectory\(""\);\s+setRecent\(\[\]\);\s+\}, \[connection\?\.hubId\]\);/, "another hub starts without the old list");
+  assert.match(screen, /setDirectory\(""\);\s+setPlace\(null\);\s+setNaming\(null\);\s+setRecent\(\[\]\);\s+\}, \[connection\?\.hubId\]\);/, "another hub starts without the old list or picker");
 });

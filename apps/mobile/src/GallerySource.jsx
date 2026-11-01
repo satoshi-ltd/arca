@@ -4,12 +4,13 @@ import { Image, Linking, Pressable, View } from "react-native";
 import { Text } from "./Text";
 import {
   Button,
-  Card,
   FolderRow,
   Icon,
+  InlineMessage,
   MediaPlaceholder,
   PLACEHOLDER_GLYPH_MIN,
   Section,
+  SheetFooter,
   Toggle,
   useDesign,
 } from "./components";
@@ -156,7 +157,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
           <Button
             label="Back"
             icon="back"
-            quiet
+            ghost
             onPress={() => setChoosing(false)}
           />
           <Text style={[s.heading, s.flex]}>Choose albums</Text>
@@ -164,7 +165,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             label="Refresh albums"
             icon="refresh"
             iconOnly
-            quiet
+            ghost
             busy={loading}
             disabled={locked}
             onPress={() => load()}
@@ -237,12 +238,10 @@ export function GallerySetup({ gallery, source, locked, enable }) {
       {options && (
         <>
           {options.permission.accessPrivileges === "limited" && (
-            <Card title="Limited photo access">
-              <Text style={s.text}>
-                Only selected photos are accessible. Allow more in system
-                settings.
-              </Text>
-            </Card>
+            <InlineMessage tone="warning">
+              Limited photo access: only selected photos are accessible. Allow
+              more in system settings.
+            </InlineMessage>
           )}
           {!!preview.length && (
             <View style={s.galleryGrid}>
@@ -278,17 +277,19 @@ export function GallerySetup({ gallery, source, locked, enable }) {
           <Text style={s.caption}>
             Uses your current network, including mobile data.
           </Text>
-          <Button
-            primary
-            label={source ? "Save changes" : "Enable uploads"}
-            disabled={
-              locked ||
-              loading ||
-              !changed ||
-              albums.some((a) => !options.albums.some((o) => o.id === a.id))
-            }
-            onPress={() => enable({ albums, videos }, { count: libraryCount, limited })}
-          />
+          <SheetFooter>
+            <Button
+              primary
+              label={source ? "Save changes" : "Enable uploads"}
+              disabled={
+                locked ||
+                loading ||
+                !changed ||
+                albums.some((a) => !options.albums.some((o) => o.id === a.id))
+              }
+              onPress={() => enable({ albums, videos }, { count: libraryCount, limited })}
+            />
+          </SheetFooter>
           <GalleryDetails>
             <Text style={s.caption}>
               Existing and new photos are included. Deleting from Photos keeps

@@ -1,3 +1,4 @@
+import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { validPath } from "./validation.js";
 
 export function incomingName(payload, index) {
@@ -23,6 +24,21 @@ export function incomingFilenameError(name) {
   } catch {
     return 'Rename this file: avoid : * ? " < > |, reserved names and trailing dots or spaces.';
   }
+}
+export function incomingFolderError(name, siblings = [], files = []) {
+  if (!name) return "Enter a folder name.";
+  if (name.includes("/") || name.includes("\\"))
+    return "Enter a folder name, not a path.";
+  if (builtinExcluded(name))
+    return "Arca never syncs a folder with this name. Choose another folder name.";
+  if (incomingFilenameError(name))
+    return 'Choose another folder name: avoid : * ? " < > |, reserved names and trailing dots or spaces.';
+  const key = name.normalize("NFC").toLowerCase();
+  if (siblings.some((sibling) => sibling.normalize("NFC").toLowerCase() === key))
+    return "This folder already exists.";
+  if (files.some((file) => file.normalize("NFC").toLowerCase() === key))
+    return "A file with this name already exists.";
+  return "";
 }
 export function incomingDestination(directory, name) {
   const prefix = directory.trim().normalize("NFC").replace(/\/$/, "");

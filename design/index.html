@@ -23,7 +23,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.8.23 · production</span>
+      <span class="kit-version">v0.8.24 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -182,7 +182,7 @@
           <div class="kit-card">
             <h3>Desktop · web</h3>
             <div class="kit-type-row"><span class="kit-mono">title 20/26 · 600</span><strong class="kit-text-title">Folders</strong></div>
-            <div class="kit-type-row"><span class="kit-mono">dialog 16/22 · 600</span><strong class="kit-text-dialog">Stop syncing “photos”?</strong></div>
+            <div class="kit-type-row"><span class="kit-mono">heading 16/22 · 600</span><strong class="kit-text-heading">Stop syncing “photos”?</strong></div>
             <div class="kit-type-row"><span class="kit-mono">row 14 · 600</span><strong class="kit-text-row">photos-yuri</strong></div>
             <div class="kit-type-row"><span class="kit-mono">control 13</span><span class="kit-text-control">Start syncing</span></div>
             <div class="kit-type-row"><span class="kit-mono">body 12</span><span class="kit-text-body">138 files · 1.6 GB</span></div>
@@ -192,11 +192,12 @@
           <div class="kit-card">
             <h3>Touch · phone and Fold</h3>
             <div class="kit-type-row"><span class="kit-mono">title 26/32 (Fold 20/26)</span><strong class="m-title">Folders</strong></div>
+            <div class="kit-type-row"><span class="kit-mono">heading 18/24 · 600</span><span class="m-heading">Stop syncing “photos”?</span></div>
             <div class="kit-type-row"><span class="kit-mono">row 16/22 · 600</span><span class="m-row-title">photos-yuri</span></div>
             <div class="kit-type-row"><span class="kit-mono">body 15/22</span><span class="m-text">Download this folder and keep it in sync.</span></div>
-            <div class="kit-type-row"><span class="kit-mono">caption 14/20</span><span class="m-caption">138 files · 1.6 GB</span></div>
+            <div class="kit-type-row"><span class="kit-mono">caption 13/18</span><span class="m-caption">138 files · 1.6 GB</span></div>
             <div class="kit-type-row"><span class="kit-mono">control 15/20 · 600</span><span class="m-row-title kit-text-touch-control">Start syncing</span></div>
-            <div class="kit-type-row"><span class="kit-mono">eyebrow mono 12/18</span><span class="m-eyebrow">On hub · not selected</span></div>
+            <div class="kit-type-row"><span class="kit-mono">eyebrow mono 13/18</span><span class="m-eyebrow">On hub · not selected</span></div>
           </div>
         </div>
       </section>
@@ -215,7 +216,7 @@
         <h2>Space, radius, elevation, motion <span>05</span></h2>
         <div class="kit-grid">
           <div class="kit-card">
-            <h3>Spacing · 4 px base</h3>
+            <h3>Spacing · one scale for desktop and phone</h3>
             <div class="kit-scale">
               <div><b class="kit-space-1"></b>4</div>
               <div><b class="kit-space-2"></b>8</div>
@@ -223,19 +224,19 @@
               <div><b class="kit-space-4"></b>16</div>
               <div><b class="kit-space-5"></b>20</div>
               <div><b class="kit-space-6"></b>24</div>
+              <div><b class="kit-space-7"></b>32</div>
             </div>
             <p class="kit-note">Rows pad 12 × 16 and lead with a 40 px tile or a 16 px icon, then 12. Section labels sit 8 above their list, sections 24 apart, header bottom 16. The phone uses the same logical values, except that its rows stand at least 74 dp (desktop 66 px); compact rows are 48 on both.</p>
           </div>
           <div class="kit-card">
             <h3>Radius</h3>
             <div class="kit-scale">
-              <div><b class="kit-radius-tag"></b>tag 6</div>
+              <div><b class="kit-radius-small"></b>small 6</div>
               <div><b class="kit-radius-control"></b>control 8</div>
-              <div><b class="kit-radius-card"></b>card 12</div>
-              <div><b class="kit-radius-dialog"></b>dialog 14</div>
+              <div><b class="kit-radius-surface"></b>surface 12</div>
               <div><b class="kit-radius-pill"></b>pill</div>
             </div>
-            <p class="kit-note">Never mix radii in one row. Windows are 12 and segmented thumbs 6. Desktop photo tiles use 8; phone photo tiles use 4, or 2 when denser than 40 px.</p>
+            <p class="kit-note">One radius per role on both platforms: small for tags, segment thumbs and phone photo tiles (2 when denser than 40 px), control for buttons and fields, surface for cards, windows, dialogs, sheets and notices, pill for chips and round controls.</p>
           </div>
           <div class="kit-card">
             <h3>Elevation</h3>
@@ -274,7 +275,7 @@
             <div class="kit-row">
               <button type="button" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button>
               <button type="button" class="secondary">Cancel</button>
-              <button type="button" class="secondary danger"><span data-icon="unlink"></span>Stop syncing…</button>
+              <button type="button" class="secondary"><span data-icon="unlink"></span>Stop syncing…</button>
               <button type="button" class="primary danger">Delete</button>
             </div>
             <div class="kit-row">
@@ -290,10 +291,10 @@
             </div>
             <div class="kit-row">
               <button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button>
-              <button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button>
+              <button type="button" class="ghost small-button"><span data-icon="undo-2"></span>Restore</button>
               <button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
             </div>
-            <p class="kit-note">One primary per screen, 32 px controls. Back, text and ghost buttons are borderless green actions. Pressed: secondary and icon buttons fill with --press at once, one step past hover, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
+            <p class="kit-note">Four kinds in two sizes, the same on desktop and phone: primary (accent fill, one per screen), secondary (surface with the control border), ghost (no fill or border, ink text or icon, a hover fill) and danger (the danger fill, only on the button that confirms a destructive dialog). Regular is 32 px, small 24 px; an icon-only button is square at its size. A menu entry that deletes stays a menu row in danger text, and the trigger outside a menu is a secondary. Pressed: secondary, ghost and icon buttons fill with --press at once, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px.</p>
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>
@@ -326,7 +327,7 @@
           <div class="kit-card">
             <h3>Fields · invalid and multi-line</h3>
             <div class="field-with-icon selection-path"><span data-icon="folder"></span><input class="mono" aria-label="Local destination" aria-invalid="true" aria-describedby="kit-path-error" value="/Users/javi/Library/Application Support/Arca" /></div>
-            <div class="path-check selection-check path-check-error" id="kit-path-error" role="status"><span data-icon="circle-alert"></span><span>Choose a folder outside the application data.</span></div>
+            <div class="message message-error" id="kit-path-error" role="status"><span data-icon="circle-alert"></span><span>Choose a folder outside the application data.</span></div>
             <label for="kit-rules">Exclusion rules</label>
             <textarea id="kit-rules" class="ignore-editor mono" spellcheck="false" aria-describedby="kit-rules-hint">node_modules/
 *.tmp</textarea>
@@ -339,7 +340,7 @@
               <div class="dropdown"><button type="button" class="dropdown-trigger" aria-label="Shared folder: photos" aria-haspopup="listbox" aria-expanded="true"><span>photos</span><span data-icon="chevron-down"></span></button><div class="dropdown-menu" role="listbox" aria-label="Shared folder"><button type="button" role="option" aria-selected="false"><span>All</span><span data-icon="check"></span></button><button type="button" role="option" aria-selected="true"><span>photos</span><span data-icon="check"></span></button><button type="button" role="option" aria-selected="false"><span>documents</span><span data-icon="check"></span></button></div></div>
             </div>
             <div class="kit-draw menu-open">
-              <div class="heading-actions"><details class="details-menu folder-actions-menu" open><summary class="icon-button" aria-label="Folder actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="library-big"></span>Set up as library…</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename…</button><button type="button" class="secondary danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div>
+              <div class="heading-actions"><details class="details-menu folder-actions-menu" open><summary class="icon-button" aria-label="Folder actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="library-big"></span>Set up as library…</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename…</button><button type="button" class="danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div>
             </div>
             <div class="kit-draw menu-open">
               <button type="button" class="ghost icon-button" data-tooltip="Sync now" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
@@ -361,7 +362,7 @@
           </div>
           <div class="kit-card">
             <h3>Devices</h3>
-            <div class="device-list kit-device-end-162"><article class="device-row device-entry"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span>Tailscale</span><span>100.99.29.84:17831</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">412.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><button type="button" class="secondary small-button danger"><span data-icon="unplug"></span>Disconnect…</button><span class="role-set"><span class="tag hub">Hub</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>nas</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">401.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span class="device-older" tabindex="0" data-tooltip="Older than the hub’s v0.7.38"><span data-icon="circle-arrow-up"></span>v0.7.35<span class="sr-only">, older than the hub’s v0.7.38</span></span></div><div class="device-cell device-folders"><span>6 folders</span><span class="device-size">18.2 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Oct 11, 09:12</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span></span></div></article><article class="device-row device-entry"><div class="tile large er"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.30</span></div><div class="device-cell device-folders"><span>1 folder</span><span class="device-size">3.4 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Sep 28, 18:05</span></div></div><div class="row-end device-end"><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="role-set"><span class="tag">Replica</span></span></div></article></div>
+            <div class="device-list kit-device-end-162"><article class="device-row device-entry"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span>Tailscale</span><span>100.99.29.84:17831</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">412.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><button type="button" class="secondary small-button"><span data-icon="unplug"></span>Disconnect…</button><span class="role-set"><span class="tag hub">Hub</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>nas</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">401.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span class="device-older" tabindex="0" data-tooltip="Older than the hub’s v0.7.38"><span data-icon="circle-arrow-up"></span>v0.7.35<span class="sr-only">, older than the hub’s v0.7.38</span></span></div><div class="device-cell device-folders"><span>6 folders</span><span class="device-size">18.2 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Oct 11, 09:12</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span></span></div></article><article class="device-row device-entry"><div class="tile large er"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.30</span></div><div class="device-cell device-folders"><span>1 folder</span><span class="device-size">3.4 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Sep 28, 18:05</span></div></div><div class="row-end device-end"><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="role-set"><span class="tag">Replica</span></span></div></article></div>
             <p class="kit-note">One grouped list: the hub first, then this device, then the others. The name block keeps the name (and This device) over the OS; the hub adds Tailscale and its address there. Three aligned columns follow at the caption size: the version, always shown, with the circled up-arrow, warning ink and the tooltip “Older than the hub’s vX” when it is older; the folder count over the size in mute (the local bytes of the folders that device selected; the hub’s shared folders); and last seen, “Connected” with the green dot within two minutes of the device’s last contact, otherwise “Seen” and its date and time with a grey dot. A value a device has not reported leaves its cell empty, never 0. The right edge is one column of role chips: Hub filled, Replica outlined, a full-backup replica with an attached shield segment; the row’s action, Removed or Invitation only sits just before it, and a removed device tints its tile and never shows the up-arrow.</p>
           </div>
           <div class="kit-card">
@@ -400,8 +401,8 @@
                   <div class="selection-summary"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>photos-yuri</strong><p>138 files · 1.6 GB · on the hub</p></div><span class="mono">id addc</span></div>
                   <label for="kit-destination">Local destination</label>
                   <div class="field-with-icon selection-path"><span data-icon="folder"></span><input id="kit-destination" class="mono" value="/Users/javi/arca/photos-yuri" /></div>
-                  <div class="path-check selection-check" role="status"><span>New folder · Needs 1.6 GB · 589.0 GB free</span></div>
-                  <div class="callout"><span data-icon="info"></span><p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div>
+                  <div class="message" role="status"><span data-icon="info"></span><span>New folder · Needs 1.6 GB · 589.0 GB free</span></div>
+                  <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
                 </div>
                 <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
               </dialog>
@@ -457,10 +458,10 @@
               <div class="m-section"><span class="m-eyebrow">On hub · not selected</span><div class="m-group">
                 <div class="m-row m-available"><div class="m-tile"><span data-icon="images" data-size="20"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="refresh-cw" data-size="20"></span>Start syncing</span></div>
               </div></div>
-              <div class="kit-row"><span class="m-button m-primary">Start syncing</span><span class="m-button">Cancel</span><span class="m-button m-caution"><span data-icon="unlink" data-size="20"></span>Stop syncing…</span><span class="m-button m-danger">Delete</span></div>
-              <div class="kit-row"><span class="m-button m-square" aria-label="Sync now"><span data-icon="refresh-cw" data-size="20"></span></span><span class="m-button m-ghost" aria-label="Search"><span data-icon="search" data-size="20"></span></span><span class="m-button m-primary" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing…</span><span class="m-button m-quiet"><span data-icon="chevron-left" data-size="20"></span>Back</span></div>
+              <div class="kit-row"><span class="m-button m-primary">Start syncing</span><span class="m-button">Cancel</span><span class="m-button"><span data-icon="unlink" data-size="20"></span>Stop syncing…</span><span class="m-button m-danger">Delete</span></div>
+              <div class="kit-row"><span class="m-button m-square" aria-label="Sync now"><span data-icon="refresh-cw" data-size="20"></span></span><span class="m-button m-ghost m-square" aria-label="Search"><span data-icon="search" data-size="20"></span></span><span class="m-button m-primary" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing…</span><span class="m-button m-ghost"><span data-icon="chevron-left" data-size="20"></span>Back</span></div>
             </div></div></div>
-            <p class="kit-note">Rows mirror the desktop contract at touch sizes: no state pill, a conflict tints the tile with the warning tone, an error with the danger tone, Paused, Offline and Disconnected read neutral, and the caption starts with the state word in that ink. Syncing swaps the glyph for the busy grid, with the progress ring once totals are known. Buttons are 48 dp: primary, secondary, outlined danger for a named destructive verb, filled danger only to confirm it, 48 dp square icon buttons, 44 dp ghost icons and a borderless quiet accent action. Pressed fills with hover; primary drops to 85% opacity and pressable rows scale to .98.</p>
+            <p class="kit-note">Rows mirror the desktop contract at touch sizes: no state pill, a conflict tints the tile with the warning tone, an error with the danger tone, Paused, Offline and Disconnected read neutral, and the caption starts with the state word in that ink. Syncing swaps the glyph for the busy grid, with the progress ring once totals are known. Buttons follow the same four kinds at touch sizes, regular 48 dp and small 32 dp: primary, secondary, ghost and danger, which fills only the button that confirms a destructive action; icon-only buttons are square at their size. Pressed fills with hover; primary drops to 85% opacity and pressable rows scale to .98.</p>
           </div>
           <div class="kit-card">
             <h3>Tags, switches, segments, fields</h3>

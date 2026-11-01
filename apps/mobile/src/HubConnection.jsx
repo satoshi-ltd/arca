@@ -37,9 +37,8 @@ export function HubConnection({
         .join(" · ")}
       actions={
         <Button
-          danger
           iconOnly={!wide}
-          size={wide ? "compact" : "small"}
+          size="small"
           icon="unplug"
           label={connection.leaving ? "Retry disconnect" : "Disconnect…"}
           disabled={busy}

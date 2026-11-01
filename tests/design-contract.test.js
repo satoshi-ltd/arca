@@ -434,7 +434,7 @@ test("an open ⋯ menu is never clipped by its list and opens upward when the ro
   const lists = css.match(/\n\.folder-list,\n\.device-list \{([^}]*)\}/)[1];
   assert.doesNotMatch(lists, /overflow/, "device rows hold ⋯ menus, so the device list must not clip");
   assert.match(css, /\n\.folder-list \{\n  overflow: hidden;\n\}/, "folder rows have no ⋯ menu and keep their exit motion inside the list");
-  assert.match(css, /\n\.device-list > \.device-row:last-child \{\n  border-bottom-left-radius: calc\(var\(--r-card\) - 1px\);/);
+  assert.match(css, /\n\.device-list > \.device-row:last-child \{\n  border-bottom-left-radius: calc\(var\(--r-surface\) - 1px\);/);
   assert.match(css, /\.details-menu\.menu-up > \.menu-items \{\n  animation-name: menu-enter-up;\n  top: auto;\n  bottom: calc\(100% \+ var\(--space-1\)\);/);
   const app = read("app.js");
   const code = app.slice(app.indexOf("function menuRoom("), app.indexOf("new MutationObserver((records) => {\n  for (const { target } of records) if (target.matches(\".details-menu\")"));
@@ -494,13 +494,13 @@ test("every dialog shares one type scale, with body text as large as its buttons
   const css = read("style.css");
   const rule = (selector) =>
     css.match(new RegExp(`\\n${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1];
-  for (const token of ["--dialog-padding", "--dialog-tile", "--dialog-title", "--dialog-title-line", "--dialog-body-line"])
+  for (const token of ["--space-6", "--dialog-tile", "--text-heading", "--text-heading-line", "--dialog-body-line"])
     assert.match(tokens, new RegExp(`${token}: `), token);
   assert.doesNotMatch(tokens, /--(confirmation-title|approval-tile):/);
-  assert.match(rule("dialog"), /padding: var\(--dialog-padding\);/);
-  assert.match(rule(".modal-title h2"), /font-size: var\(--dialog-title\);/);
+  assert.match(rule("dialog"), /padding: var\(--space-6\);/);
+  assert.match(rule(".modal-title h2"), /font-size: var\(--text-heading\);/);
   assert.match(rule(".modal-title p"), /font-size: var\(--text-control\);/);
-  assert.match(css, /\.text-button \{[^}]*font-size: var\(--text-control\);/, "buttons use the body size");
+  assert.match(css, /\n\.back \{\n  display: inline-flex;[^}]*font-size: var\(--text-control\);/, "buttons use the control size");
   assert.doesNotMatch(css, /\n\.(confirmation|approval)-dialog \.modal-title/, "variants never restyle the header");
   assert.match(rule("dialog:has(:where(#submit-dialog.danger)) .modal-title .tile"), /background: var\(--erBg\);/);
   assert.doesNotMatch(read("app.js"), /#submit-dialog"\)\.className = "secondary danger"/);
@@ -546,7 +546,7 @@ test("control borders, destructive buttons, toggles and busy dots meet the acces
   for (const selector of [".dropdown-trigger", ".field-with-icon", ".root-selection", ".photo-viewer .photo-info-footer button"])
     assert.match(rule(selector), /border: 1(\.5)?px solid var\(--control\);/, `${selector} draws the control border`);
   assert.match(rule(".tray-tone-conflict > svg"), /color: var\(--waFg\);/, "the tray draws a conflict glyph in the warning ink");
-  assert.match(rule(".primary.danger"), /color: var\(--onGreen\);/);
+  assert.match(rule(".danger"), /background: var\(--er\);[^}]*color: var\(--onGreen\);/);
   assert.match(rule(".toggle input:focus-visible + span"), /outline: 2px solid var\(--green\);/);
   assert.match(rule(".busy-grid i"), /animation: arca-busy var\(--motion-loop\)/);
 });
@@ -567,7 +567,7 @@ test("every control answers a press, the viewer keeps its own fills and icon but
   assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\),\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--tint\);/, "the Info panel keeps its tint");
   const coarse = tail.slice(tail.indexOf("@media (pointer: coarse) {"));
   assert.match(coarse, /@media \(pointer: coarse\) \{\s+\.icon-button,\s+\.ghost\.icon-button \{\s+width: var\(--touch-target-min\);/);
-  assert.match(coarse, /@media \(pointer: coarse\) and \(min-width: 481px\) \{\s+#sync-controls \.ghost\.icon-button,\s+#sync-controls button \{/, "the collapsed 64 px sidebar keeps its small controls");
+  assert.match(coarse, /@media \(pointer: coarse\) and \(min-width: 481px\) \{\s+#sync-controls button \{/, "the collapsed 64 px sidebar keeps its small controls");
 });
 
 test("the viewer's Back button moves clear of the macOS window controls only in the native Mac app", () => {

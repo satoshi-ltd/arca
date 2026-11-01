@@ -341,7 +341,7 @@ test("web sign-in shows a routine expiry as a hint, not an error, and Copy rows 
   const app = source("app.js");
   assert.match(app, /message === SESSION_ENDED \? `<p class="hint" id="login-notice">/);
   assert.match(app, /commandRow\("In Docker", WEB_CODE_DOCKER\)\}\$\{commandRow\("Installed directly", WEB_CODE_DIRECT\)/);
-  assert.match(app, /wait\.innerHTML = `<p class="dialog-error" role="alert">\$\{result\.state === "denied" \? "Access denied\." : "Request expired\. Try again\."\}<\/p>`/);
+  assert.match(app, /wait\.innerHTML = inlineMessage\(result\.state === "denied" \? "Access denied\." : "Request expired\. Try again\.", "error"\)/);
   assert.match(app, /const restore = working\(submit, "Signing in…"\)/);
 });
 

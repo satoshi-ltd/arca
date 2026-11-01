@@ -215,7 +215,7 @@ test("favorite rows share the nav items' type, ink, icons and geometry; only the
   for (const property of ["font-size", "font-weight", "font-family", "color", "padding", "padding-block", "padding-inline", "line-height", "min-height", "height", "border-radius", "background", "gap"])
     assert.doesNotMatch(favorite, new RegExp(`(^|[\\s;])${property}:`), `favorite rows inherit ${property} from .nav-item`);
   assert.match(source("index.html"), /<div class="favorites-head section-label" aria-hidden="true"><span>Favorites<\/span><\/div>/);
-  assert.match(css, /\n\.favorites \.favorites-head \{\s*min-height: var\(--space-5\);\s*margin: 0;\s*padding: 0 10px;\s*\}/);
+  assert.match(css, /\n\.favorites \.favorites-head \{\s*min-height: var\(--space-5\);\s*margin: 0;\s*padding: 0 var\(--space-3\);\s*\}/);
 });
 
 test("an album that left the library is removed from Favorites once the library is read", async (t) => {
@@ -241,7 +241,7 @@ test("only the Favorites region scrolls, with a fade on the clipped edge, and th
 test("the sidebar Search is a borderless nav-style row that opens the one palette", () => {
   const css = source("style.css");
   const rule = /\n\.palette-open \{([^}]*)\}/.exec(css)[1];
-  assert.match(rule, /padding: 7px 10px;/);
+  assert.match(rule, /padding: var\(--space-2\) var\(--space-3\);/);
   assert.match(rule, /border: 0;/);
   assert.match(rule, /background: none;/);
   assert.match(rule, /color: var\(--soft\);/);

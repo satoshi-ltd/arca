@@ -143,7 +143,7 @@ export function FileHistory({
                       ) : (
                         restorable(row) && (
                           <Button
-                            quiet
+                            ghost
                             label="Restore"
                             icon="restore"
                             disabled={locked || !reachable}

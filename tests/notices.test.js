@@ -113,13 +113,7 @@ test("notice geometry and colors are tokenized consistently across renderers", a
   );
   for (const [key, token] of Object.entries({
     width: "width",
-    inset: "inset",
-    radius: "radius",
-    padding: "padding",
-    gap: "gap",
     icon: "icon",
-    title: "title",
-    body: "body",
     line: "line",
     detailsHeight: "details-height",
   }))

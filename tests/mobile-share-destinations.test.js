@@ -189,3 +189,23 @@ test("saving records into the phone's own settings row for the hub and prunes fo
     "and is replaced by the next save",
   );
 });
+
+test("a share starts on the latest destination still selected, else the first selected folder, and the picker's Recent skips the current place", async () => {
+  const { startingDestination, otherDestinations, placeLabel } = await import("../apps/mobile/src/share-destinations.js");
+  const entries = recentDestinations(
+    [
+      { volume: "v-docs", directory: "receipts/2026", uses: 9, last: 1000 },
+      { volume: "v-alpi", directory: "inbox", uses: 1, last: 5000 },
+      { volume: "v-gone", directory: "", uses: 20, last: 9000 },
+    ],
+    folders,
+    20,
+  );
+  assert.deepEqual(startingDestination(entries, folders), { folder: folders[1], directory: "inbox" }, "the latest use wins over the most used");
+  assert.deepEqual(startingDestination([], folders), { folder: folders[0], directory: "" });
+  assert.equal(startingDestination([], []), null);
+  assert.deepEqual(otherDestinations(entries, "v-docs", "receipts/2026").map((entry) => entry.volume), ["v-alpi"]);
+  assert.equal(otherDestinations([...entries, ...entries, ...entries], "x", "").length, 3, "up to three");
+  assert.equal(placeLabel(folders[0], "receipts/2026"), "documents › receipts › 2026");
+  assert.equal(placeLabel(folders[0], ""), "documents");
+});

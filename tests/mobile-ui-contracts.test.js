@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { noticeMetrics } from "../apps/desktop/src/notice-contract.js";
-import { geometry } from "../apps/mobile/src/design-tokens.js";
+import { geometry, radius, space } from "../apps/mobile/src/design-tokens.js";
 import { palettes } from "../apps/mobile/src/palette.js";
 import { fontCap, maxTextScale, railLabelFontCap, textSizes } from "../apps/mobile/src/text-size.js";
 
@@ -17,6 +17,8 @@ function makeStyles(wide, fontScale, textScale, compact = wide) {
   const context = {
     g: geometry,
     n: noticeMetrics,
+    sp: space,
+    r: radius,
     palettes,
     StyleSheet: { create: (value) => value, absoluteFillObject: {}, absoluteFill: {} },
   };
@@ -30,8 +32,8 @@ function makeStyles(wide, fontScale, textScale, compact = wide) {
 
 test("the notice dock sits above the measured tab bar, mini player and selection bar", () => {
   assert.match(notice, /export function NoticeStack\(\{ items, onDismiss, onAction, disabled, lift = 0 \}\)/);
-  assert.match(notice, /bottom: insets\.bottom \+ lift \+ noticeMetrics\.inset,/);
-  assert.match(notice, /height - insets\.top - insets\.bottom - lift - 2 \* noticeMetrics\.inset/);
+  assert.match(notice, /bottom: insets\.bottom \+ lift \+ space\[4\],/);
+  assert.match(notice, /height - insets\.top - insets\.bottom - lift - 2 \* space\[4\]/);
   assert.match(app, /<View onLayout=\{\(\{ nativeEvent: \{ layout \} \}\) => setBottomBars\(layout\.height\)\}>\s+\{folder && screen === "Folders" && musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]+?<SelectionBar[\s\S]+?<Navigation[\s\S]+?<\/View>\s+<\/KeyboardPane>/);
   assert.match(app, /<NoticeStack\s+items=\{noticeItems\}\s+lift=\{bottomBars\}/);
   assert.doesNotMatch(app, /items=\{noticeItems\.filter\(\(n\) => n\.kind === "info"\)\}\s+lift=/, "a sheet's own stack covers the bars under it");

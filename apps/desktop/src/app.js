@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.23";
+const APP_VERSION = "0.8.24";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2290,7 +2290,7 @@ const folderRetentionChoices = [
   },
 ];
 function hubCopyPanel(v) {
-  return `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history. You choose whether this device's copy is kept or deleted."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>`;
+  return `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history. You choose whether this device's copy is kept or deleted."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>`;
 }
 function folderRetentionMode(volume) {
   return (
@@ -2531,8 +2531,8 @@ async function loadCatalog() {
 function scaffoldLine(size = "medium") {
   return `<span class="scaffold-line scaffold-${size}" aria-hidden="true"></span>`;
 }
-function scaffoldRow(kind = "card", dashed = false) {
-  return `<div class="scaffold-row scaffold-${kind} ${dashed ? "scaffold-dashed" : ""}" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true">${kind === "card" ? brandArch() : ""}</span><div class="scaffold-copy">${scaffoldLine("medium")}${scaffoldLine("long")}</div>${scaffoldLine("short")}</div>`;
+function scaffoldRow(kind = "card") {
+  return `<div class="scaffold-row scaffold-${kind}" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true">${kind === "card" ? brandArch() : ""}</span><div class="scaffold-copy">${scaffoldLine("medium")}${scaffoldLine("long")}</div>${scaffoldLine("short")}</div>`;
 }
 function scaffoldInfo(item) {
   return `<div role="status" aria-label="Loading photo information"><div class="photo-info-summary"><p class="mono">${escape(item.path.split("/").pop())}</p>${scaffoldLine("long")}</div><section class="photo-info-section"><h3 class="section-label">Capture</h3>${scaffoldLine("medium")}${scaffoldLine("long")}<div class="photo-capture-stats">${Array.from({ length: 4 }, () => `<div>${scaffoldLine("short")}</div>`).join("")}</div></section><section class="photo-info-section"><h3 class="section-label">In Arca</h3>${scaffoldLine("long")}${scaffoldLine("medium")}</section></div>`;
@@ -3103,7 +3103,7 @@ async function renderView(
       !catalogLoaded &&
       !available.length
     )
-      html += section("On hub · not selected", scaffoldRow("card", true));
+      html += section("On hub · not selected", scaffoldRow("card"));
     content.innerHTML = html + "</div>";
     if (refreshCatalog && status.role !== "hub") {
       icons();
@@ -3253,7 +3253,7 @@ function fileHistoryHeader() {
     !current.directory &&
     (status.role === "hub" || volume?.selected);
   const actions = canModify
-    ? `${historyPath !== ".arcaignore" && !volume?.video ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger menu-item-separated", "trash-2")}`
+    ? `${historyPath !== ".arcaignore" && !volume?.video ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "danger menu-item-separated", "trash-2")}`
     : "";
   const fileMenu =
     finder || actions
@@ -5225,7 +5225,7 @@ function folderSymbol(volume) {
 function folderActionsMenu(volume) {
   if (status.role !== "hub")
     return volume.mode
-      ? `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${button("Stop syncing…", "unselect", volume.id, "secondary danger", "unlink")}</div></details>`
+      ? `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${button("Stop syncing…", "unselect", volume.id, "secondary", "unlink")}</div></details>`
       : "";
   const ordinary = !volume.gallery && !volume.music && !volume.video;
   const items =
@@ -5264,9 +5264,9 @@ async function folderBrowser(v, recent, pending = false) {
         active: folderTab === "recent",
       },
     ],
-  )}<div>${folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
+  )}<div>${folderTab === "recent" ? button("All history", "folder-history", v.id, "ghost small-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
@@ -5281,7 +5281,7 @@ async function folderBrowser(v, recent, pending = false) {
           : empty("No versions yet", "History appears after the first sync."))
     );
   const parts = folderPrefix.split("/").filter(Boolean);
-  const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "text-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "text-button")}`).join("")}</nav>`;
+  const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "ghost small-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "ghost small-button")}`).join("")}</nav>`;
   try {
     const pages = [];
     let after = "";
@@ -5689,7 +5689,7 @@ function musicTrail(v, library) {
   return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
     .map(([label, action, id], index) =>
       (index ? icon("chevron-right") : "") +
-      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "text-button")),
+      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "ghost small-button")),
     )
     .join("")}</nav>`;
 }
@@ -5708,7 +5708,7 @@ function musicRows(v, rows, action, { head = "", playlist = "", album = false, e
         (editable ? button("Add to playlist…", "music-add", row.track.path, "secondary", "list-plus") : "") +
         remove +
         musicDownloadItem(v, row.track) +
-        (editable || v.mode === "stream" ? button("Delete…", "music-delete", row.track.path, "secondary danger menu-item-separated", "trash-2") : "");
+        (editable || v.mode === "stream" ? button("Delete…", "music-delete", row.track.path, "danger menu-item-separated", "trash-2") : "");
       const saved = audioPositions.get(positionKey(v.id, row.track.path));
       const resume = saved && saved.hash === row.track.hash ? saved : null;
       const length = resume
@@ -5775,7 +5775,7 @@ function musicPlaylist(v, list) {
   const menu = editable
     ? musicMenu(
         button("Rename…", "music-playlist-rename", list.id, "secondary", "pencil") +
-          button("Delete playlist…", "music-playlist-delete", list.id, "secondary danger menu-item-separated", "trash-2"),
+          button("Delete playlist…", "music-playlist-delete", list.id, "danger menu-item-separated", "trash-2"),
         "Playlist actions",
       )
     : "";
@@ -7447,8 +7447,8 @@ function videoMenu(v, item, label) {
     (curating && videoTmdbWorks() ? button("Fix match…", "video-match", item.id, "secondary", "search") : "") +
     (curating && item.kind === "movie" && (item.matched === false || item.kidsOverride != null) ? button(item.kids ? "Not for kids" : "Mark as kids", "video-kids", item.id, "secondary", "smile") : "") +
     (curating && item.kidsOverride != null ? button("Use automatic Kids", "video-kids-auto", item.id, "secondary", "rotate-ccw") : "") +
-    (editable && item.kind !== "show" && item.path ? button(`Delete ${videoNoun(item)}…`, "video-delete", item.id, "secondary danger menu-item-separated", "trash-2") : "") +
-    (editable && item.kind === "show" && videoFiles(item.episodes).length ? button("Delete show…", "video-delete-show", item.id, "secondary danger menu-item-separated", "trash-2") : "");
+    (editable && item.kind !== "show" && item.path ? button(`Delete ${videoNoun(item)}…`, "video-delete", item.id, "danger menu-item-separated", "trash-2") : "") +
+    (editable && item.kind === "show" && videoFiles(item.episodes).length ? button("Delete show…", "video-delete-show", item.id, "danger menu-item-separated", "trash-2") : "");
   return items
     ? `<details class="details-menu file-actions-menu video-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`
     : "";
@@ -7522,7 +7522,7 @@ function videoTrail(v, library) {
   return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
     .map(([label, action, id], index) =>
       (index ? icon("chevron-right") : "") +
-      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "text-button")),
+      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "ghost small-button")),
     )
     .join("")}</nav>`;
 }
@@ -8492,7 +8492,7 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || videoPlayer || !videoShowing(detailId) || !videoDeep()) return;
   if (event.target.closest?.("input, textarea, select, [contenteditable], .details-menu, .dropdown") || document.querySelector("dialog[open], .details-menu[open]")) return;
-  const up = $("#content .music-trail .text-button:last-of-type");
+  const up = $("#content .music-trail .ghost:last-of-type");
   if (!up) return;
   event.preventDefault();
   up.click();
@@ -8580,7 +8580,7 @@ function videoTitlesLine(row, current) {
   const parts = [row.name, countLabel(row.movies || 0, "movie"), countLabel(row.shows || 0, "show")];
   if (current.state === "matching") return `${escape([...parts, `matching ${Number(current.matched || 0)} of ${Number(current.total || 0)} with TMDB…`].join(" · "))}`;
   const unrecognised = Number(row.unrecognised) || 0;
-  return `${escape([...parts, `${unrecognised.toLocaleString("en")} not recognised`].join(" · "))}.${unrecognised ? ` ${button("Show it", "video-show-unmatched", row.volume, "text-button")}` : ""}`;
+  return `${escape([...parts, `${unrecognised.toLocaleString("en")} not recognised`].join(" · "))}.${unrecognised ? ` ${button("Show it", "video-show-unmatched", row.volume, "ghost small-button")}` : ""}`;
 }
 async function videoSettings() {
   const root = $("#video-settings");
@@ -8651,7 +8651,7 @@ function videoKeyDialog() {
   if (!saved) return;
   const extra = document.createElement("div");
   extra.id = "dialog-extra-actions";
-  extra.innerHTML = button("Remove key", "video-key-remove", "", "secondary danger");
+  extra.innerHTML = button("Remove key", "video-key-remove", "", "secondary");
   $("#dialog-form > .dialog-actions").prepend(extra);
 }
 async function handleVideo(name, id) {
@@ -8954,7 +8954,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -9054,7 +9054,7 @@ async function renderHistory(
       section(
         "File versions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? (v.deleted ? pill("Deleted", "id", "trash-2") : pill("Current", "id", "check")) : v.deleted || v.kept === false ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? (v.deleted ? pill("Deleted", "id", "trash-2") : pill("Current", "id", "check")) : v.deleted || v.kept === false ? "" : button("Restore", "restore", String(v.rev), "ghost small-button", "undo-2")}</div></div>`).join("")}</div>`
           : data.offline
             ? empty(
                 "No saved versions for this file",
@@ -9368,7 +9368,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         }),
         end: d.revoked
           ? pill("Removed", "er", "unplug")
-          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${d.role === "player" ? "" : button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device…", "revoke", d.id, "secondary danger menu-item-separated", "unplug")}</div></details>`,
+          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${d.role === "player" ? "" : button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device…", "revoke", d.id, "danger menu-item-separated", "unplug")}</div></details>`,
       });
     }
     machineRows += records;
@@ -9420,7 +9420,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       : machineRows,
   );
   if (!fetchData && !discovered)
-    html += section("Discovery", scaffoldRow("card", true));
+    html += section("Discovery", scaffoldRow("card"));
   const found = peers.filter(
     (p) =>
       !consumed.has(p.id) &&
@@ -9567,13 +9567,13 @@ function hubConnection() {
               "Disconnect…",
               "disconnect-hub",
               "",
-              "secondary small-button danger",
+              "secondary small-button",
               "unplug",
             )
           : "",
     });
   }
-  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unplug") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
+  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button", "unplug") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
 }
 async function renderSettings(fetchData = true, serial = renderSerial) {
   const interaction = statusRequestSerial;
@@ -9610,7 +9610,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role !== "hub") html += hubConnectionSection();
   html += section(
     "This device",
-    `<div class="settings-card">${setting("Device name", 'Shown to other devices and in history.<span class="field-error" id="machine-name-error" role="alert" hidden></span>', `<input id="machine-name" aria-label="Device name" aria-describedby="machine-name-error" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
+    `<div class="settings-card">${setting("Device name", 'Shown to other devices and in history.<span class="message message-error" id="machine-name-error" role="alert" hidden></span>', `<input id="machine-name" aria-label="Device name" aria-describedby="machine-name-error" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
   );
   html += section(
     status.role === "hub" ? "Hub synchronization" : "Local synchronization",
@@ -9624,7 +9624,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (!native)
     html += section(
       "Browser session",
-      `<div class="settings-card">${setting("This browser", `Signed in to ${escape(status.name)}. Signing out does not stop synchronization.`, button("Sign out", "logout", "", "secondary small-button", "log-out"))}${setting("Other browser sessions", `Sign out every browser managing ${escape(status.name)}. Device connections are kept.`, button("Sign out all browsers…", "logout-all", "", "secondary small-button danger", "log-out"))}</div>`,
+      `<div class="settings-card">${setting("This browser", `Signed in to ${escape(status.name)}. Signing out does not stop synchronization.`, button("Sign out", "logout", "", "secondary small-button", "log-out"))}${setting("Other browser sessions", `Sign out every browser managing ${escape(status.name)}. Device connections are kept.`, button("Sign out all browsers…", "logout-all", "", "secondary small-button", "log-out"))}</div>`,
     );
   if (native)
     html += section(
@@ -9713,7 +9713,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
     "Danger zone",
-    `<div class="settings-card replica-danger">${setting(destroyRole === "hub" ? "Erase this hub" : "Erase this device", destroyRole === "hub" ? "Deletes this hub’s shared folders, files, version history and configuration, then returns to setup. Other devices keep their own copies." : "Deletes all local folders and resets this device. Hub files and other devices are kept.", button(destroyRole === "hub" ? "Erase this hub…" : "Erase this device…", `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
+    `<div class="settings-card replica-danger">${setting(destroyRole === "hub" ? "Erase this hub" : "Erase this device", destroyRole === "hub" ? "Deletes this hub’s shared folders, files, version history and configuration, then returns to setup. Other devices keep their own copies." : "Deletes all local folders and resets this device. Hub files and other devices are kept.", button(destroyRole === "hub" ? "Erase this hub…" : "Erase this device…", `destroy-${destroyRole}`, "", "secondary", "trash-2"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -9725,7 +9725,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       try {
         await api("/v1/settings", { name: field.value });
       } catch (error) {
-        rejected.textContent = error.message;
+        setMessage(rejected, escape(error.message), "error");
         rejected.hidden = false;
         field.setAttribute("aria-invalid", "true");
         return;
@@ -10056,50 +10056,52 @@ function textField(label, name, value = "", symbol = "folder", mono = false, pla
 function pathInput(label, name, value = "", symbol = "folder") {
   return `<label for="field-${name}">${label}</label><div class="field-with-icon">${native ? pathPicker(name, label, symbol) : icon(symbol)}<input id="field-${name}" aria-label="${label}" class="mono" name="${name}" value="${escape(value)}" required></div>`;
 }
+function inlineMessage(text, tone = "") {
+  return `<div class="message${tone ? ` message-${tone}` : ""}" role="${tone === "error" ? "alert" : "status"}">${icon(tone === "error" ? "circle-alert" : tone === "warning" ? "triangle-alert" : "info")}<span>${text}</span></div>`;
+}
+function setMessage(row, text, tone = "") {
+  row.className = `message${tone ? ` message-${tone}` : ""}`;
+  row.setAttribute("role", tone === "error" ? "alert" : "status");
+  row.innerHTML = `${icon(tone === "error" ? "circle-alert" : tone === "warning" ? "triangle-alert" : "info")}<span>${text}</span>`;
+  icons();
+}
 function checkFolderPath(name, id = "") {
   const input = $(`#dialog [name="${name}"]`);
   const row = document.createElement("div");
-  row.className = "path-check";
   row.setAttribute("role", "status");
   row.id = "folder-path-status";
   input.setAttribute("aria-describedby", row.id);
   const selection = input.closest(".folder-selection");
-  if (selection) {
-    row.classList.add("selection-check");
-    selection.querySelector(".selection-path").after(row);
-  } else {
-    const hint = input.parentElement.nextElementSibling;
-    (hint?.classList.contains("hint") ? hint : input.parentElement).after(row);
-  }
+  if (selection) selection.querySelector(".selection-path").after(row);
+  else input.parentElement.after(row);
   let sequence = 0;
   let timer;
   const check = async () => {
     const serial = ++sequence;
     $("#submit-dialog").disabled = true;
-    row.classList.remove("path-check-error");
     input.removeAttribute("aria-invalid");
     const shareName = $('#dialog [name="name"]');
     if (shareName && !shareName.value.trim()) {
-      row.textContent = "Enter a shared folder name to check its location.";
+      setMessage(row, "Enter a shared folder name to check its location.");
       return;
     }
     if (!input.value.trim()) {
-      row.textContent = "Choose a folder to check its location.";
+      setMessage(row, "Choose a folder to check its location.");
       return;
     }
-    row.textContent = "Checking path…";
+    setMessage(row, "Checking path…");
     try {
       const result = await api("/v1/path-check", { path: input.value, id });
       if (serial !== sequence || !row.isConnected) return;
-      row.classList.remove("path-check-error");
       const needed = selection && catalog.find((v) => v.id === id)?.bytes;
       const capacity = `${Number.isFinite(needed) ? `Needs ${bytes(needed)} · ` : ""}${bytes(result.freeBytes)} free`;
-      row.innerHTML = selection
-        ? `<span>${result.exists ? "Counting local files…" : "New folder"} · ${capacity}</span>`
-        : icon("circle-check") +
-          `<span>${result.exists ? "Existing folder" : "New folder"} · ${capacity}<br><span class="mono">${escape(result.path)}</span></span>`;
+      setMessage(
+        row,
+        selection
+          ? `${result.exists ? "Counting local files…" : "New folder"} · ${capacity}`
+          : `${result.exists ? "Existing folder" : "New folder"} · ${capacity}<br><span class="mono">${escape(result.path)}</span>`,
+      );
       $("#submit-dialog").disabled = false;
-      icons();
       if (selection && result.exists) {
         try {
           const counted = await api("/v1/path-check", {
@@ -10109,24 +10111,29 @@ function checkFolderPath(name, id = "") {
           });
           if (serial !== sequence || !row.isConnected) return;
           const p = counted.preview;
-          row.textContent = p?.complete
-            ? `${p.files ? `${p.files.toLocaleString("en")} local ${p.files === 1 ? "file" : "files"} to sync · ${bytes(p.bytes)}` : "No local files to sync"} · ${capacity}${p.skipped ? " · some entries skipped" : ""}`
-            : `Count unavailable · ${capacity}`;
+          setMessage(
+            row,
+            p?.complete
+              ? `${p.files ? `${p.files.toLocaleString("en")} local ${p.files === 1 ? "file" : "files"} to sync · ${bytes(p.bytes)}` : "No local files to sync"} · ${capacity}${p.skipped ? " · some entries skipped" : ""}`
+              : `Count unavailable · ${capacity}`,
+          );
         } catch {
           if (serial === sequence && row.isConnected)
-            row.textContent = `Count unavailable · ${capacity}`;
+            setMessage(row, `Count unavailable · ${capacity}`);
         }
       }
     } catch (error) {
       if (serial !== sequence || !row.isConnected) return;
-      row.classList.add("path-check-error");
       input.setAttribute("aria-invalid", "true");
-      const message =
-        error.message === "State and volume paths overlap"
-          ? "Choose a folder outside the application data."
-          : error.message;
-      row.innerHTML = icon("circle-alert") + `<span>${escape(message)}</span>`;
-      icons();
+      setMessage(
+        row,
+        escape(
+          error.message === "State and volume paths overlap"
+            ? "Choose a folder outside the application data."
+            : error.message,
+        ),
+        "error",
+      );
     }
   };
   input.addEventListener("input", () => {
@@ -10286,7 +10293,7 @@ async function pairModal(name = "") {
       "key-round",
     ) +
       addressPanel +
-      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new device can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both devices or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="callout">${icon("info")}<p>Issuing a code does not mean a device has connected. This code never grants web administration.</p></div>`,
+      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new device can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both devices or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p>${inlineMessage("Issuing a code does not mean a device has connected. This code never grants web administration.")}`,
     async () => {},
     "Done",
   );
@@ -10428,7 +10435,7 @@ async function reviewConflict(item) {
                 volume: item.volume,
                 paths: [originalPath, conflictPath],
               }),
-              "text-button",
+              "ghost small-button",
               "external-link",
             )
           : !native
@@ -10450,7 +10457,7 @@ async function reviewConflict(item) {
                 })
                 .join("")
             : ""
-      }${button("Keep both as they are", "keep-conflict", "", "text-button")}</div>`,
+      }${button("Keep both as they are", "keep-conflict", "", "ghost small-button")}</div>`,
     async (f) => {
       await api("/v1/conflict-choice", {
         volume: item.volume,
@@ -11374,9 +11381,9 @@ async function handle(name, id, control) {
         ('<div id="selection-copy"><label for="selection-path">Local destination</label>' +
             `<div class="field-with-icon selection-path">${native && !local?.path ? pathPicker("path", "local destination") : icon("folder")}<input id="selection-path" class="mono" name="path" value="${escape(destination)}" ${local?.path ? "readonly" : ""} required></div>` +
             (local?.path
-              ? '<p class="selection-hint">Change this location from folder details.</p>'
+              ? '<p class="hint">Change this location from folder details.</p>'
               : "") +
-            `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`) +
+            `${inlineMessage("Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.")}</div>`) +
         "</div>",
       async (f) => {
         const mode = media ? f.get("mode") || "stream" : undefined;
@@ -11404,7 +11411,7 @@ async function handle(name, id, control) {
       const check = $("#folder-path-status");
       submit.disabled =
         !streaming &&
-        (!check || check.classList.contains("path-check-error") || !/ free/.test(check.textContent));
+        (!check || check.classList.contains("message-error") || !/ free/.test(check.textContent));
       submit.innerHTML = streaming ? icon("play") + "Start streaming" : icon("refresh-cw") + "Start syncing";
       icons();
     };
@@ -11489,7 +11496,7 @@ async function handle(name, id, control) {
           preview = counted;
           const count = (n) => Number(n).toLocaleString("en");
           $("#retention-preview").innerHTML =
-            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} versions would be removed`, `${count(v.retained)} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Kept counts are older versions only and include protected ones. No cleanup is scheduled.</p></div>`;
+            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} versions would be removed`, `${count(v.retained)} kept`)).join("")}</div>${inlineMessage("Cleanup cannot be undone on this hub. Kept counts are older versions only and include protected ones. No cleanup is scheduled.", "warning")}`;
           $("#submit-dialog").innerHTML = icon("trash-2") + "Apply cleanup";
           icons();
           $("#submit-dialog").classList.add("danger");
@@ -11523,7 +11530,7 @@ async function handle(name, id, control) {
         `Use the local copies on ${escape(status.name)} when the old hub is permanently unavailable. Changes it never sent here cannot be recovered.`,
         "server",
       ) +
-        `${!plan.catalog.length ? '<div class="callout warning">' + icon("triangle-alert") + "<p>No shared folders are available for recovery on this device.</p></div>" : ""}<div class="settings-card">${plan.catalog
+        `${!plan.catalog.length ? inlineMessage("No shared folders are available for recovery on this device.", "warning") : ""}<div class="settings-card">${plan.catalog
           .map((v) => {
             const missing = plan.missing.some((m) => m.id === v.id);
             return setting(
@@ -11909,7 +11916,7 @@ async function showLogin(message = "") {
       ],
       "access-tabs",
     )}</div>
-    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p>${message === SESSION_ENDED ? `<p class="hint" id="login-notice">${escape(message)}</p>` : ""}<p id="login-error" role="alert">${message === SESSION_ENDED ? "" : escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server, run one of these commands. The command prints a result that includes a six-digit code. Enter that code above.</p><div class="settings-card">${commandRow("In Docker", WEB_CODE_DOCKER)}${commandRow("Installed directly", WEB_CODE_DIRECT)}</div></div></div>
+    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p>${message === SESSION_ENDED ? `<p class="hint" id="login-notice">${escape(message)}</p>` : ""}${message && message !== SESSION_ENDED ? `<div id="login-error" class="message message-error" role="alert">${icon("circle-alert")}<span>${escape(message)}</span></div>` : '<div id="login-error" role="alert"></div>'}<button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server, run one of these commands. The command prints a result that includes a six-digit code. Enter that code above.</p><div class="settings-card">${commandRow("In Docker", WEB_CODE_DOCKER)}${commandRow("Installed directly", WEB_CODE_DIRECT)}</div></div></div>
     <div id="access-approval" hidden><div id="web-approval-wait"></div><button type="button" id="request-web-approval" class="secondary">Try again</button></div>
     <p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.<br>No username or password.</p></div></div>`;
   icons();
@@ -11985,13 +11992,15 @@ async function showLogin(message = "") {
           return;
         }
         if (result.state !== "pending") {
-          wait.innerHTML = `<p class="dialog-error" role="alert">${result.state === "denied" ? "Access denied." : "Request expired. Try again."}</p>`;
+          wait.innerHTML = inlineMessage(result.state === "denied" ? "Access denied." : "Request expired. Try again.", "error");
+          icons();
           return;
         }
       }
     } catch (error) {
       if (!cancelled && wait.isConnected)
-        wait.innerHTML = `<p class="dialog-error" role="alert">${escape(error.message)}</p>`;
+        wait.innerHTML = inlineMessage(escape(error.message), "error");
+        icons();
     } finally {
       clearInterval(timer);
       if (request)
@@ -12007,8 +12016,7 @@ async function showLogin(message = "") {
     e.preventDefault();
     const code = readCode("web");
     if (code.length !== 6) {
-      $("#login-error").textContent =
-        "Enter all six digits. Nothing has been sent.";
+      setMessage($("#login-error"), "Enter all six digits. Nothing has been sent.", "error");
       return;
     }
     const submit = e.target.querySelector('button[type="submit"]');
@@ -12022,8 +12030,7 @@ async function showLogin(message = "") {
     } catch (error) {
       const loginError = $("#login-error");
       if (loginError)
-        loginError.textContent =
-          error.message || "Server unavailable. Try again.";
+        setMessage(loginError, escape(error.message || "Server unavailable. Try again."), "error");
       else notice(error.message || "Server unavailable. Try again.", true);
       const cells = [...document.querySelectorAll('[data-code="web"]')];
       cells.forEach((cell) => (cell.value = ""));
@@ -12060,10 +12067,9 @@ function setupTotals(o) {
   const short = Number.isFinite(o.freeBytes) && download > o.freeBytes;
   const line = $("#setup-space");
   if (line) {
-    line.textContent = short
+    setMessage(line, short
       ? `Not enough space: ${bytes(download)} to download · ${bytes(o.freeBytes)} free`
-      : [countLabel(chosen.length, "folder"), download ? `${bytes(download)} to download` : null, uncounted ? `${countLabel(uncounted, "folder")} not counted yet` : null, Number.isFinite(o.freeBytes) ? `${bytes(o.freeBytes)} free` : null].filter(Boolean).join(" · ");
-    line.classList.toggle("dialog-error", short);
+      : [countLabel(chosen.length, "folder"), download ? `${bytes(download)} to download` : null, uncounted ? `${countLabel(uncounted, "folder")} not counted yet` : null, Number.isFinite(o.freeBytes) ? `${bytes(o.freeBytes)} free` : null].filter(Boolean).join(" · "), short ? "error" : "");
   }
   const submit = $("#setup-form .dialog-actions .primary");
   if (!submit) return;
@@ -12156,7 +12162,7 @@ function renderOnboarding() {
     body = `<h1>Finish setup</h1><p>Paired with ${escape(o.hubName || "your hub")}. Your connection is saved.</p><p>No folders have been downloaded. Choose them after setup.</p>`;
   const choosing = o.step === 3 && o.role === "replica" && !!o.volumes?.length;
   if (o.step === 3)
-    body = `<h1>A home for your folders</h1><p>${choosing ? "Folders are kept here as ordinary folders; music and movies stream or stay here, as you choose." : o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div>${choosing ? `<label>On the hub</label><div class="settings-card" id="setup-folders">${setupFolders(o)}</div><p class="hint" id="setup-space" role="status"></p><p class="hint">Must be empty or new.</p>` : '<div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>'}${native ? "" : '<p class="hint">This path is on the server. In Docker, use persistent mounted storage; the default is /data/files.</p>'}`;
+    body = `<h1>A home for your folders</h1><p>${choosing ? "Folders are kept here as ordinary folders; music and movies stream or stay here, as you choose." : o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div>${choosing ? `<label>On the hub</label><div class="settings-card" id="setup-folders">${setupFolders(o)}</div><div id="setup-space" role="status"></div><p class="hint">Must be empty or new.</p>` : '<div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>'}${native ? "" : '<p class="hint">This path is on the server. In Docker, use persistent mounted storage; the default is /data/files.</p>'}`;
   $("#content").innerHTML =
     `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button>${choosing ? '<button type="button" id="setup-skip" class="secondary">Skip for now</button><button type="submit" class="primary"></button>' : `<button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button>`}</div></form></div>`;
   $("#setup-back").onclick = () => {
@@ -12185,7 +12191,10 @@ function renderOnboarding() {
   };
   const inspectRoot = async () => {
     clearError();
-    if ($("#setup-space")) $("#setup-space").innerHTML = "";
+    if ($("#setup-space")) {
+      $("#setup-space").className = "";
+      $("#setup-space").innerHTML = "";
+    }
     const root = $("[name=root]")?.value || o.root;
     const result = await (native
       ? invoke("setup_info", { root })
@@ -12851,7 +12860,7 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || !musicShowing(detailId) || !musicDeep()) return;
   if (event.target.closest?.("input, textarea, select, [contenteditable], .details-menu, .dropdown") || document.querySelector("dialog[open]")) return;
-  const up = $("#content .music-trail .text-button:last-of-type");
+  const up = $("#content .music-trail .ghost:last-of-type");
   if (!up) return;
   event.preventDefault();
   up.click();

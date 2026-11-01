@@ -13,7 +13,7 @@ import { useDesign, Icon } from "./components";
 import { native } from "./private-network";
 import { announceNotice } from "./announce.js";
 import { useLeaving, useMotion } from "./motion";
-import { motion } from "./design-tokens.js";
+import { motion, space } from "./design-tokens.js";
 import {
   noticeMetrics,
   safeDetails,
@@ -182,9 +182,9 @@ export function NoticeStack({ items, onDismiss, onAction, disabled, lift = 0 }) 
       style={[
         s.noticeDock,
         {
-          bottom: insets.bottom + lift + noticeMetrics.inset,
+          bottom: insets.bottom + lift + space[4],
           maxHeight:
-            height - insets.top - insets.bottom - lift - 2 * noticeMetrics.inset,
+            height - insets.top - insets.bottom - lift - 2 * space[4],
         },
       ]}
     >

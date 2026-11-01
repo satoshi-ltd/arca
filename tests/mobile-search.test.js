@@ -150,8 +150,8 @@ test("the Folders root has one quiet search button, no Sync now and a pull that 
   assert.match(app, /\{connected && screen === "Folders" && folder && \(\s+<Button\s+iconOnly\s+label="Sync now"/, "only a folder's header keeps Sync now");
   assert.equal(app.match(/label="Sync now"/g).length, 1);
   assert.match(app, /onRefresh=\{\(\) => \{\s+if \(status\.paused\) return explainPause\(\);\s+setPulling\(true\);\s+startSync\(true\);\s+\}\}/, "the pull forces a pass and does nothing while paused");
-  assert.match(theme, /ghostButton: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,\s+minHeight: g\.touchHeight,\s+borderWidth: 0,\s+backgroundColor: "transparent",\s+\}/);
-  assert.match(components, /ghost \? c\.mute : c\.ink/, "the ghost glyph uses the mute ink");
+  assert.match(theme, /ghostButton: \{ borderColor: "transparent", backgroundColor: "transparent" \}/);
+  assert.match(components, /const ink = filled \? c\.onAccent : c\.ink;/, "a ghost glyph uses the ink like any unfilled button");
   assert.match(components, /<PressScale\s+scale=\{!disabled && !busy && !ghost\}/, "a ghost button fills without scaling");
 });
 

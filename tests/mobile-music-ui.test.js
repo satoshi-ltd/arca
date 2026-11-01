@@ -371,7 +371,7 @@ test("the Fold opens a show, album or playlist beside its list under one header"
   assert.match(library, /pane\.detail \? \(\s+<PagedRows memory=\{memory\} items=\{list\} render=\{\(album, index\) => albumRow\(album, index, caption\(album\)\)\} \/>/, "albums list as rows beside the open album");
   assert.match(library, /\[album\.year, plural\(album\.tracks\.length, "track", "tracks"\)\]\.filter\(Boolean\)\.join\(" · "\)/, "an artist's albums read year and track count");
   const theme = read("src/theme.js");
-  assert.match(theme, /musicSplitList: \{ width: compact \? undefined : g\.detailSideWidth, flexShrink: 0, gap: 16 \}/);
+  assert.match(theme, /musicSplitList: \{ width: compact \? undefined : g\.detailSideWidth, flexShrink: 0, gap: sp\[4\] \}/);
   assert.match(theme, /musicSelected: \{ backgroundColor: c\.tint \}/);
 });
 
