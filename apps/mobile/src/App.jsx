@@ -146,7 +146,7 @@ import {
   EmptyState,
   OfflineEmpty,
 } from "./components";
-import { client } from "./persistence";
+import { client, positionCache } from "./persistence";
 import { isPickerCancelled, sourceUnavailable } from "./action-errors.js";
 import { shouldStopSync } from "./transfer-session.js";
 import {
@@ -1361,6 +1361,7 @@ export default function App() {
     api: (route, body) => client.api(route, body),
     device: { id: connection?.id ?? null, name },
     scope: () => engine.current?.scope,
+    cache: positionCache,
   });
   const forgetContinue = async (row) => {
     try {

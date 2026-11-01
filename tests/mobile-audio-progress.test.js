@@ -46,7 +46,7 @@ import {
   sleepOptions,
   sleepRemaining,
 } from "../apps/mobile/src/sleep-timer.js";
-import { mergeHubPositions, singleFlight, startPositionRefresh } from "../apps/mobile/src/audio-refresh.js";
+import { adoptPositions, mergeHubPositions, queuedKeys, queuedRows, savedRows, singleFlight, startPositionRefresh } from "../apps/mobile/src/audio-refresh.js";
 import { folderSections } from "../apps/mobile/src/home-data.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "apps", "mobile", "src");
@@ -330,7 +330,7 @@ test("the phone reads hub positions with its device credential and leaves saving
   assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+watching: musicFolder && screen === "Folders" && !status\.offline,\s+api: \(route, body\) => client\.api\(route, body\),\s+device: \{ id: connection\?\.id \?\? null, name \},\s+scope: \(\) => engine\.current\?\.scope,/);
   assert.match(app, /if \(at > 0\) await player\.command\("seek", at \* 1000\);/, "a saved row resumes where it stopped");
   assert.match(app, /positions=\{audio\.positions\}\s+loaded=\{audio\.loaded\}\s+command=\{musicCommand\}\s+deviceId=\{connection\?\.id\}/);
-  assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = apply\(\(current\) => mergeHubPositions\(current, rows, finished, deps\.current\.device\.id\)\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
+  assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = apply\(\(current\) => mergeHubPositions\(current, rows, finished, deps\.current\.device\.id, queued\.current\)\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
   assert.match(app, /sleep=\{audio\.sleep\}\s+setSleep=\{audio\.setSleep\}\s+positions=/);
 });
 
@@ -558,7 +558,7 @@ test("the positions refresh reads on a quiet interval, only in the foreground, n
 
 test("the phone watches positions only while a music folder is open, connected and not offline, and still publishes the synced file", () => {
   const session = read("audio-session.js");
-  assert.match(session, /if \(!enabled \|\| !watching\) return undefined;\s+return startPositionRefresh\(/);
+  assert.match(session, /if \(!enabled \|\| !watching \|\| !ready\) return undefined;\s+return startPositionRefresh\(/);
   assert.match(session, /AppState\.currentState === "active"/);
   assert.doesNotMatch(read("App.jsx"), /audio\.refresh\(\)/);
   assert.match(read("App.jsx"), /\}, \[audio\.positions, connection\?\.id\]\);/);
@@ -637,7 +637,7 @@ test("a show tile's sheet and TalkBack actions offer Remove from Continue throug
 test("the resume card's actions sheet offers Remove from Continue through the hub's clear route", () => {
   const session = read("audio-session.js");
   assert.match(session, /api\("\/v1\/audio-position\/clear", \{ volume: row\.volume, path: row\.path, hash: row\.hash, at \}\);[^\n]*\n[^\n]*\n\s+apply\(\(current\) => forget\(current, row, deps\.current\.device, at\)\);/, "the memory changes only after the hub accepted it");
-  assert.match(session, /\(next\.get\(positionKey\(entry\.volume, entry\.path\)\)\?\.updated \|\| 0\) > entry\.at\s+\? next/, "a drained older save never replaces a newer clear");
+  assert.match(session, /apply\(\(current\) => adoptPositions\(current, queuedRows\(pending\.entries, deps\.current\.device\)\)\)/, "a drained older save never replaces a newer clear");
   const library = read("MusicLibrary.jsx");
   assert.match(library, /accessibilityLabel="Resume actions"[\s\S]*?onPress=\{more\}/, "the card has one more button");
   assert.match(library, /forget: \(\) => forgetResume\(resume\.row\)/);
@@ -645,4 +645,48 @@ test("the resume card's actions sheet offers Remove from Continue through the hu
   assert.match(read("App.jsx"), /await audio\.clear\(row\);[\s\S]*?Could not remove it from Continue\. Try again when connected\./);
   assert.match(read("App.jsx"), /relative=\{relative\}\s+forgetResume=\{forgetContinue\}/);
   assert.match(session, /const answer = await deps\.current\.api\("\/v1\/audio-position\/clear"[^\n]*\n\s+if \(answer\?\.cleared === false\) return read\.current\(\);\s+apply\(\(current\) => forget/, "a refusal from the hub rereads instead of forgetting");
+});
+
+test("a reopened phone starts from its own saved and queued places, never from 0 while the hub is away", () => {
+  const key = "a1\0Show/ep.mp3";
+  const hubRow = (updated, position) => ({ volume: "a1", path: "Show/ep.mp3", hash: "h", position, duration: 4200, device: "desk", updated });
+  const saved = { device: "phone", rows: [hubRow(4000, 2700)] };
+  assert.deepEqual(savedRows(saved, "other"), [], "a cache from another pairing is ignored");
+  assert.deepEqual(savedRows(null, "phone"), []);
+  const restored = adoptPositions(new Map(), savedRows(saved, "phone"));
+  assert.equal(savedPosition(restored, { folder: "a1", path: "Show/ep.mp3", hash: "h" }).position, 2700, "offline, the last hub answer still resumes the episode");
+  const queued = queuedRows([{ volume: "a1", path: "Show/ep.mp3", hash: "h", position: 3100, duration: 4200, at: 5000 }], { id: "phone", name: "Pixel" });
+  const ahead = adoptPositions(restored, queued);
+  assert.deepEqual([ahead.get(key).position, ahead.get(key).device, ahead.get(key).updated], [3100, "phone", 5000], "a save the service has not sent yet wins over an older hub row");
+  assert.equal(adoptPositions(ahead, savedRows(saved, "phone")), ahead, "an older row never replaces a newer one");
+  assert.equal(mergeHubPositions(ahead, [hubRow(4000, 2700)], [], "phone").get(key).position, 3100, "a hub read that lags the outbox keeps the newer place");
+  const cleared = forget(ahead, { volume: "a1", path: "Show/ep.mp3", hash: "h" }, { id: "phone" }, 9000);
+  assert.equal(adoptPositions(cleared, queued), cleared, "a queued save older than Remove from Continue stays removed");
+  assert.equal(mergeHubPositions(ahead, [], [], "phone", queuedKeys([{ volume: "a1", path: "Show/ep.mp3" }])).get(key).position, 3100, "a save still queued survives a hub that has not taken it");
+  assert.equal(mergeHubPositions(ahead, [], [], "phone", queuedKeys([])).size, 0, "an own row neither the hub nor the outbox holds anymore is dropped");
+  assert.equal(mergeHubPositions(ahead, [], [], "phone", null).size, 1, "before the outbox was read, own rows are kept");
+  const ended = queuedRows([{ volume: "a1", path: "Show/ep.mp3", hash: "h", position: 4190, duration: 4200, at: 9500 }], { id: "phone" });
+  assert.equal(adoptPositions(ahead, ended).get(key).finished, true);
+});
+
+test("the session restores the phone's cache before draining and reading the hub, and keeps it current", () => {
+  const session = read("audio-session.js");
+  assert.match(session, /const saved = await deps\.current\.cache\?\.read\(\);\s+const next = apply\(\(current\) => adoptPositions\(current, savedRows\(saved, deps\.current\.device\.id\)\)\);/);
+  assert.match(session, /restore\(\)\.then\(async \(\) => \{\s+if \(!active\) return;\s+if \(playerAvailable\) await drain\(\);\s+if \(!active\) return;\s+setReady\(true\);\s+refresh\(\);/, "own saves reach the hub before it is read");
+  assert.match(session, /if \(!enabled \|\| !watching \|\| !ready\) return undefined;\s+return startPositionRefresh/, "the open folder's re-reads wait for the restore and the first drain");
+  assert.match(session, /if \(!enabled\) \{\s+restored\.current = false;\s+queued\.current = null;\s+setReady\(false\);\s+apply\(\(current\) => \(current\.size \? new Map\(\) : current\)\);/, "unpairing forgets the old hub's rows before a new pairing caches anything");
+  assert.match(session, /queued\.current = queuedKeys\(pending\.entries\);/);
+  assert.doesNotMatch(session, /sent\.reduce|remember\(next, entry/, "a drain adopts each entry once, when read");
+  assert.match(session, /const pending = await player\.outbox\(scope\);\s+queued\.current = queuedKeys\(pending\.entries\);\s+apply\(\(current\) => adoptPositions\(current, queuedRows\(pending\.entries, deps\.current\.device\)\)\);\s+return pending;/, "queued saves count even when the hub cannot take them");
+  assert.match(session, /if \(!restored\.current \|\| deps\.current\.device\.id == null\) return;\s+deps\.current\.cache\?\.write\(\{ device: deps\.current\.device\.id, rows: \[\.\.\.positions\.values\(\)\] \}\)/, "an empty map never overwrites the cache before it was read");
+  assert.match(read("App.jsx"), /scope: \(\) => engine\.current\?\.scope,\s+cache: positionCache,/);
+  const persistence = read("persistence.js");
+  assert.match(persistence, /export const positionCache = \{[\s\S]*?"audio-positions"[\s\S]*?"audio-positions"/);
+  assert.match(persistence, /"PRAGMA secure_delete=ON; DELETE FROM cache;/, "unpairing wipes the cached positions with the catalog");
+});
+
+test("the service remembers the place it resumes from on every periodic save and seek", () => {
+  const service = fs.readFileSync(path.join(root, "..", "modules", "arca-network", "android", "src", "main", "java", "expo", "modules", "arcanetwork", "MusicService.kt"), "utf8");
+  assert.match(service, /private fun enqueue\(save: PositionSave\) \{\s+remember\(\)/);
+  assert.match(service, /positions\.seeked\(\)\s+remember\(\)/);
 });

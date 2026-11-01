@@ -46,7 +46,7 @@ test("MusicService ticks the timer and the position saves, and queues saves in t
   assert.match(service, /main\.postDelayed\(ticker, 1000\)/);
   assert.match(service, /if \(player\.isPlaying \|\| sleepTimer\.active\) main\.postDelayed/);
   assert.match(service, /override fun onPlaybackStateChanged\(playbackState: Int\) \{\s+observe\(\)/);
-  assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) \{\s+heard\(\)\s+if \(oldPosition\.mediaItemIndex == newPosition\.mediaItemIndex\) positions\.seeked\(\)\s+observe\(\)/, "only a seek inside one item arms the gate, and every seek refreshes what a skip would save");
+  assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) \{\s+heard\(\)\s+if \(oldPosition\.mediaItemIndex == newPosition\.mediaItemIndex\) positions\.seeked\(\)\s+remember\(\)\s+observe\(\)/, "only a seek inside one item arms the gate, and every seek refreshes what a skip would save");
   assert.match(service, /if \(SleepTimer\.pauses\(playing, player\.playWhenReady\)\) player\.pause\(\)\s+if \(!playing\) positions\.force\(/, "expiry pauses a player that is playing or about to, and force-saves one that is not playing");
   assert.match(service, /val hash = tree\.library\.tracks\[id\]\?\.hash \?: return/);
   assert.match(service, /val library = File\(root\(this\), "music-library\.json"\)\s+outboxWriter\.execute \{ runCatching \{ target\.add\(scope, entry\) \{ library\.isFile \} \} \}/, "a queued write after an erase finds no library and writes nothing");

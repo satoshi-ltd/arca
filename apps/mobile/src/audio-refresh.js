@@ -1,4 +1,4 @@
-import { positionMap } from "./audio-positions.js";
+import { positionKey, positionMap, remember } from "./audio-positions.js";
 
 export const POSITIONS_REFRESH_INTERVAL = 30000;
 
@@ -16,15 +16,33 @@ export function singleFlight(run) {
   };
 }
 
-export function mergeHubPositions(known, rows, finished, deviceId) {
+export function mergeHubPositions(known, rows, finished, deviceId, queued = null) {
   const next = positionMap(rows, finished);
   for (const [key, row] of known) {
     const hub = next.get(key);
-    if (hub ? (row.updated || 0) > (hub.updated || 0) : deviceId != null && row.device === deviceId) next.set(key, row);
+    if (hub ? (row.updated || 0) > (hub.updated || 0) : deviceId != null && row.device === deviceId && (!queued || queued.has(key))) next.set(key, row);
   }
   if (next.size === known.size && [...next].every(([key, row]) => known.has(key) && sameRow(known.get(key), row))) return known;
   return next;
 }
+
+export function adoptPositions(known, rows) {
+  let next = known;
+  for (const [key, row] of positionMap(rows)) {
+    if ((next.get(key)?.updated || 0) >= (row.updated || 0)) continue;
+    if (next === known) next = new Map(known);
+    next.set(key, row);
+  }
+  return next;
+}
+
+export const queuedKeys = (entries) => new Set((Array.isArray(entries) ? entries : []).map((entry) => positionKey(entry.volume, entry.path)));
+
+export const queuedRows = (entries, device) =>
+  (Array.isArray(entries) ? entries : []).map((entry) => remember(new Map(), entry, device, entry.at).get(positionKey(entry.volume, entry.path)));
+
+export const savedRows = (saved, deviceId) =>
+  deviceId != null && saved?.device === deviceId && Array.isArray(saved.rows) ? saved.rows : [];
 
 export function startPositionRefresh({ refresh, interval = POSITIONS_REFRESH_INTERVAL, foreground, onForeground, timer = { set: setInterval, clear: clearInterval } }) {
   let reading = false;

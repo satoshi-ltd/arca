@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.25 — 2026-11-01
+
+- Podcasts and long audio on the phone resume where they stopped after the app is closed, even before the hub answers or while it is unreachable: the phone keeps its last known positions on the device and reads the saves its player has not sent yet, instead of starting the episode from 0 and then overwriting the right place on every device.
+- Resuming from Bluetooth, the notification or Android Auto after the system closed the app starts from the latest saved place, not from the last pause or track change.
+
+Needs: native build
+
 ## 0.8.24 — 2026-11-01
 
 - Desktop and phones now draw from one design system: a single token source sets the same spacing scale (4 to 32), four radii and six type roles on both, replacing the one-off sizes that made spacing and corners differ from screen to screen. Captions on the phone are a step smaller, dialogs, notices and sheets share the 12 corner, onboarding and sign-in titles use the title size, and pairing and access codes use one display size on every device.

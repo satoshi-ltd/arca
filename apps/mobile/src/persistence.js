@@ -12,6 +12,21 @@ async function db() {
   );
   return value;
 }
+export const positionCache = {
+  async read() {
+    const row = await (
+      await db()
+    ).getFirstAsync("SELECT value FROM cache WHERE key = ?", "audio-positions");
+    return row ? JSON.parse(row.value) : null;
+  },
+  async write(value) {
+    await (await db()).runAsync(
+      "INSERT OR REPLACE INTO cache VALUES (?, ?)",
+      "audio-positions",
+      JSON.stringify(value),
+    );
+  },
+};
 export const client = createClient({
   resolvePrivateURL,
   fetcher: nativeFetch,

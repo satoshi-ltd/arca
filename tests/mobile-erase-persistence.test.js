@@ -27,8 +27,8 @@ test("mobile catalog erasure securely deletes rows and truncates its WAL offline
       "utf8",
     )
     .replace(/^import .*;\n/gm, "")
-    .replace("export const client", "const client");
-  const client = vm.runInNewContext(`${source}\nclient`, {
+    .replace(/^export const /gm, "const ");
+  const { client, positionCache } = vm.runInNewContext(`${source}\n({ client, positionCache })`, {
     SQLite: { openDatabaseAsync: async () => adapter },
     SecureStore: {},
     resolvePrivateURL() {},
@@ -42,8 +42,11 @@ test("mobile catalog erasure securely deletes rows and truncates its WAL offline
   await client.cache.write({ name: "current small catalog" });
   db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   assert.ok(fs.readFileSync(filename).includes(Buffer.from(marker)));
+  await positionCache.write({ device: "phone", rows: [{ volume: "a1", path: marker, position: 900, duration: 4200, updated: 1 }] });
+  assert.equal((await positionCache.read()).rows[0].path, marker);
   await client.cache.write(null);
   assert.equal(await client.cache.read(), null);
+  assert.equal(await positionCache.read(), null, "unpairing also erases the phone's saved positions");
   assert.equal(db.prepare("SELECT count(*) AS n FROM cache").get().n, 0);
   assert.equal(fs.readFileSync(filename).includes(Buffer.from(marker)), false);
   assert.equal(fs.statSync(`${filename}-wal`).size, 0);

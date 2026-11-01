@@ -146,6 +146,7 @@ class MusicService : MediaLibraryService() {
         if (reason == Player.DISCONTINUITY_REASON_SEEK) {
           heard()
           if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex) positions.seeked()
+          remember()
           observe()
         }
       }
@@ -296,6 +297,7 @@ class MusicService : MediaLibraryService() {
   }
 
   private fun enqueue(save: PositionSave) {
+    remember()
     val id = save.snapshot.id?.let(::trackOf) ?: return
     val scope = tree.library.scope ?: return
     val hash = tree.library.tracks[id]?.hash ?: return

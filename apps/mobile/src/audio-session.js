@@ -2,22 +2,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { native } from "./private-network";
 import { player, playerAvailable } from "./music-player";
-import { forget, positionKey, positionSignature, remember } from "./audio-positions.js";
+import { forget, positionSignature } from "./audio-positions.js";
 import { drainOutbox } from "./audio-outbox.js";
-import { mergeHubPositions, singleFlight, startPositionRefresh } from "./audio-refresh.js";
+import { adoptPositions, mergeHubPositions, queuedKeys, queuedRows, savedRows, singleFlight, startPositionRefresh } from "./audio-refresh.js";
 import { SLEEP_OFF, sameSleep, sleepFromState } from "./sleep-timer.js";
 
 const DRAIN_INTERVAL = 5000;
 
-export function useAudioSession({ enabled, watching = false, api, device, scope }) {
+export function useAudioSession({ enabled, watching = false, api, device, scope, cache }) {
   const [positions, setPositions] = useState(() => new Map());
   const [loaded, setLoaded] = useState("");
   const [sleep, setSleepState] = useState(SLEEP_OFF);
   const latest = useRef({ playing: false, sleeping: false });
   const draining = useRef(false);
+  const restored = useRef(false);
+  const queued = useRef(null);
+  const [ready, setReady] = useState(false);
   const known = useRef(positions);
-  const deps = useRef({ api, device, scope });
-  deps.current = { api, device, scope };
+  const deps = useRef({ api, device, scope, cache });
+  deps.current = { api, device, scope, cache };
 
   const apply = useCallback((change) => {
     const next = change(known.current);
@@ -32,32 +35,36 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
   read.current ||= singleFlight(async () => {
     try {
       const { positions: rows, finished } = await deps.current.api("/v1/audio-positions");
-      const next = apply((current) => mergeHubPositions(current, rows, finished, deps.current.device.id));
+      const next = apply((current) => mergeHubPositions(current, rows, finished, deps.current.device.id, queued.current));
       setLoaded(positionSignature(next));
     } catch {}
   });
   const refresh = useCallback(() => (enabled ? read.current() : Promise.resolve()), [enabled]);
 
+  const restore = useCallback(async () => {
+    try {
+      const saved = await deps.current.cache?.read();
+      const next = apply((current) => adoptPositions(current, savedRows(saved, deps.current.device.id)));
+      if (next.size) setLoaded(positionSignature(next));
+    } catch {}
+    restored.current = true;
+  }, [apply]);
+
   const drain = useCallback(async () => {
     if (draining.current) return;
     draining.current = true;
     try {
-      const sent = await drainOutbox({
+      await drainOutbox({
         scope: deps.current.scope(),
-        read: player.outbox,
+        read: async (scope) => {
+          const pending = await player.outbox(scope);
+          queued.current = queuedKeys(pending.entries);
+          apply((current) => adoptPositions(current, queuedRows(pending.entries, deps.current.device)));
+          return pending;
+        },
         acknowledge: player.acknowledge,
         send: (body) => deps.current.api("/v1/audio-position", body),
       });
-      if (sent.length)
-        apply((current) =>
-          sent.reduce(
-            (next, entry) =>
-              (next.get(positionKey(entry.volume, entry.path))?.updated || 0) > entry.at
-                ? next
-                : remember(next, entry, deps.current.device, entry.at),
-            current,
-          ),
-        );
     } catch {
     } finally {
       draining.current = false;
@@ -82,17 +89,36 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
   }, []);
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    refresh();
-    if (!playerAvailable) return undefined;
+    if (!restored.current || deps.current.device.id == null) return;
+    deps.current.cache?.write({ device: deps.current.device.id, rows: [...positions.values()] })?.catch(() => {});
+  }, [positions]);
+
+  useEffect(() => {
+    if (!enabled) {
+      restored.current = false;
+      queued.current = null;
+      setReady(false);
+      apply((current) => (current.size ? new Map() : current));
+      return undefined;
+    }
     let active = true;
+    restore().then(async () => {
+      if (!active) return;
+      if (playerAvailable) await drain();
+      if (!active) return;
+      setReady(true);
+      refresh();
+    });
+    if (!playerAvailable)
+      return () => {
+        active = false;
+      };
     const read = () => player.command("state").then((state) => active && observe(state), () => {});
     const subscription = native.addListener("musicState", (state) => active && observe(state));
     const watch = AppState.addEventListener("change", (state) => {
       if (state === "active") drain();
     });
     read();
-    drain();
     const poll = setInterval(() => {
       if (latest.current.playing || latest.current.sleeping) read();
     }, 1000);
@@ -104,10 +130,10 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
       clearInterval(poll);
       clearInterval(flush);
     };
-  }, [enabled, observe, refresh, drain]);
+  }, [enabled, observe, refresh, drain, restore, apply]);
 
   useEffect(() => {
-    if (!enabled || !watching) return undefined;
+    if (!enabled || !watching || !ready) return undefined;
     return startPositionRefresh({
       refresh,
       foreground: () => AppState.currentState === "active",
@@ -118,7 +144,7 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
         return () => watch.remove();
       },
     });
-  }, [enabled, watching, refresh]);
+  }, [enabled, watching, ready, refresh]);
 
   const setSleep = useCallback(
     (value) => {
