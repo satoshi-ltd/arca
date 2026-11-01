@@ -486,7 +486,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
   assert.match(sheet, /\{!dialog && \(\s+<View \{\.\.\.grabber\.panHandlers\} style=\{s\.sheetGrabber\}>\s+<View style=\{s\.sheetHandle\} \/>/, "every bottom sheet shows its handle");
   assert.match(sheet, /<View style=\{s\.tile\}>\s*<Icon name=\{icon\}/);
   assert.match(sheet, /\{!!subtitle && \(/);
-  assert.match(sheet, /\{subtitle\}[\s\S]*?<Button\s+label="Close"/, "every titled sheet, menus included, has an explicit Close like desktop dialogs");
+  assert.match(sheet, /\{subtitle\}[\s\S]*?\{!onBack && \(\s+<Button\s+label="Close"/, "every titled sheet without Back, menus included, has an explicit Close like desktop dialogs");
   assert.doesNotMatch(sheet, /!menu && \(\s*<Button/);
   assert.match(sheet, /contentContainerStyle=\{menu \? s\.sheetMenu : s\.content\}/);
   assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : sp\[4\],[^}]*borderBottomWidth: 1/);

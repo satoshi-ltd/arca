@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.26 — 2026-11-01
+
+- The phone's share picker no longer shows Close beside Back, so leaving the picker never throws away the files being saved; Close stays on the Save step.
+
+Needs: native build
+
 ## 0.8.25 — 2026-11-01
 
 - Podcasts and long audio on the phone resume where they stopped after the app is closed, even before the hub answers or while it is unreachable: the phone keeps its last known positions on the device and reads the saves its player has not sent yet, instead of starting the episode from 0 and then overwriting the right place on every device.

@@ -1033,14 +1033,16 @@ export function Sheet({
                     </Text>
                   )}
                 </View>
-                <Button
-                  label="Close"
-                  ghost
-                  icon="close"
-                  iconOnly
-                  disabled={busy}
-                  onPress={dismiss}
-                />
+                {!onBack && (
+                  <Button
+                    label="Close"
+                    ghost
+                    icon="close"
+                    iconOnly
+                    disabled={busy}
+                    onPress={dismiss}
+                  />
+                )}
               </View>
             )}
             <KeyboardScrollView

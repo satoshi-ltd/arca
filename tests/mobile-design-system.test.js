@@ -145,6 +145,7 @@ test("the share picker steps back on gestures, starts each place empty, resets w
   const sheet = components.slice(components.indexOf("export function Sheet("), components.indexOf("export function ConfirmDialog("));
   assert.match(sheet, /const retreat = \(\) => \{\s+if \(busy \|\| leaving\.current\) return;\s+\(onBack \|\| onClose\)\?\.\(\);/);
   assert.match(sheet, /onRequestClose=\{retreat\}/);
+  assert.match(sheet, /\{!onBack && \(\s+<Button\s+label="Close"/, "inside the picker only Back shows, so the header never discards the batch");
   assert.match(sheet, /onPress=\{retreat\}\s+style=\{s\.modalScrim\}/);
   assert.match(sheet, /dismissRef\.current = retreat;/);
   assert.match(sheet, /label="Close"\s+ghost\s+icon="close"\s+iconOnly\s+disabled=\{busy\}\s+onPress=\{dismiss\}/, "Close still discards");
