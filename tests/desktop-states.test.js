@@ -397,3 +397,11 @@ test("folded device lines drop the leading dot without segments, path pickers fi
   const tray = source("tray.js");
   assert.doesNotMatch(tray.slice(tray.indexOf("function updateRow()"), tray.indexOf("function draw()")), /<small>/);
 });
+
+test("the desktop window opens wide enough for the Devices list to show its columns", () => {
+  const tokens = source("tokens.css");
+  const conf = JSON.parse(fs.readFileSync(new URL("../apps/desktop/src-tauri/tauri.conf.json", import.meta.url), "utf8"));
+  const px = (name) => Number(new RegExp(`${name}: (\\d+)px;`).exec(tokens)[1]);
+  const list = conf.app.windows[0].width - px("--sidebar-width") - 2 * px("--space-6") - 16;
+  assert.ok(list > 840, `the list is ${list} px at the default window width`);
+});

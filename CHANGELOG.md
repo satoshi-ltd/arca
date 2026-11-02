@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.29 — 2026-11-02
+
+- The desktop window opens 1200 px wide instead of 1080, so with the wider sidebar Devices shows version, folders and last seen in aligned columns again instead of folding them into one line per device.
+- The desktop app notices a new version even when it stays in the tray for days: it checks six hours after the last check by the wall clock, so sleep and a hidden window no longer skip it, and again when you open the window or the tray an hour or more after the last check.
+
+Needs: desktop build
+
 ## 0.8.28 — 2026-11-02
 
 - Related on movie and show pages, and the "Because you watched" picks in Watch next, no longer come up empty or with one odd title in a small library: after the collection, the franchise and TMDB's recommendations, the hub also matches titles by rare keywords, genres, shared cast and year, so matched titles get fuller rows, and two copies of one film show once.

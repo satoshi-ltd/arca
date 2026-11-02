@@ -13,13 +13,14 @@ async function tray(t, status, { api = null, update = { available: false }, cove
   const dom = new JSDOM('<div id="tray-content"></div>', { runScripts: "outside-only", url: "http://tauri.localhost" });
   const w = dom.window;
   t.after(() => w.close());
-  w.setInterval = () => 0;
+  const intervals = [];
+  w.setInterval = (fn, ms) => intervals.push([fn, ms]);
   w.matchMedia = () => ({ matches: false });
   w.ResizeObserver = class {
     observe() {}
   };
   w.lucide = { createIcons() {} };
-  const ui = { w, calls: [], emitted: [], listeners: {}, covers: [], status };
+  const ui = { w, calls: [], emitted: [], listeners: {}, covers: [], status, intervals };
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
@@ -480,4 +481,37 @@ test("checking the hub after a launch reads as such with the last sync and no pr
 test("the Rust shell no longer defines or registers the unused main_window_open command", () => {
   const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /main_window_open/);
+});
+
+test("the tray checks for an update by the wall clock and when it opens an hour after the last check", async (t) => {
+  let now = Date.now();
+  const ui = await tray(t, { role: "hub", phase: "idle", volumes: [] }, { update: { available: true, version: "9.9.9" } });
+  ui.w.Date.now = () => now;
+  const checks = () => ui.commands().filter((command) => command === "check_update").length;
+  const minute = ui.intervals.find(([, ms]) => ms === 60000)[0];
+  assert.equal(checks(), 1);
+  now += 50 * 60 * 1000;
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  minute();
+  await settle();
+  assert.equal(checks(), 1, "opening it within the hour does not check again");
+  now += 20 * 60 * 1000;
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  await settle();
+  assert.equal(checks(), 2, "opening it after an hour checks");
+  now += 6 * 60 * 60 * 1000;
+  minute();
+  await settle();
+  assert.equal(checks(), 3, "six hours of wall clock check even when timers slept");
+  now -= 3 * 24 * 60 * 60 * 1000;
+  minute();
+  await settle();
+  assert.equal(checks(), 4, "a clock set back checks again instead of waiting for the old time");
+  assert.equal(ui.$(".tray-update-text").textContent, "v9.9.9 is ready");
+  ui.listeners["update-state"]({ payload: { updating: true, version: "9.9.9" } });
+  now += 7 * 60 * 60 * 1000;
+  minute();
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  await settle();
+  assert.equal(checks(), 4, "no check starts while an update installs");
 });

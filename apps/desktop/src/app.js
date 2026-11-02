@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.28";
+const APP_VERSION = "0.8.29";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -12586,8 +12586,11 @@ async function pollStatus(force = false) {
 setInterval(pollStatus, 5000);
 setInterval(refreshRelative, 60000);
 const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
+const UPDATE_ON_FOCUS = 60 * 60 * 1000;
+let updateCheckedAt = 0;
 async function checkForUpdate() {
-  if (!native || navigator.onLine === false) return null;
+  if (!native || updating || navigator.onLine === false) return null;
+  updateCheckedAt = Date.now();
   try {
     const update = await invoke("check_update");
     showUpdate(update);
@@ -12619,10 +12622,18 @@ function showUpdate(update) {
   updateVersion = update?.available ? update.version : "";
   renderUpdateCard();
 }
+function checkUpdateIfOlder(limit) {
+  const age = Date.now() - updateCheckedAt;
+  if (age < 0 || age >= limit) void checkForUpdate();
+}
 if (native) {
   void checkForUpdate();
-  setInterval(checkForUpdate, UPDATE_INTERVAL);
+  setInterval(() => checkUpdateIfOlder(UPDATE_INTERVAL), 60000);
   window.addEventListener("online", () => void checkForUpdate());
+  window.addEventListener("focus", () => checkUpdateIfOlder(UPDATE_ON_FOCUS));
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkUpdateIfOlder(UPDATE_ON_FOCUS);
+  });
 }
 let eventRequest = false,
   eventCursor = null,

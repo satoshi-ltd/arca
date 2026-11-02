@@ -254,7 +254,9 @@ document.addEventListener("click", async (e) => {
     running = false;
   }
 });
+let updateCheckedAt = 0;
 async function checkUpdate() {
+  updateCheckedAt = Date.now();
   try {
     const found = await invoke("check_update");
     update = found?.available && found.version ? found.version : null;
@@ -302,10 +304,15 @@ void checkUpdate();
 setInterval(() => {
   if (!running) refresh();
 }, 2000);
-setInterval(checkUpdate, 6 * 60 * 60 * 1000);
+const checkUpdateIfOlder = (limit) => {
+  const age = Date.now() - updateCheckedAt;
+  if (!updating && (age < 0 || age >= limit)) void checkUpdate();
+};
+setInterval(() => checkUpdateIfOlder(6 * 60 * 60 * 1000), 60000);
 addEventListener("focus", () => {
   events?.emit("music-command", { command: "state" });
   if (!running) refresh();
+  checkUpdateIfOlder(60 * 60 * 1000);
 });
 
 document.addEventListener("keydown", (event) => {

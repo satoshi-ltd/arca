@@ -9381,3 +9381,63 @@ test("an event that arrives while a status read is running still gets its own re
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(reads, before + 2, "one more read follows, and only one");
 });
+test("the window checks for an update by the wall clock and when it is shown or focused an hour after the last check", async () => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  const intervals = [];
+  w.setInterval = (fn, ms) => intervals.push([fn, ms]);
+  let now = Date.now();
+  let checks = 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command) => {
+        if (command === "bootstrap") return { setup: true, root: "/tmp/Arca" };
+        if (command === "check_update") {
+          checks++;
+          return { available: true, version: "9.9.9", notes: null };
+        }
+        if (command === "setup_info") return { root: "/tmp/Arca", freeBytes: 1 };
+        if (command === "install_update") return new Promise(() => {});
+        throw new Error(command);
+      },
+    },
+  };
+  try {
+    await w.eval(`(async()=>{${script}\n})()`);
+    w.Date.now = () => now;
+    await until(() => checks === 1);
+    const minute = intervals.find(([fn, ms]) => ms === 60000 && /checkUpdateIfOlder/.test(String(fn)))[0];
+    now += 50 * 60 * 1000;
+    w.dispatchEvent(new w.Event("focus"));
+    minute();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(checks, 1, "focusing within the hour does not check again");
+    now += 20 * 60 * 1000;
+    Object.defineProperty(w.document, "hidden", { value: false, configurable: true });
+    w.document.dispatchEvent(new w.Event("visibilitychange"));
+    await until(() => checks === 2);
+    now += 6 * 60 * 60 * 1000;
+    minute();
+    await until(() => checks === 3);
+    now += 70 * 60 * 1000;
+    w.dispatchEvent(new w.Event("focus"));
+    await until(() => checks === 4);
+    now -= 3 * 24 * 60 * 60 * 1000;
+    minute();
+    await until(() => checks === 5);
+    assert.equal(w.document.querySelector("#update-heading").textContent, "v9.9.9 is available");
+    w.document.querySelector("#update-install").click();
+    await until(() => /Updating to v9\.9\.9/.test(w.document.querySelector("#update-heading").textContent));
+    now += 7 * 60 * 60 * 1000;
+    w.dispatchEvent(new w.Event("online"));
+    w.dispatchEvent(new w.Event("focus"));
+    minute();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(checks, 5, "no check starts while an update installs");
+  } finally {
+    w.close();
+  }
+});
