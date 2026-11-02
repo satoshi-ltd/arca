@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.28 — 2026-11-02
+
+- Related on movie and show pages, and the "Because you watched" picks in Watch next, no longer come up empty or with one odd title in a small library: after the collection, the franchise and TMDB's recommendations, the hub also matches titles by rare keywords, genres, shared cast and year, so matched titles get fuller rows, and two copies of one film show once.
+
+Needs: hub redeploy
+
 ## 0.8.27 — 2026-11-01
 
 - Movies and shows matched on TMDB offer Trailer on desktop, web, phones and the Fold, which opens the official trailer on YouTube outside Arca. The hub gets it in the TMDB request it already makes, so nothing else leaves it; kids titles never show it, and it is hidden while the hub or the internet is away.

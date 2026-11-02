@@ -937,7 +937,7 @@ export class Video {
         matched: !!details,
         ...fields,
       });
-      if (details) signals.set(movies.at(-1), { key: `movie:${details.id}`, keywords: details.keywords, recommended: details.recommended });
+      if (details) signals.set(movies.at(-1), { key: `movie:${details.id}`, keywords: details.keywords, recommended: details.recommended, genres: details.genreIds });
     }
     const showList = [];
     for (const show of shows.values()) {
@@ -1027,7 +1027,7 @@ export class Video {
         added,
         seasons: seasonList,
       });
-      if (details) signals.set(showList.at(-1), { key: `tv:${details.id}`, keywords: details.keywords, recommended: details.recommended });
+      if (details) signals.set(showList.at(-1), { key: `tv:${details.id}`, keywords: details.keywords, recommended: details.recommended, genres: details.genreIds });
     }
     movies.sort((a, b) => order.compare(a.title, b.title) || (a.year || 0) - (b.year || 0) || (a.path < b.path ? -1 : 1));
     showList.sort((a, b) => order.compare(a.title, b.title) || (a.year || 0) - (b.year || 0));
