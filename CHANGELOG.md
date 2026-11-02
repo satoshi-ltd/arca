@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.30 — 2026-11-02
+
+- No change for people using Arca; fixes an intermittent Windows test failure that blocked publishing.
+
 ## 0.8.29 — 2026-11-02
 
 - The desktop window opens 1200 px wide instead of 1080, so with the wider sidebar Devices shows version, folders and last seen in aligned columns again instead of folding them into one line per device.

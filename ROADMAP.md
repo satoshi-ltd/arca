@@ -197,6 +197,12 @@ Suggested order for approval: exposed security boundaries and preservation of us
   `chore · agent · low`
   Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
 
+### Video downloads on Windows (review of 2026-11-02)
+
+- **VIDEO-REMOVE-WINDOWS-SESSION** — Remove from this device fails on Windows for about a minute after closing a compatible-stream video
+  `bug · agent · normal`
+  Closing the desktop player never ends the hub-style HLS session the replica started on its downloaded copy, and on Windows FFmpeg keeps the file open until it finishes or the 60 s idle sweep ends it, so Remove answers 409 "Close the video before removing its download" about a closed video; a replacement download hits the same BUSY path and pruning silently leaves the file. Accept: sessions keep their source, removing or replacing a download first ends the sessions reading that file and waits for FFmpeg to exit, and `tests/video-downloads.test.js` drops its `videoSessions.halt()` stop-gap and still passes on Windows.
+
 ### Security and data safety
 
 Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects exposure and impact, not proof of exploitation. Decisions precede dependent work; security, data preservation and defense-in-depth are distinguished below.
