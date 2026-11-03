@@ -67,6 +67,7 @@ async function fixture(t) {
     object: (s, h) => path.join(local, s, "objects", h),
     partial: (s, h) => path.join(local, s, "partial", h),
     parent: path.dirname,
+    child: path.join,
     mkdir: async (p) => fs.mkdirSync(p, { recursive: true }),
     exists: async (p) => fs.existsSync(p),
     listNames: async (p) => fs.readdirSync(p),

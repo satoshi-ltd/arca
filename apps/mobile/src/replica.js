@@ -745,6 +745,10 @@ export class Replica {
   }
   async verifyHash(key, record) {
     const uri = record.uri || key;
+    if (record.volume && record.path && key !== this.hashKey(uri, record.volume, record.path)) {
+      await this.forgetHash(key);
+      return true;
+    }
     const stat = await this.files.stat(uri);
     if (
       !stat ||
@@ -1193,7 +1197,7 @@ export class Replica {
           /^\.arca-(transfer|copy)-/.test(name),
       )
     )
-      for (const name of names) await this.files.remove(target + "/" + name);
+      for (const name of names) await this.files.remove(this.files.child(target, name));
     try {
       await this.files.removeDirectory(target);
       return true;

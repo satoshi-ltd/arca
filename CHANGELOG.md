@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.32 — 2026-11-03
+
+- Android phones read, play and sync files whose names contain square brackets or a vertical bar, such as `06 Everchanging [Acoustic].mp3`, instead of failing with “Illegal character in path”.
+
+Needs: native build
+
 ## 0.8.31 — 2026-11-03
 
 - Erase this device and Erase this hub finish even when the system refuses to delete a folder, such as one placed directly in Documents on a Mac: Arca deletes what it is allowed to, leaves that folder in place and names it, instead of staying stuck halfway. This lets a device whose hub is gone be erased and connected to a new hub.

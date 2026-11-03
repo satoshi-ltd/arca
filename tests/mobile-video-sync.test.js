@@ -128,6 +128,7 @@ function artReplica(answers) {
         exists: async (uri) => disk.has(uri),
         present: (uri) => disk.has(uri),
         parent: (uri) => path.dirname(uri),
+        child: path.join,
         mkdir: async () => {},
         remove: async (uri) => disk.delete(uri),
         writeBase64: async (uri, data) => disk.set(uri, data),

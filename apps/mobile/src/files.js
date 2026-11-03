@@ -11,6 +11,7 @@ function id(value) {
     throw new Error("Invalid folder identity");
   return value;
 }
+const uriSafe = (uri) => uri.replace(/[[\]|]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 const root = new Directory(Paths.document, "arca");
 export const files = {
   async destroy() {
@@ -38,9 +39,8 @@ export const files = {
   folder: (scope, volume) =>
     new Directory(root, id(scope), "folders", id(volume)).uri,
   work(scope, volume, path) {
-    return Paths.join(
-      this.folder(scope, volume),
-      ...validPath(path).split("/"),
+    return uriSafe(
+      Paths.join(this.folder(scope, volume), ...validPath(path).split("/")),
     );
   },
   object: (scope, hash) => new File(root, id(scope), "objects", id(hash)).uri,
@@ -74,7 +74,8 @@ export const files = {
     return new File(root, id(scope), "audio-downloads", id(volume), name).uri;
   },
 
-  parent: (uri) => Paths.dirname(uri),
+  parent: (uri) => uriSafe(Paths.dirname(uri)),
+  child: (uri, name) => uriSafe(Paths.join(uri, name)),
   async mkdir(uri) {
     new Directory(uri).create({ intermediates: true, idempotent: true });
   },
@@ -131,12 +132,7 @@ export const files = {
       if (entry.name.startsWith(".arca-copy-")) entry.delete();
   },
   async copy(from, to) {
-    const staged = new File(
-      Paths.join(
-        Paths.dirname(to),
-        `.arca-copy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
-      ),
-    );
+    const staged = new File(this.staged(to));
     try {
       await new File(from).copy(staged);
       if (to.startsWith(root.uri)) native.replaceFile(staged.uri, to);
@@ -155,9 +151,11 @@ export const files = {
     else await new File(from).move(new File(to));
   },
   staged: (uri) =>
-    Paths.join(
-      Paths.dirname(uri),
-      `.arca-copy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    uriSafe(
+      Paths.join(
+        Paths.dirname(uri),
+        `.arca-copy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+      ),
     ),
   // Callers journal replacements before entering this operation.
   async replace(from, to) {

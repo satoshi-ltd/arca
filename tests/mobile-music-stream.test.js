@@ -38,6 +38,7 @@ function setup(t) {
       return path.join(storage, scope, "audio-downloads", volume, name);
     },
     parent: (uri) => path.dirname(uri),
+    child: path.join,
     mkdir: async (uri) => fs.mkdirSync(uri, { recursive: true }),
     exists: async (uri) => fs.existsSync(uri),
     present: (uri) => fs.existsSync(uri),

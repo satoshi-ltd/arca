@@ -80,6 +80,7 @@ async function phone(t) {
     object: (s, h) => path.join(local, s, "objects", h),
     partial: (s, h) => path.join(local, s, "partial", h),
     parent: path.dirname,
+    child: path.join,
     mkdir: async (p) => fs.mkdirSync(p, { recursive: true }),
     exists: async (p) => fs.existsSync(p),
     listNames: async (p) => fs.readdirSync(p),
@@ -560,4 +561,21 @@ test("the inventory time survives a cold start and a manual call joining a sched
   await f.replica.unselect(id);
   assert.equal(f.replica.lastInventory.has(id), false, "stopping a folder forgets its inventory time");
   assert.equal(await f.store.get(key, 0), 0, "and the saved one, so selecting it again scans at once");
+});
+
+test("a file check stored under an earlier form of the file's URI is dropped instead of verifying the file twice", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "notes.txt"), "original bytes");
+  await f.select();
+  await f.replica.sync();
+  const keys = async () => (await f.store.db.getAllAsync("SELECT uri FROM scan_cache ORDER BY uri")).map((row) => row.uri);
+  const [current] = await keys();
+  const row = JSON.parse((await f.store.db.getFirstAsync("SELECT row FROM scan_cache WHERE uri=?", current)).row);
+  await f.store.cacheHash(current + "-earlier-form", row);
+  await allDue(f);
+  f.hashes.length = 0;
+  await f.replica.sync(false, { scheduled: true });
+  assert.equal(f.replica.error, null);
+  assert.deepEqual(await keys(), [current]);
+  assert.ok(f.hashed("notes").length <= 1, "the file is verified once");
 });

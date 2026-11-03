@@ -50,6 +50,7 @@ function phone({ cover }) {
       musicCover: (scope, key, size) => `/covers/${key}-${size}.jpg`,
       work: (scope, id, path) => `/work/${path}`,
       parent: (uri) => uri.slice(0, uri.lastIndexOf("/")),
+      child: (uri, name) => `${uri}/${name}`,
       exists: async (uri) => uri === "/covers" || disk.has(uri),
       listNames: async (dir) => [...disk.keys()].filter((uri) => uri.startsWith(`${dir}/`)).map((uri) => uri.slice(dir.length + 1)),
       mkdir: async () => {},

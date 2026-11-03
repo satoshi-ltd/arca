@@ -23,6 +23,7 @@ async function fixture(t) {
     files: {
       incoming: (key) => path.join(temporary, key),
       parent: path.dirname,
+      child: path.join,
       mkdir: (p) => fs.mkdir(p, { recursive: true }),
       stat: (p) => fs.stat(fileURLToPath(p)),
       copy: (a, b) => fs.copyFile(fileURLToPath(a), b),
