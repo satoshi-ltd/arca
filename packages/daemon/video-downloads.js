@@ -69,6 +69,12 @@ export class VideoDownloads {
   rows(volume) {
     return this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=? AND volume=? ORDER BY added,path").all(this.hub, volume);
   }
+  doneCounts() {
+    const counts = {};
+    for (const { volume, n } of this.s.db.prepare("SELECT volume,COUNT(*) AS n FROM video_downloads WHERE hub=? AND state='done' GROUP BY volume").all(this.hub))
+      counts[volume] = n;
+    return counts;
+  }
   row(volume, name) {
     return this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=? AND volume=? AND path=?").get(this.hub, volume, name);
   }

@@ -274,6 +274,7 @@ export class Engine {
         };
       }),
       media: this.config.role === "hub" ? {} : s.mediaModes(),
+      downloaded: this.config.role === "hub" ? {} : this.videoDownloads?.doneCounts() || {},
       devices: s.db
         .prepare(
           "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,d.last_address,a.enabled AS backup_enabled,a.revision AS backup_revision,a.updated AS backup_updated FROM devices d LEFT JOIN backup_ack a ON a.device=d.id",

@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.32";
+const APP_VERSION = "0.8.33";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2135,6 +2135,7 @@ function viewRefreshSignature(status, view, detailId) {
       status.phase,
       !!status.hubUnavailable,
       view === "folders" ? status.media : null,
+      view === "folders" ? status.downloaded : null,
       view === "devices" ? status.backup : null,
       view === "devices"
         ? status.devices?.map(({ last_seen, ...device }) => ({
@@ -2437,6 +2438,12 @@ function homeLead(v, state, p) {
       : "";
   return `<div class="home-lead"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${tile}</div>`;
 }
+function streamedOffline(v) {
+  if (v.mode === "keep" || !hubOffline()) return "";
+  const count = status.downloaded?.[v.id] || 0;
+  if (!count) return "Nothing downloaded";
+  return v.video ? `${countLabel(count, "download")} to watch` : `${countLabel(count, "track")} downloaded`;
+}
 function folderRow(v, available = false) {
   const p =
     status.phase !== "paused" &&
@@ -2471,12 +2478,15 @@ function folderRow(v, available = false) {
               "circle-alert",
             )
           : "";
-  const meta = available
-    ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? (v.mode === "keep" ? " · Kept on this device" : " · Streams from hub") : ""}`
-    : folderMeta(v, state, p);
-  const word = available || p ? "" : stateWord(v, state);
+  const away = available === "streamed" ? streamedOffline(v) : "";
+  const meta = away
+    ? `<span class="state-word">Offline</span> · ${escape(away)} · Streams from hub`
+    : available
+      ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? (v.mode === "keep" ? " · Kept on this device" : " · Streams from hub") : ""}`
+      : folderMeta(v, state, p);
+  const word = away ? "Offline" : available || p ? "" : stateWord(v, state);
   const lead = available
-    ? `<div class="tile large"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
+    ? `<div class="tile large${away ? " id" : ""}"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
   const open = `data-action="folder-detail" data-id="${escape(v.id)}"`;
   const label = `aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`;
@@ -7544,16 +7554,33 @@ function videoHeading(v, entry) {
         .filter(Boolean)
         .join(" · ") || "No videos yet"
     : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`;
-  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon("clapperboard")}</div><div><h1>${escape(v.name)}</h1><p>${escape(summary)}</p></div></div><div class="heading-actions">${favoriteStar()}${videoModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+  return `<div class="heading"><div class="detail-title"><div class="tile large${videoAway(v, entry) ? " id" : ""}">${icon("clapperboard")}</div><div><h1>${escape(v.name)}</h1><p>${escape(summary)}</p></div></div><div class="heading-actions">${favoriteStar()}${videoModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+}
+const VIDEO_OFFLINE_DOWNLOADS = "Offline · showing your downloads";
+const videoAway = (v, entry) => !v.selected && status.media?.[v.id] !== "keep" && videoDownloadable() && (!!entry?.offline || hubOffline());
+const videoHeldTitles = (v, library) => {
+  const rows = videoDownloadList(v.id);
+  const done = downloadedTitles(library, rows);
+  const active = downloadedTitles(library, rows.filter(videoDownloadActive).map((row) => ({ ...row, state: "done" })));
+  return { done, all: [...new Map([...done, ...active].map((item) => [item.id, item])).values()] };
+};
+function videoDownloadsOnly(v, library) {
+  const { done, all } = videoHeldTitles(v, library);
+  if (!all.length) return empty("Nothing downloaded", "Movies and shows you download play here while the hub is away.", "", "wifi-off");
+  const cards = all.map((item) => (item.kind === "movie" || item.kind === "show" ? videoPosterCard(v, item, done.includes(item)) : videoDownloadCard(v, item)));
+  return `<p class="music-caption" role="status">${VIDEO_OFFLINE_DOWNLOADS}</p><div class="music-view video-view">${videoGrid(cards, " video-poster-grid")}</div>`;
 }
 function videoBody(v, entry) {
   const library = entry.library;
+  const away = videoAway(v, entry);
+  if (away && videoView.title && !videoHeldTitles(v, library).all.some((item) => item.id === videoView.title)) videoView.title = null;
   if (videoView.title) {
     const item = library.items.get(videoView.title);
     if (item?.kind === "movie") return `<div class="music-view video-view">${videoMovie(v, item, videoLive(entry))}${videoRelated(v, library, item)}</div>`;
     if (item?.kind === "show") return `<div class="music-view video-view">${videoShow(v, library, item, videoLive(entry))}${videoRelated(v, library, item)}</div>`;
     videoView.title = null;
   }
+  if (away) return videoDownloadsOnly(v, library);
   const tabs = videoTabs(library);
   if (!tabs.length)
     return (
@@ -7566,7 +7593,7 @@ function videoBody(v, entry) {
   return `${videoTabsMarkup(tabs)}${videoCaption(entry)}<div class="music-view video-view">${videoTabContent(v, library)}</div>`;
 }
 const videoPlace = (v) => JSON.stringify([v.id, videoView.tab, videoView.title, videoView.season, videoView.sort]);
-const videoState = (v, entry, failure) => JSON.stringify([videoPlace(v), entry?.version, entry?.stamp, videoWorking(entry), failure, videoDownloadStamp(v.id), videoLive(entry)]);
+const videoState = (v, entry, failure) => JSON.stringify([videoPlace(v), entry?.version, entry?.stamp, videoWorking(entry), failure, videoDownloadStamp(v.id), videoLive(entry), videoAway(v, entry)]);
 for (const name of ["online", "offline"])
   window.addEventListener(name, () => {
     if (videoShowing(detailId)) renderVideo(folderVolume(detailId));
@@ -7587,7 +7614,7 @@ function renderVideo(v, scroll = null) {
       icons();
     }
     const caption = content.querySelector(".video-page .music-caption");
-    const text = videoCaptionText(entry);
+    const text = videoAway(v, entry) ? VIDEO_OFFLINE_DOWNLOADS : videoCaptionText(entry);
     if (caption && caption.textContent !== text) caption.textContent = text;
     markNav();
     return;

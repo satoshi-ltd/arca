@@ -108,7 +108,7 @@ test("every list row pads 12/16 and leads with a 40 px tile or a 16 px icon, the
   assert.match(body(".resume-card > .music-cover"), /width: var\(--detail-tile\);/);
   assert.match(app, /<div class="resume-card"[^`]*\$\{musicCover\(v\.id, track\.cover\)\}/);
   assert.match(app, /<div class="selection-summary"><div class="tile large">/);
-  assert.match(app, /\? `<div class="tile large"\$\{state\[2\] === "busy"/);
+  assert.match(app, /\? `<div class="tile large\$\{away \? " id" : ""\}"\$\{state\[2\] === "busy"/);
 });
 
 test("row titles are 14/600 and subtitles 12/400 on every list", () => {

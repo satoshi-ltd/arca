@@ -60,3 +60,20 @@ test("Recent and History draw a revision the same way: one tinted glyph tile and
   const glyph = read("components.jsx").match(/export function HistoryGlyph[\s\S]*?\n\}/)[0];
   assert.match(glyph, /s\.historyGlyph, tone === "warning" && s\.tileWarning, tone === "neutral" && s\.tileNeutral/);
 });
+
+test("with the hub away a streamed library's caption counts what still plays on the phone", async () => {
+  const { streamedOfflineCaption } = await import("../apps/mobile/src/home-data.js");
+  const rows = new Map([
+    ["v:a", { volume: "v", state: "done" }],
+    ["v:b", { volume: "v", state: "done" }],
+    ["v:c", { volume: "v", state: "queued" }],
+    ["m:a", { volume: "m", state: "done" }],
+  ]);
+  assert.equal(streamedOfflineCaption("v", true, rows), "2 downloads to watch");
+  assert.equal(streamedOfflineCaption("m", false, rows), "1 track downloaded");
+  assert.equal(streamedOfflineCaption("x", true, rows), "Nothing downloaded");
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const row = app.slice(app.indexOf("const streamedRow = "), app.indexOf("const shownFavorites"));
+  assert.match(row, /status=\{status\.offline \? "Offline" : undefined\}/, "the row carries Offline as its state word on the neutral tile");
+  assert.match(app.slice(app.indexOf("const streamedCaption = "), app.indexOf("const streamedRow = ")), /if \(status\.offline\) return streamedOfflineCaption/);
+});

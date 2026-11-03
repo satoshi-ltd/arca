@@ -36,6 +36,12 @@ for (const ending of ["\n", "\r\n"]) {
     status.volumes[0].sync = { state: "error", error: "Disk full" };
     assert.notEqual(signature(status, "folders", "a"), detail);
   });
+  test(`a finished or removed download repaints the folder list (${ending.length === 1 ? "LF" : "CRLF"})`, () => {
+    const status = { phase: "idle", hubUnavailable: true, volumes: [], media: { v: "stream" }, downloaded: { v: 1 } };
+    const before = signature(status, "folders", null);
+    status.downloaded = {};
+    assert.notEqual(signature(status, "folders", null), before);
+  });
   test(`starting a library by mode repaints the folder list (${ending.length === 1 ? "LF" : "CRLF"})`, () => {
     const status = { phase: "idle", volumes: [{ id: "a", files: 1 }], media: {} };
     const list = signature(status, "folders", null);

@@ -515,3 +515,49 @@ test("a Movies & TV library kept as a folder offers no per-title Download", asyn
   assert.ok(items.length, "the title still has its menu");
   assert.equal(items.some((text) => /Download|Remove from this device|Cancel download/.test(text)), false, "its files are already here");
 });
+
+test("with the hub away a streamed library's row reads Offline on the neutral tile and counts what still plays, and a kept one is unchanged", async (t) => {
+  const status = { ...replicaStatus({ aud: "stream", vid: "stream", kep: "keep" }), hubUnavailable: true, downloaded: { vid: 2 } };
+  const ui = await boot(t, { status });
+  await until(() => row(ui, "videos"));
+  assert.equal(row(ui, "videos").querySelector(".meta").textContent, "Offline · 2 downloads to watch · Streams from hub");
+  assert.ok(row(ui, "videos").querySelector(".tile").classList.contains("id"), "the neutral tile");
+  assert.equal(row(ui, "music").querySelector(".meta").textContent, "Offline · Nothing downloaded · Streams from hub");
+  assert.match(row(ui, "videos").getAttribute("aria-label"), /Offline/);
+  assert.doesNotMatch(row(ui, "films").textContent, /Offline/, "a kept library keeps its row");
+  const online = await boot(t, { status: { ...status, hubUnavailable: false } });
+  await until(() => row(online, "videos"));
+  assert.match(row(online, "videos").querySelector(".meta").textContent, /^1,284 files · 9.6 GB · Streams from hub$/);
+  assert.equal(row(online, "videos").querySelector(".tile").classList.contains("id"), false);
+});
+
+test("with the hub away a streamed Movies & TV library shows only its finished downloads, and returns to the full library when the hub answers", async (t) => {
+  const library = sampleLibrary();
+  const movie = library.movies[0];
+  const done = [{ id: movie.id, path: movie.path, hash: movie.hash, size: 10, done: 10, state: "done" }];
+  const status = { ...replicaStatus({ vid: "stream" }), hubUnavailable: true, downloaded: { vid: 1 } };
+  const ui = await boot(t, { status, downloads: done });
+  await until(() => row(ui, "videos"));
+  await ui.click(row(ui, "videos"), () => ui.$(".video-page .music-card"));
+  assert.equal(ui.$(".video-page .music-caption").textContent, "Offline · showing your downloads");
+  assert.deepEqual(ui.$$(".video-page .music-card strong").map((el) => el.textContent), [movie.title]);
+  assert.equal(ui.$(".video-page .segmented"), null, "no tabs or sort");
+  assert.ok(ui.$(".detail-head .tile").classList.contains("id"));
+  ui.w.dispatchEvent(new ui.w.Event("online"));
+  await until(() => ui.idle());
+  assert.equal(ui.$(".video-page .music-caption").textContent, "Offline · showing your downloads", "a repaint keeps the offline line");
+  const empty = await boot(t, { status: { ...status, downloaded: {} } });
+  await until(() => row(empty, "videos"));
+  await empty.click(row(empty, "videos"), () => empty.$(".video-page .empty"));
+  assert.match(empty.$(".video-page .empty").textContent, /Nothing downloaded/);
+  const kept = await boot(t, { status: { ...replicaStatus({ vid: "keep" }), hubUnavailable: true }, downloads: done });
+  await until(() => row(kept, "videos"));
+  await kept.click(row(kept, "videos"), () => kept.$(".video-page .music-card"));
+  assert.equal(kept.$(".video-page .music-caption")?.textContent === "Offline · showing your downloads", false, "a kept library plays everything offline");
+  assert.ok(kept.$$(".video-page .music-card").length > 1);
+  const online = await boot(t, { status: { ...status, hubUnavailable: false }, downloads: done });
+  await until(() => row(online, "videos"));
+  await online.click(row(online, "videos"), () => online.$(".video-page .music-card"));
+  assert.ok(online.$(".video-page .segmented"), "the tabs are back");
+  assert.ok(online.$$(".video-page .music-card").length > 1, "the whole library is back");
+});

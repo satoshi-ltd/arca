@@ -214,7 +214,7 @@ import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, count, fileCount, folderSize, unbroken } from "./format";
 import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, entryLabel, revealWindow } from "./browse";
-import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld } from "./home-data";
+import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld, streamedOfflineCaption } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
 import {
   FAVORITE_ICONS,
@@ -1747,6 +1747,7 @@ export default function App() {
     (v) => ((isVideoFolder(catalog, v.id) && videoHeld(v.id)) || (isMusicFolder(catalog, v.id) && streamedSet.has(v.id))) && !locals.some((f) => f.id === v.id),
   );
   const streamedCaption = (v) => {
+    if (status.offline) return streamedOfflineCaption(v.id, isVideoFolder(catalog, v.id), isVideoFolder(catalog, v.id) ? videoDownloads : audioDownloads);
     if (isVideoFolder(catalog, v.id)) return `${folderSize(v)} · Streams from hub`;
     const saved = [...audioDownloads.values()].filter((row) => row.volume === v.id && row.state === "done");
     return saved.length ? `${fileCount(saved.length)} · ${bytes(saved.reduce((total, row) => total + (row.size || 0), 0))} local` : "Streams from hub";
@@ -1759,6 +1760,7 @@ export default function App() {
       name={v.name}
       icon={isVideoFolder(catalog, v.id) ? "clapperboard" : audioSymbols[v.id] || "music"}
       description={unbroken(streamedCaption(v))}
+      status={status.offline ? "Offline" : undefined}
       onPress={() => openFolder({ id: v.id, name: v.name, selected: 0 }).catch((e) => setError(e.message))}
     />
   );

@@ -1891,7 +1891,9 @@ test("while the hub is away, Download in an episode's ⋯ waits for it and Cance
   const path = "Breaking Bad/Season 1/S01E02.mkv";
   const downloads = fakeDownloads([{ id: "e:Breaking Bad/S1E2", path, hash: `h-${path}`, size: 1000, done: 640, state: "downloading" }]);
   const ui = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, downloads });
-  await openShow(ui);
+  await library(ui);
+  assert.deepEqual(cardTitles(ui), ["Breaking Bad"], "offline the grid holds the show whose episode is still downloading");
+  await ui.click(ui.$$(".video-page .music-card")[0], () => ui.$(".video-episode"));
   const row = (title) => ui.$$(".video-episode").find((entry) => entry.textContent.includes(title));
   assert.equal(row("Gray Matter").querySelector('.video-menu [data-action="video-download"]').getAttribute("aria-disabled"), "true");
   assert.equal(row("Cat's in the Bag").querySelector('.video-menu [data-action="video-download-cancel"]').hasAttribute("aria-disabled"), false);
@@ -1923,13 +1925,12 @@ test("the hub and the web never offer downloads", async (t) => {
   }
 });
 
-test("offline, a downloaded movie still plays and Download waits for the hub", async (t) => {
+test("offline, a downloaded movie is the only title listed and still plays", async (t) => {
   const downloads = fakeDownloads([{ id: "m:inception", path: "Inception.mp4", hash: "h-Inception.mp4", size: 1000, done: 1000, state: "done" }]);
   const ui = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, downloads });
-  await openMovie(ui, "Arrival");
-  assert.equal(ui.$('.video-backdrop .video-menu [data-action="video-download"]').getAttribute("aria-disabled"), "true");
-  const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "video");
-  await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
+  await library(ui);
+  assert.deepEqual(cardTitles(ui), ["Inception"], "offline only what plays here is listed");
+  assert.equal(ui.$('[data-action="video-tab"]'), null);
   const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Inception");
   await ui.click(card, () => ui.text(".video-backdrop h2") === "Inception");
   assert.equal(bannerTag(ui), "Downloaded");

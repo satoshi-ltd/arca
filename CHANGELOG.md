@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.33 — 2026-11-03
+
+- With the hub away, a library that streams says Offline on Folders, on the desktop and the phone, and counts what still plays here, such as “2 downloads to watch”, instead of reading as if streaming still worked.
+- With the hub away, a streamed Movies & TV library on the desktop shows only its downloads under “Offline · showing your downloads”, like the phone, instead of the whole library with blank posters for titles that cannot play.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.8.32 — 2026-11-03
 
 - Android phones read, play and sync files whose names contain square brackets or a vertical bar, such as `06 Everchanging [Acoustic].mp3`, instead of failing with “Illegal character in path”.

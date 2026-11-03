@@ -1,3 +1,5 @@
+import { count } from "./format.js";
+
 export const FOLDER_SECTIONS = [
   { kind: "folders", label: "FOLDERS" },
   { kind: "photos", label: "PHOTOS" },
@@ -34,6 +36,11 @@ export function folderState({ status, conflict }) {
   if (QUIET_STATES.includes(status)) return { tone: "neutral", word: status, icon: null };
   if (status && status !== "Up to date") return { tone: null, word: status, icon: null };
   return { tone: null, word: null, icon: null };
+}
+export function streamedOfflineCaption(volume, video, downloads) {
+  const done = [...downloads.values()].filter((row) => row.volume === volume && row.state === "done").length;
+  if (!done) return "Nothing downloaded";
+  return video ? `${count(done, "download", "downloads")} to watch` : `${count(done, "track", "tracks")} downloaded`;
 }
 export function machineTone(state) {
   if (["Needs attention", "Removed"].includes(state)) return "danger";

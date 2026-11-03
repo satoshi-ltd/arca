@@ -69,7 +69,7 @@ test("the phone shows the launch check apart from syncing and restarts its event
   const app = source("App.jsx");
   assert.match(app, /busy: r\.activity,\s*checking: hubChecking\(r\),/);
   assert.match(app, /if \(!pulling \|\| pullHeld\(status\)\) return;/);
-  assert.match(app, /import \{ deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld \} from "\.\/home-data";/);
+  assert.match(app, /import \{ deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld, streamedOfflineCaption \} from "\.\/home-data";/);
   assert.doesNotMatch(app, /checking: r\.checking/);
   assert.match(app, /\}, \[connected, connection\?\.hubId, catalog\?\.changeEvents, status\.offline\]\);/);
 });

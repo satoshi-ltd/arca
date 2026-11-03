@@ -125,6 +125,8 @@ test("a desktop replica downloads a title with its subtitles into its own storag
   assert.deepEqual(fs.readFileSync(path.join(folder, video)), film, "the copy is the hub's file");
   assert.equal(stored.filter((file) => file.endsWith(".vtt")).length, 2, "the sidecar and the embedded track are kept beside it");
   assert.equal(r.replica.engine.store.volumes().length, 0, "nothing lands in a synced folder");
+  assert.deepEqual((await r.call("/v1/status")).downloaded, { [f.v.id]: 1 }, "status counts the finished download for the Folders row");
+  assert.deepEqual((await f.call("/v1/status")).downloaded, {}, "the hub counts none");
 
   await assert.rejects(f.call(`/v1/video/downloads?volume=${f.v.id}`), { status: 403 }, "the hub never downloads");
   await assert.rejects(f.call("/v1/video/download", { volume: f.v.id, paths: [name] }), { status: 403 });
