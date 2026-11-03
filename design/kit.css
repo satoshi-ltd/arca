@@ -396,7 +396,8 @@ body.kit {
   position: static;
   margin-top: var(--space-2);
 }
-.kit-board-pair .music-view .details-menu[open] .menu-items {
+.kit-board-pair .music-view .details-menu[open] .menu-items,
+.kit-board-pair .device-list .details-menu[open] .menu-items {
   position: absolute;
   margin-top: 0;
 }

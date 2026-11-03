@@ -1273,6 +1273,7 @@ export function FolderRow({
   onLongPress,
   favorite,
   onFavorite,
+  tag,
 }) {
   const { s, c, wide } = useDesign();
   const lead = useRef(null);
@@ -1335,9 +1336,12 @@ export function FolderRow({
           <Icon name="circle" color={c.line} size={24} />
         )
       ) : (
-        <View style={s.rowAction}>
-          <Icon name="chevron" color={c.mute} />
-        </View>
+        <>
+          {!!tag && <Tag>{tag.toUpperCase()}</Tag>}
+          <View style={s.rowAction}>
+            <Icon name="chevron" color={c.mute} />
+          </View>
+        </>
       )}
     </>
   );
@@ -1360,7 +1364,7 @@ export function FolderRow({
     <PressScale
       scale={!disabled}
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}${tag ? `, ${tag}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

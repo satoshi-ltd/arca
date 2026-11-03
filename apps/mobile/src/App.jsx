@@ -330,6 +330,7 @@ export default function App() {
     [fileView, setFileView] = useState("files"),
     [sheet, setSheet] = useState(null),
     [renameName, setRenameName] = useState(""),
+    [hubURL, setHubURL] = useState(""),
     [fileActionsOpen, setFileActionsOpen] = useState(false),
     [fileMenuStyle, setFileMenuStyle] = useState(null),
     [deviceName, setDeviceName] = useState(null),
@@ -1748,9 +1749,9 @@ export default function App() {
   );
   const streamedCaption = (v) => {
     if (status.offline) return streamedOfflineCaption(v.id, isVideoFolder(catalog, v.id), isVideoFolder(catalog, v.id) ? videoDownloads : audioDownloads);
-    if (isVideoFolder(catalog, v.id)) return `${folderSize(v)} · Streams from hub`;
+    if (isVideoFolder(catalog, v.id)) return folderSize(v);
     const saved = [...audioDownloads.values()].filter((row) => row.volume === v.id && row.state === "done");
-    return saved.length ? `${fileCount(saved.length)} · ${bytes(saved.reduce((total, row) => total + (row.size || 0), 0))} local` : "Streams from hub";
+    return saved.length ? `${fileCount(saved.length)} · ${bytes(saved.reduce((total, row) => total + (row.size || 0), 0))} local` : folderSize(v);
   };
   const streamedRow = (v, index) => (
     <FolderRow
@@ -1761,6 +1762,7 @@ export default function App() {
       icon={isVideoFolder(catalog, v.id) ? "clapperboard" : audioSymbols[v.id] || "music"}
       description={unbroken(streamedCaption(v))}
       status={status.offline ? "Offline" : undefined}
+      tag="Streaming"
       onPress={() => openFolder({ id: v.id, name: v.name, selected: 0 }).catch((e) => setError(e.message))}
     />
   );
@@ -3809,7 +3811,10 @@ export default function App() {
                                 machine={machines?.find((m) => m.isHub)}
                                 presence={devicePresence.hub}
                                 busy={actionLocked}
-                                disconnect={disconnect}
+                                actions={() => {
+                                  setError("");
+                                  setSheet({ kind: "hub-actions" });
+                                }}
                                 retry={() => run(() => client.refresh(), { hubOnly: true })}
                               />
                               <MachineRow
@@ -4517,6 +4522,19 @@ export default function App() {
                                 subtitle: [describeFavorite(shownSheet.entry).caption, shownSheet.detail].filter(Boolean).join(" · "),
                                 menu: true,
                               }
+                            : shownSheet.kind === "hub-actions"
+                              ? {
+                                  title: catalog?.name || "Hub",
+                                  icon: "server",
+                                  subtitle: connection ? new URL(connection.url).host : "",
+                                  menu: true,
+                                }
+                              : shownSheet.kind === "hub-address"
+                                ? {
+                                    title: "Change hub address",
+                                    icon: "arrow-right-left",
+                                    subtitle: connection ? new URL(connection.url).host : "",
+                                  }
                             : musicSheet(shownSheet) || videoSheet(shownSheet))}
               busy={busy}
               busyLabel={actionLabel}
@@ -4556,6 +4574,70 @@ export default function App() {
                       }
                     />
                   )}
+                </View>
+              )}
+              {shownSheet.kind === "hub-actions" && (
+                <View style={s.actionGroup}>
+                  <ActionRow
+                    label="Change address…"
+                    icon="arrow-right-left"
+                    disabled={actionLocked}
+                    onPress={() => {
+                      setHubURL(connection?.url || "");
+                      setError("");
+                      setSheet({ kind: "hub-address" });
+                    }}
+                  />
+                  <ActionRow
+                    label="Disconnect…"
+                    icon="unplug"
+                    danger
+                    divider
+                    disabled={actionLocked}
+                    onPress={() => {
+                      setSheet(null);
+                      disconnect();
+                    }}
+                  />
+                </View>
+              )}
+              {shownSheet.kind === "hub-address" && (
+                <View style={s.group}>
+                  <Text style={s.text}>
+                    Use this when {catalog?.name || "the hub"} moved to another computer or address. This phone keeps its pairing, folders and files, and nothing downloads again.
+                  </Text>
+                  <Field
+                    label="New address"
+                    value={hubURL}
+                    onChangeText={setHubURL}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    editable={!actionLocked}
+                  />
+                  <Text style={s.caption}>
+                    The hub at the new address must be the same hub, with this phone still paired.
+                  </Text>
+                  <SheetFooter>
+                    <Button
+                      primary
+                      label="Change address"
+                      disabled={actionLocked || !hubURL.trim()}
+                      onPress={() =>
+                        run(
+                          async () => {
+                            const r = engine.current;
+                            r.stop();
+                            if (r.active) await r.active;
+                            await client.relocate(hubURL, await r.relocationChecks());
+                            setSheet(null);
+                            if (!status.paused) startSync();
+                          },
+                          { success: `Hub address changed. Syncing with ${catalog?.name || "the hub"}.` },
+                        )
+                      }
+                    />
+                  </SheetFooter>
                 </View>
               )}
               {shownSheet.kind === "rename-file" && (

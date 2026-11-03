@@ -2203,7 +2203,9 @@ test("a replica's device rows read the OS under the name, then version, folders 
   assert.deepEqual(cells(hub), ["v0.7.38", ["9 folders", "412.0 GB"], "Connected"]);
   assert.equal(hub.querySelector(".device-seen .status-dot").className, "status-dot", "connected reads the --ok dot");
   assert.deepEqual([...hub.children].map((el) => el.className), ["tile large hub", "row-main", "device-cells", "row-end device-end"], "the cells sit between the name block and the right edge");
-  assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["secondary small-button", "role-set"], "Disconnect… sits just before the chip");
+  assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["details-menu file-actions-menu", "role-set"], "one ⋯ just before the chip, like the hub's device rows");
+  assert.equal(hub.querySelector(".row-end summary").getAttribute("aria-label"), "Actions for casa");
+  assert.deepEqual([...hub.querySelectorAll(".row-end .menu-items button")].map((el) => [el.dataset.action, el.className]), [["change-hub-address", "secondary"], ["disconnect-hub", "danger menu-item-separated"]], "Change address… then Disconnect…, separated in danger ink");
   assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
   const own = rows.find((row) => row.querySelector(".tag.self"));
   assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform]]);
@@ -2699,7 +2701,7 @@ test("hub-only controls follow the hub's availability and a status-less 'Hub una
   };
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector(".folder-card"));
-  const extra = ["restore", "review-conflict", "disconnect-hub"].map((name) => {
+  const extra = ["restore", "review-conflict"].map((name) => {
     const control = w.document.createElement("button");
     control.dataset.action = name;
     w.document.body.append(control);

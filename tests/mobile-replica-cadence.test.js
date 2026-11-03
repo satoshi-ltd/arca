@@ -579,3 +579,18 @@ test("a file check stored under an earlier form of the file's URI is dropped ins
   assert.deepEqual(await keys(), [current]);
   assert.ok(f.hashed("notes").length <= 1, "the file is verified once");
 });
+
+test("the phone lists, for each kept folder, its cursor and the newest revision it recorded, for a hub address change to check", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "first");
+  fs.writeFileSync(path.join(f.volume.path, "b.txt"), "second");
+  await f.select();
+  await f.replica.sync();
+  const [check] = await f.replica.relocationChecks();
+  const folder = (await f.store.folders(f.replica.scope)).find((row) => row.id === f.volume.id);
+  assert.equal(check.volume, f.volume.id);
+  assert.equal(check.cursor, folder.cursor);
+  assert.ok(check.cursor > 0);
+  const newest = f.daemon.engine.store.db.prepare("SELECT path,hash,rev FROM files WHERE volume=? AND rev<=? ORDER BY rev DESC LIMIT 1").get(f.volume.id, check.cursor);
+  assert.deepEqual(check.last, { path: newest.path, hash: newest.hash, deleted: false, rev: newest.rev });
+});

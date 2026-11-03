@@ -77,7 +77,7 @@ test("desktop saves accepted pairing before catalog failure and completes root s
     url: `http://127.0.0.1:${hub.address().port}`,
     code: "001002",
   });
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 503, "an unavailable catalog is not a refused credential");
   const saved = JSON.parse(
     fs.readFileSync(path.join(home, "config.json"), "utf8"),
   );

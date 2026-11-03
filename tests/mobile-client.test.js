@@ -665,3 +665,98 @@ test("per-request deadlines override the default and buffered bodies are never t
   await new Promise((resolve) => setTimeout(resolve, 40));
   assert.deepEqual(await response.json(), { ok: true });
 });
+
+test("the phone follows the same hub to a new address and refuses another hub, a removed phone, an unreachable or an older copy", async (t) => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-mobile-relocate-"));
+  const running = new Set();
+  t.after(async () => {
+    for (const n of running) await n.close();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const run = async (home) => {
+    const n = await start(home, { timer: false });
+    running.add(n);
+    n.base = `http://127.0.0.1:${n.port}`;
+    n.stop = async () => (await n.close(), running.delete(n));
+    n.admin = (route, body) =>
+      fetch(n.base + route, { method: body ? "POST" : "GET", headers: { Authorization: `Bearer ${n.engine.config.adminToken}`, "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }).then((r) => r.json());
+    return n;
+  };
+  const copy = async (from, name) => {
+    const source = fs.realpathSync(from);
+    const home = path.join(root, name);
+    fs.cpSync(source, home, { recursive: true });
+    const real = fs.realpathSync(home);
+    const moved = (value) => (value.startsWith(source + path.sep) ? real + value.slice(source.length) : value);
+    const configPath = path.join(real, "config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    fs.writeFileSync(configPath, JSON.stringify({ ...config, root: moved(config.root) }, null, 2));
+    const db = new DatabaseSync(path.join(real, "index.sqlite"));
+    for (const row of db.prepare("SELECT id,path FROM volumes").all()) db.prepare("UPDATE volumes SET path=? WHERE id=?").run(moved(row.path), row.id);
+    db.close();
+    return run(real);
+  };
+  const atlasHome = path.join(root, "atlas");
+  init(atlasHome, { port: 0 });
+  const atlas = await run(atlasHome);
+  const volume = atlas.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(volume.path, "notes.txt"), "hello");
+  await atlas.engine.cycle();
+  const invite = await atlas.admin("/v1/pairing", { name: "Phone" });
+  const hosts = new Map([["https://atlas.invalid", atlas.base]]);
+  const trusted = new Set(["https://atlas.invalid", "https://helios.invalid", "https://revoked.invalid"]);
+  const leaked = [];
+  const store = persistence();
+  const client = createClient({
+    ...store,
+    fetcher: (url, options) => {
+      const origin = new URL(url).origin;
+      if (options?.headers?.Authorization && !trusted.has(origin)) leaked.push(url);
+      if (!hosts.has(origin)) return Promise.reject(new TypeError("Network request failed"));
+      return fetch(hosts.get(origin) + url.slice(origin.length), options);
+    },
+  });
+  await client.load();
+  await client.pair("https://atlas.invalid", invite.code);
+  const hubRow = atlas.engine.store.db.prepare("SELECT path,hash,deleted,rev FROM files WHERE volume=? AND path='notes.txt'").get(volume.id);
+  const cursor = hubRow.rev;
+  const checks = [{ volume: volume.id, name: "Documents", cursor, last: { path: hubRow.path, hash: hubRow.hash, deleted: !!hubRow.deleted, rev: hubRow.rev } }];
+  await atlas.stop();
+  const helios = await copy(atlasHome, "helios");
+  hosts.set("https://helios.invalid", helios.base);
+  const otherHome = path.join(root, "other");
+  init(otherHome, { port: 0 });
+  const other = await run(otherHome);
+  hosts.set("https://other.invalid", other.base);
+  const token = (await store.secrets.read()).token;
+  const unchanged = async () => {
+    assert.equal(client.state().connection.url, "https://atlas.invalid");
+    assert.equal((await store.secrets.read()).token, token, "the credential is kept");
+  };
+  await assert.rejects(client.relocate("https://other.invalid", checks), /different hub/);
+  await unchanged();
+  await assert.rejects(client.relocate("https://gone.invalid", checks), /Could not reach/);
+  await unchanged();
+  await assert.rejects(client.relocate("https://helios.invalid", [{ ...checks[0], cursor: cursor + 50 }]), /latest copy/);
+  await unchanged();
+  await assert.rejects(client.relocate("https://helios.invalid", [{ ...checks[0], last: { ...checks[0].last, hash: "0".repeat(64) } }]), /latest copy/, "a copy that disagrees about this phone's newest revision");
+  await unchanged();
+  await assert.rejects(client.relocate("http://helios.invalid", checks), /Use HTTPS/);
+  await unchanged();
+  const devices = () => helios.engine.store.db.prepare("SELECT id FROM devices").all().map((row) => row.id);
+  const before = devices();
+  const moved = await client.relocate("https://helios.invalid/", checks);
+  assert.equal(moved.connection.url, "https://helios.invalid");
+  assert.equal((await store.secrets.read()).url, "https://helios.invalid", "the new address is saved");
+  assert.equal((await store.secrets.read()).token, token);
+  assert.equal(moved.catalog.volumes[0].name, "Documents");
+  assert.deepEqual(devices(), before, "no second registration");
+  assert.ok((await client.history()).versions.some((row) => row.path === "notes.txt"), "the phone talks to the new address");
+  const revoked = await copy(atlasHome, "revoked");
+  hosts.set("https://revoked.invalid", revoked.base);
+  await revoked.admin("/v1/revoke", { id: (await store.secrets.read()).id });
+  await assert.rejects(client.relocate("https://revoked.invalid", checks), /removed there/);
+  assert.equal(client.state().connection.url, "https://helios.invalid", "a refusal from another address never clears this phone's connection");
+  assert.deepEqual(leaked, [], "the credential never reaches an address that fails the identity check");
+});

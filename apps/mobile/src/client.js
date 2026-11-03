@@ -53,7 +53,7 @@ export function createClient({
   let catalog = null;
   let busy = false;
   async function rawRequest(url, route, token, options = {}) {
-    if (!route.startsWith("/v1/") && route !== "/pair")
+    if (!route.startsWith("/v1/") && route !== "/pair" && route !== "/.well-known/arca")
       throw new Error("Invalid hub route");
     const limit = options.timeout || timeout;
     const deadline = Date.now() + limit;
@@ -137,7 +137,8 @@ export function createClient({
         response.status === 401 &&
         token &&
         connection?.token === token &&
-        !connection.leaving
+        !connection.leaving &&
+        !options.probe
       ) {
         await secrets.clear();
         connection = null;
@@ -407,6 +408,71 @@ export function createClient({
         connection = null;
         await cache.write(null);
         catalog = null;
+        return state();
+      }),
+    relocate: (address, checks = []) =>
+      exclusive(async () => {
+        if (!connection || connection.leaving)
+          throw new Error("Connect to your hub first");
+        let url = hubAddress(address, !!resolvePrivateURL);
+        const { token, hubId } = connection;
+        if (url.startsWith("http:")) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => abortRequest(controller, timedOut()), timeout);
+          try {
+            url = await abortable(() => resolvePrivateURL(url), controller.signal);
+          } catch (error) {
+            if (error instanceof HubError) throw error;
+            throw new Error(error?.message || `Could not verify ${url} on your private network.`);
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        const unreachable = (error) => {
+          if (error instanceof HubError || error?.code === "REQUEST_CANCELLED") throw error;
+          throw new Error(`Could not reach a hub at ${url}. Check the address and that the hub is running.`);
+        };
+        const older = (name) => {
+          throw new Error(`The hub at that address does not have this phone's latest copy of “${name}”: it is an older or different copy, or it is still finishing a change (try again in a minute). Otherwise pair this phone again.`);
+        };
+        const ask = (route) => request(url, route, token, undefined, { timeout: Math.min(timeout, 10000), probe: true }).catch(unreachable);
+        const identity = await request(url, "/.well-known/arca", null, undefined, { timeout: Math.min(timeout, 10000), probe: true }).catch(unreachable);
+        if (identity?.service !== "arca") unreachable();
+        if (identity.role !== "hub" || identity.id !== hubId)
+          throw new Error("That address belongs to a different hub. Pair this phone with it instead.");
+        let next;
+        try {
+          next = validateCatalog(await ask("/v1/catalog"), hubId);
+        } catch (error) {
+          if (error.status === 401)
+            throw new Error("The hub at that address does not accept this phone: it was removed there. Pair this phone again from that hub.");
+          throw error;
+        }
+        for (const check of checks) {
+          if (!next.volumes.some((volume) => volume.id === check.volume))
+            throw new Error(`The hub at that address no longer has “${check.name}”.`);
+          if (!check.cursor) continue;
+          try {
+            await ask(`/v1/changes?${new URLSearchParams({ volume: check.volume, after: String(check.cursor), through: String(check.cursor) })}`);
+          } catch (error) {
+            if (error.status === 409) older(check.name);
+            throw error;
+          }
+          if (!check.last) continue;
+          const history = await ask(`/v1/history?${new URLSearchParams({ volume: check.volume, path: check.last.path })}`);
+          const versions = Array.isArray(history?.versions) ? history.versions : [];
+          const same = versions.find((row) => row.rev === check.last.rev);
+          if (same ? (same.hash ?? null) !== (check.last.hash ?? null) || !!same.deleted !== !!check.last.deleted : !versions.length || versions.some((row) => row.rev < check.last.rev))
+            older(check.name);
+        }
+        if (connection?.token !== token || connection.hubId !== hubId || connection.leaving)
+          throw new Error("The hub connection changed meanwhile. Try again.");
+        const moved = { ...connection, url };
+        await secrets.write(moved);
+        connection = moved;
+        const saved = { ...next, fetchedAt: Date.now() };
+        await cache.write(saved);
+        catalog = saved;
         return state();
       }),
     disconnect: () =>

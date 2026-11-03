@@ -22,6 +22,7 @@ export const iconNames = {
   clock: "Clock",
   key: "KeyRound",
   "arrow-right": "ArrowRight",
+  "arrow-right-left": "ArrowRightLeft",
   circle: "Circle",
   unplug: "Unplug",
   "chevron-down": "ChevronDown",
@@ -312,6 +313,12 @@ export const icons = {
   "arrow-right": [
     ["path", { d: "M5 12h14" }],
     ["path", { d: "m12 5 7 7-7 7" }],
+  ],
+  "arrow-right-left": [
+    ["path", { d: "m16 3 4 4-4 4" }],
+    ["path", { d: "M20 7H4" }],
+    ["path", { d: "m8 21-4-4 4-4" }],
+    ["path", { d: "M4 17h16" }],
   ],
   circle: [["circle", { cx: "12", cy: "12", r: "10" }]],
   unplug: [

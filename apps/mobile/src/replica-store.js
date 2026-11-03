@@ -781,6 +781,15 @@ export class ReplicaStore {
       at,
     );
   }
+  async newestRow(scope, volume, cursor) {
+    const found = await this.db.getFirstAsync(
+      "SELECT row FROM files WHERE scope=? AND volume=? AND CAST(json_extract(row,'$.rev') AS INTEGER)<=? ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT 1",
+      scope,
+      volume,
+      cursor,
+    );
+    return found ? JSON.parse(found.row) : null;
+  }
   async rows(scope, volume) {
     return (
       await this.db.getAllAsync(

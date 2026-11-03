@@ -2125,8 +2125,9 @@ export class Engine {
   closeBackup() {
     this.backupEngine?.close();
     this.backupEngine = null;
-    if (this.backupLock) fs.unlinkSync(this.backupLock);
+    const lock = this.backupLock;
     this.backupLock = null;
+    if (lock) fs.rmSync(lock, { force: true });
   }
   async scanHub(volume, { incremental = false, paths } = {}) {
     const s = this.store;
@@ -2413,7 +2414,35 @@ export class Engine {
       this.destroying = false;
     }
   }
-  async disconnect() {
+  async relocateHub(checked, url, name, cursors = new Map()) {
+    this.interruptCycle();
+    return this.exclusive(() => {
+      if (this.destroying || this.config.destroyPending || this.config.needsSetup)
+        fail("Erasing this device is pending; retry Erase this device", 409);
+      if (this.config.hub !== checked && (this.config.hub?.id !== checked.id || this.config.hub?.token !== checked.token))
+        fail("The hub connection changed meanwhile. Try again.", 409);
+      for (const [volume, cursor] of cursors)
+        if (this.work.state(volume).cursor !== cursor) fail("This device synced meanwhile. Try again.", 409);
+      this.closeBackup();
+      const hub = { ...this.config.hub, url, name };
+      const backupConfigPath = this.config.backup?.path
+        ? path.join(this.config.backup.path, "state", "config.json")
+        : null;
+      if (backupConfigPath && fs.existsSync(backupConfigPath)) {
+        const backupConfig = JSON.parse(fs.readFileSync(backupConfigPath, "utf8"));
+        backupConfig.hub = { ...backupConfig.hub, id: hub.id, url };
+        atomic(backupConfigPath, JSON.stringify(backupConfig, null, 2));
+      }
+      atomic(this.store.configPath, JSON.stringify({ ...this.config, hub }, null, 2));
+      this.config.hub = hub;
+      this.connectionVersion = (this.connectionVersion || 0) + 1;
+      this.hubUnavailable = false;
+      this.error = null;
+      for (const v of this.store.volumes().filter((v) => v.selected)) this.work.mark(v.id);
+      return { relocated: true, url, name };
+    });
+  }
+  async disconnect({ force = false } = {}) {
     if (this.config.role !== "replica")
       fail("Only a device connected to a hub can disconnect from it", 409);
     if (!this.config.hub) return { disconnected: true };
@@ -2437,7 +2466,7 @@ export class Engine {
             signal: AbortSignal.timeout(5000),
           });
         } catch (error) {
-          if (error.status !== 401)
+          if (error.status !== 401 && !force)
             fail(
               "Could not disconnect from the hub. Check the connection and retry to complete disconnection.",
               503,

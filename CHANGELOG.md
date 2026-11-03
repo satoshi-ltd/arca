@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.34 — 2026-11-03
+
+- A hub moved to another computer with its state copied can be followed from the desktop and server replicas: Change address… on the hub row (or `arca relocate URL`) checks that the new address is the same hub with this device still paired and not an older copy, then keeps syncing with the same pairing, folders and files, without downloading what it already has or adding a second entry on the hub. Phones do the same from the hub row's ⋯ in Devices.
+- Disconnect… works while the hub is unreachable: Disconnect anyway (or `arca disconnect --force`) disconnects keeping local files, and leaves a stale entry the hub's administrator can remove. On the desktop and the phone, Change address… and Disconnect… live in the hub row's ⋯.
+- A library that streams carries a STREAMING tag on Folders, on the desktop and the phone, instead of ending its line in “Streams from hub”, so the line keeps its size or what plays offline.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.8.33 — 2026-11-03
 
 - With the hub away, a library that streams says Offline on Folders, on the desktop and the phone, and counts what still plays here, such as “2 downloads to watch”, instead of reading as if streaming still worked.

@@ -154,6 +154,74 @@ export async function start(home, options = {}) {
   }
   const webEnabled = config.installation !== "desktop";
   const network = new Network(engine, options.network);
+  const hubAddress = async (b) => {
+    let remote;
+    try {
+      remote = new URL(b.url);
+    } catch {
+      fail("Invalid hub URL");
+    }
+    if (
+      !["http:", "https:"].includes(remote.protocol) ||
+      remote.username ||
+      remote.password ||
+      remote.search ||
+      remote.hash
+    )
+      fail("Invalid hub URL");
+    if (
+      remote.protocol === "http:" &&
+      !["localhost", "127.0.0.1", "[::1]"].includes(remote.hostname) &&
+      !b.privateNetwork
+    )
+      remote = lanAddress(remote.hostname)
+        ? await verifiedLanURL(remote)
+        : await verifiedTailnetURL(remote, await network.detector.read(true));
+    return remote;
+  };
+  const hubCatalog = async (origin, token) => {
+    const response = await fetch(`${origin}/v1/catalog`, {
+      redirect: "error",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (response.status === 401) fail("Hub refused credential", 401);
+    if (!response.ok) {
+      const reason = await response.json().then((body) => (typeof body?.error === "string" ? body.error.slice(0, 300) : ""), () => "");
+      if (response.status >= 500) fail(reason || `The hub at ${origin} did not answer (${response.status}). Try again when it is running.`, 503);
+      fail(reason || `The hub at ${origin} refused the request (${response.status}).`, response.status === 403 || response.status === 412 ? response.status : 502);
+    }
+    const chunks = [];
+    let received = 0;
+    for await (const chunk of response.body) {
+      received += chunk.length;
+      if (received > 16 * 1024 * 1024) fail("The hub's catalog is too large", 502);
+      chunks.push(chunk);
+    }
+    let catalog;
+    try {
+      catalog = JSON.parse(Buffer.concat(chunks).toString());
+    } catch {
+      fail("Invalid hub catalog", 502);
+    }
+    if (catalog?.protocol !== 1) fail("Unsupported hub protocol");
+    const text = (value, limit) =>
+      typeof value === "string" && value.length <= limit && !/[\x00-\x1f]/.test(value);
+    if (
+      !/^[\w-]{1,64}$/.test(catalog.id ?? "") ||
+      !text(catalog.name, 100) ||
+      !Array.isArray(catalog.volumes) ||
+      catalog.volumes.length > 1000 ||
+      catalog.volumes.some(
+        (v) =>
+          !/^[\w-]{1,64}$/.test(v?.id ?? "") ||
+          !text(v.name, 255) ||
+          (v.historyRetention !== undefined && !text(v.historyRetention, 16)),
+      )
+    )
+      fail("Invalid hub catalog", 502);
+    return catalog;
+  };
   engine.gallery = new Gallery(s);
   engine.gallery.resume();
   const music = () => (engine.music ||= new Music(s));
@@ -2403,7 +2471,78 @@ export async function start(home, options = {}) {
         if (route === "/v1/disconnect") {
           requireAdmin();
           if (b.confirmed !== true) fail("Confirm disconnection first", 400);
-          return send(200, await engine.disconnect());
+          return send(200, await engine.disconnect({ force: b.force === true }));
+        }
+        if (route === "/v1/hub-url") {
+          requireAdmin();
+          if (config.role !== "replica" || !config.hub)
+            fail("Only a device connected to a hub can change its address", 409);
+          if (b.confirmed !== true) fail("Confirm the new hub address first", 400);
+          engine.interruptCycle();
+          const unreachable = (origin) =>
+            fail(`Could not reach a hub at ${origin}. Check the address and that the hub is running.`, 503);
+          const reach = async (origin, work) => {
+            try {
+              return await work();
+            } catch (error) {
+              if (error.status) throw error;
+              unreachable(origin);
+            }
+          };
+          const remote = await reach(b.url, () => hubAddress(b));
+          const hub = config.hub;
+          const older = (name) =>
+            fail(`The hub at that address does not have this device's latest copy of “${name}”: it is an older or different copy, or it is still finishing a change (try again in a minute). Otherwise use replacement-hub recovery to switch existing folders.`, 409);
+          const ask = async (route) => {
+            const answer = await reach(remote.origin, () =>
+              fetch(`${remote.origin}${route}`, {
+                redirect: "error",
+                headers: { Authorization: `Bearer ${hub.token}`, "X-Arca-Directories": "1", "X-Arca-Path-Transitions": "1" },
+                signal: AbortSignal.timeout(10000),
+              }),
+            );
+            const body = await answer.json().catch(() => null);
+            return { status: answer.status, ok: answer.ok, body };
+          };
+          const identity = await reach(remote.origin, async () => {
+            const answer = await fetch(`${remote.origin}/.well-known/arca`, { redirect: "error", signal: AbortSignal.timeout(10000) });
+            return answer.ok ? answer.json().catch(() => null) : null;
+          });
+          if (identity?.service !== "arca") unreachable(remote.origin);
+          if (identity.role !== "hub" || identity.id !== hub.id)
+            fail("That address belongs to a different hub. Use replacement-hub recovery to switch existing folders.", 409);
+          const catalog = await reach(remote.origin, () => hubCatalog(remote.origin, hub.token)).catch((error) => {
+            if (error.status === 401)
+              fail("The hub at that address does not accept this device: it was removed there. Pair this device again from that hub.", 401);
+            throw error;
+          });
+          if (catalog.id !== hub.id)
+            fail("That address belongs to a different hub. Use replacement-hub recovery to switch existing folders.", 409);
+          const cursors = new Map();
+          for (const v of s.volumes().filter((v) => v.selected)) {
+            if (!catalog.volumes.some((remoteVolume) => remoteVolume.id === v.id))
+              fail(`The hub at that address no longer has “${v.name}”. Use replacement-hub recovery to switch existing folders.`, 409);
+            const cursor = engine.work.state(v.id).cursor;
+            cursors.set(v.id, cursor);
+            if (!cursor) continue;
+            const reached = await ask(`/v1/changes?${new URLSearchParams({ volume: v.id, after: cursor, through: cursor })}`);
+            if (reached.status === 409) older(v.name);
+            if (!reached.ok) fail("The hub at that address did not answer as expected. Try again.", 502);
+            const last = s.db
+              .prepare("SELECT path,hash,deleted,rev FROM files WHERE volume=? AND rev<=? ORDER BY rev DESC LIMIT 1")
+              .get(v.id, cursor);
+            if (!last) continue;
+            const history = await ask(`/v1/history?${new URLSearchParams({ volume: v.id, path: last.path })}`);
+            if (!history.ok || !Array.isArray(history.body?.versions))
+              fail("The hub at that address did not answer as expected. Try again.", 502);
+            const versions = history.body.versions;
+            const same = versions.find((row) => row.rev === last.rev);
+            if (same ? (same.hash ?? null) !== (last.hash ?? null) || !!same.deleted !== !!last.deleted : !versions.length || versions.some((row) => row.rev < last.rev))
+              older(v.name);
+          }
+          const result = await engine.relocateHub(hub, remote.origin, catalog.name, cursors);
+          setImmediate(() => tick(true));
+          return send(200, result);
         }
         if (route === "/v1/connect") {
           requireAdmin();
@@ -2418,26 +2557,7 @@ export async function start(home, options = {}) {
               "Use replacement-hub reconciliation to preserve existing folders",
               409,
             );
-          let remote = new URL(b.url);
-          if (
-            !["http:", "https:"].includes(remote.protocol) ||
-            remote.username ||
-            remote.password ||
-            remote.search ||
-            remote.hash
-          )
-            fail("Invalid hub URL");
-          if (
-            remote.protocol === "http:" &&
-            !["localhost", "127.0.0.1", "[::1]"].includes(remote.hostname) &&
-            !b.privateNetwork
-          )
-            remote = lanAddress(remote.hostname)
-              ? await verifiedLanURL(remote)
-              : await verifiedTailnetURL(
-                  remote,
-                  await network.detector.read(true),
-                );
+          const remote = await hubAddress(b);
           if (b.code) {
             const paired = await fetch(`${remote.origin}/pair`, {
               redirect: "error",
@@ -2476,41 +2596,7 @@ export async function start(home, options = {}) {
           }
           if (!/^[a-f0-9]{64}$/.test(b.token || ""))
             fail("Invalid device token");
-          const response = await fetch(`${remote.origin}/v1/catalog`, {
-            redirect: "error",
-            headers: { Authorization: `Bearer ${b.token}` },
-            signal: AbortSignal.timeout(10000),
-          });
-          if (!response.ok) fail("Hub refused credential", 401);
-          const chunks = [];
-          let received = 0;
-          for await (const chunk of response.body) {
-            received += chunk.length;
-            if (received > 16 * 1024 * 1024) fail("The hub's catalog is too large", 502);
-            chunks.push(chunk);
-          }
-          let catalog;
-          try {
-            catalog = JSON.parse(Buffer.concat(chunks).toString());
-          } catch {
-            fail("Invalid hub catalog", 502);
-          }
-          if (catalog?.protocol !== 1) fail("Unsupported hub protocol");
-          const text = (value, limit) =>
-            typeof value === "string" && value.length <= limit && !/[\x00-\x1f]/.test(value);
-          if (
-            !/^[\w-]{1,64}$/.test(catalog.id ?? "") ||
-            !text(catalog.name, 100) ||
-            !Array.isArray(catalog.volumes) ||
-            catalog.volumes.length > 1000 ||
-            catalog.volumes.some(
-              (v) =>
-                !/^[\w-]{1,64}$/.test(v?.id ?? "") ||
-                !text(v.name, 255) ||
-                (v.historyRetention !== undefined && !text(v.historyRetention, 16)),
-            )
-          )
-            fail("Invalid hub catalog", 502);
+          const catalog = await hubCatalog(remote.origin, b.token);
           await authorizedWork(() => {
             const prior = config.hub || config.disconnectedHub;
             if (

@@ -167,6 +167,22 @@ export class Replica {
     this.paused = await this.store.get("paused", false);
     this.lastFullScan = await this.store.get(`fullScan:${this.scope}`, 0);
   }
+  async relocationChecks() {
+    if (!this.scope) return [];
+    const checks = [];
+    for (const folder of await this.store.folders(this.scope)) {
+      if (!folder.selected) continue;
+      const cursor = Number(folder.cursor) || 0;
+      const last = cursor ? await this.store.newestRow(this.scope, folder.id, cursor) : null;
+      checks.push({
+        volume: folder.id,
+        name: folder.name,
+        cursor,
+        last: last && { path: last.path, hash: last.hash ?? null, deleted: !!last.deleted, rev: last.rev },
+      });
+    }
+    return checks;
+  }
   async requireActiveReplica() {
     if (await this.store.get("destroyPending", false))
       throw new Error(

@@ -36,6 +36,10 @@ _None._
 
 ### Builds and deployments
 
+- **VERIFY-HUB-RELOCATE** — Follow a moved hub from an installed desktop and phone
+  `verify · maintainer · high`
+  After a desktop build and a native build, move a desktop replica and a phone to a copied hub with Change address… (the hub row's ⋯). Accept: both keep syncing, nothing re-downloads, the hub's roster gains no entry, and the Streaming tag and offline captions read as SPEC says.
+
 - **VERIFY-DOCKER-NET** — Network policy through Docker's published ports
   `verify · maintainer · high`
   accept: with a disposable candidate container, confirm first web login through the default localhost binding, then pairing and authenticated requests through Tailscale and LAN bindings with the LAN option on and off. Record the socket peer seen inside the container and verify a gateway address does not get mistaken for a verified tailnet peer. Check a configured HTTPS proxy separately; do not expose or alter the production servers.
@@ -202,6 +206,15 @@ Suggested order for approval: exposed security boundaries and preservation of us
 - **VIDEO-REMOVE-WINDOWS-SESSION** — Remove from this device fails on Windows for about a minute after closing a compatible-stream video
   `bug · agent · normal`
   Closing the desktop player never ends the hub-style HLS session the replica started on its downloaded copy, and on Windows FFmpeg keeps the file open until it finishes or the 60 s idle sweep ends it, so Remove answers 409 "Close the video before removing its download" about a closed video; a replacement download hits the same BUSY path and pruning silently leaves the file. Accept: sessions keep their source, removing or replacing a download first ends the sessions reading that file and waits for FFmpeg to exit, and `tests/video-downloads.test.js` drops its `videoSessions.halt()` stop-gap and still passes on Windows.
+
+### Hub relocation follow-ups (2026-11-03)
+
+- **HUB-DEVICE-ID** — Pairing the same device again keeps one hub registration
+  `feature · agent · normal`
+  Each device keeps a persistent device ID and sends it with `/pair`; the hub rotates that registration's token instead of adding a device, and a missing ID keeps today's behaviour. Accept: re-pairing with the same ID leaves one roster entry, with a test; an older client still pairs.
+- **HUB-MOVED-NOTICE** — The old address tells clients where the hub went
+  `feature · agent · low`
+  An operator command makes the old host answer every `/v1/*` with 421 `{error: "hub-moved", hubId, url}` and serve no data; a client whose saved hub ID matches offers Change address with the same checks (confirmed on desktop and phone; a player without a UI only when the new host passes the connect-time LAN or tailnet verification). Accept: the notice never changes the hub ID, is never followed without the same verification, and is tested from a desktop replica and a player.
 
 ### Security and data safety
 

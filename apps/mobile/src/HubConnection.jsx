@@ -7,7 +7,7 @@ export function HubConnection({
   machine,
   presence,
   busy,
-  disconnect,
+  actions,
   retry,
   grouped = false,
 }) {
@@ -36,14 +36,11 @@ export function HubConnection({
         .filter(Boolean)
         .join(" · ")}
       actions={
-        <Button
-          iconOnly={!wide}
-          size="small"
-          icon="unplug"
-          label={connection.leaving ? "Retry disconnect" : "Disconnect…"}
-          disabled={busy}
-          onPress={connection.leaving ? retry : disconnect}
-        />
+        connection.leaving ? (
+          <Button iconOnly={!wide} size="small" icon="unplug" label="Retry disconnect" disabled={busy} onPress={retry} />
+        ) : (
+          <Button iconOnly size="small" icon="more" label={`Actions for ${name || "Hub"}`} disabled={busy} onPress={actions} />
+        )
       }
     />
   );

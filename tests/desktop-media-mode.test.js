@@ -56,7 +56,7 @@ const tracks = [
   { path: "Miles Davis/Kind of Blue/02 Blue in Green.mp3", hash: "b".repeat(64), title: "Blue in Green", artist: "Miles Davis", album: "Kind of Blue", track: 2, duration: 337 },
 ];
 
-async function boot(t, { status, route = "#/folders", web = false, downloads = [], pathCheck = null, freeSpace = null, musicDownloads = null, library = tracks }) {
+async function boot(t, { status, route = "#/folders", web = false, downloads = [], pathCheck = null, freeSpace = null, musicDownloads = null, library = tracks, answers = null }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", url: `http://tauri.localhost/${route}` });
   const w = dom.window;
   const pending = new Set();
@@ -103,6 +103,8 @@ async function boot(t, { status, route = "#/folders", web = false, downloads = [
   const answer = async (path, method, body) => {
     ui.routes.push(path);
     if (method === "POST") ui.posts.push([path, JSON.parse(JSON.stringify(body))]);
+    const answered = answers?.(path, body);
+    if (answered !== undefined) return answered;
     if (path === "/v1/status") return status;
     if (path === "/v1/remote") return { name: "Casa", volumes: status.role === "hub" ? status.volumes : catalog };
     if (path === "/v1/favorites") return { favorites: [] };
@@ -181,8 +183,12 @@ test("Folders on a replica list only started libraries in their kind, and a Movi
   const ui = await boot(t, { status: replicaStatus({ pod: "stream", kep: "keep" }) });
   await until(() => row(ui, "films"));
   assert.ok(section(ui, "Audio").contains(row(ui, "podcasts")));
-  assert.match(row(ui, "podcasts").textContent, /Streams from hub/);
+  assert.equal(row(ui, "podcasts").querySelector(".tag")?.textContent, "Streaming", "a streamed library carries the Streaming tag before its chevron");
+  assert.equal(row(ui, "podcasts").querySelector(".tag").nextElementSibling?.dataset.icon, "chevron-right");
+  assert.doesNotMatch(row(ui, "podcasts").querySelector(".meta").textContent, /Streams from hub/);
+  assert.match(row(ui, "podcasts").getAttribute("aria-label"), /Streaming/);
   assert.match(row(ui, "films").textContent, /Kept on this device/);
+  assert.equal(row(ui, "films").querySelector(".tag"), null, "a kept library carries no tag");
   assert.equal(row(ui, "podcasts").querySelector('[data-action="add"]'), null, "a streamed library is already chosen");
   assert.equal(row(ui, "films").querySelector('[data-action="add"]'), null, "a kept library is already chosen");
   assert.equal(section(ui, "Movies & TV").contains(row(ui, "videos")), false, "a Movies & TV library not started stays out of its kind");
@@ -520,14 +526,15 @@ test("with the hub away a streamed library's row reads Offline on the neutral ti
   const status = { ...replicaStatus({ aud: "stream", vid: "stream", kep: "keep" }), hubUnavailable: true, downloaded: { vid: 2 } };
   const ui = await boot(t, { status });
   await until(() => row(ui, "videos"));
-  assert.equal(row(ui, "videos").querySelector(".meta").textContent, "Offline · 2 downloads to watch · Streams from hub");
+  assert.equal(row(ui, "videos").querySelector(".meta").textContent, "Offline · 2 downloads to watch");
+  assert.equal(row(ui, "videos").querySelector(".tag").textContent, "Streaming", "offline keeps the tag");
   assert.ok(row(ui, "videos").querySelector(".tile").classList.contains("id"), "the neutral tile");
-  assert.equal(row(ui, "music").querySelector(".meta").textContent, "Offline · Nothing downloaded · Streams from hub");
+  assert.equal(row(ui, "music").querySelector(".meta").textContent, "Offline · Nothing downloaded");
   assert.match(row(ui, "videos").getAttribute("aria-label"), /Offline/);
   assert.doesNotMatch(row(ui, "films").textContent, /Offline/, "a kept library keeps its row");
   const online = await boot(t, { status: { ...status, hubUnavailable: false } });
   await until(() => row(online, "videos"));
-  assert.match(row(online, "videos").querySelector(".meta").textContent, /^1,284 files · 9.6 GB · Streams from hub$/);
+  assert.equal(row(online, "videos").querySelector(".meta").textContent, "1,284 files · 9.6 GB");
   assert.equal(row(online, "videos").querySelector(".tile").classList.contains("id"), false);
 });
 
@@ -560,4 +567,57 @@ test("with the hub away a streamed Movies & TV library shows only its finished d
   await online.click(row(online, "videos"), () => online.$(".video-page .music-card"));
   assert.ok(online.$(".video-page .segmented"), "the tabs are back");
   assert.ok(online.$$(".video-page .music-card").length > 1, "the whole library is back");
+});
+
+const failure = (message, status) => Promise.reject(Object.assign(new Error(message), { status }));
+const hubRow = (ui) => ui.$$("#content .device-row").find((el) => el.querySelector(".tag.hub"));
+
+test("the hub row offers Change address…, which saves the new address through the daemon and reports its refusals", async (t) => {
+  let refuse = true;
+  const ui = await boot(t, {
+    status: { ...replicaStatus(), hubUnavailable: true },
+    route: "#/settings",
+    answers: (path) =>
+      path === "/v1/hub-url" ? (refuse ? failure("That address belongs to a different hub. Use replacement-hub recovery to switch existing folders.", 409) : { relocated: true, url: "http://helios:17831", name: "Casa" }) : undefined,
+  });
+  await until(() => hubRow(ui));
+  const change = hubRow(ui).querySelector('[data-action="change-hub-address"]');
+  assert.ok(change, "Change address… sits on the hub row");
+  assert.equal(change.hasAttribute("aria-disabled"), false, "available while the hub is away");
+  assert.equal(hubRow(ui).querySelector('[data-action="disconnect-hub"]').hasAttribute("aria-disabled"), false, "Disconnect… too");
+  await ui.click(change, () => ui.$("#dialog").open);
+  assert.equal(ui.$('#dialog [name="url"]').value, "http://casa");
+  ui.$('#dialog [name="url"]').value = "http://helios:17831/";
+  ui.$("#submit-dialog").click();
+  await until(() => !ui.$("#dialog-error").hidden);
+  assert.match(ui.$("#dialog-error").textContent, /different hub/);
+  assert.ok(ui.$("#dialog").open, "a refusal keeps the dialog open");
+  refuse = false;
+  ui.$("#submit-dialog").click();
+  await until(() => !ui.$("#dialog").open);
+  assert.deepEqual(ui.posts.filter(([path]) => path === "/v1/hub-url").at(-1), ["/v1/hub-url", { url: "http://helios:17831", confirmed: true }]);
+  await until(() => /Hub address changed\. Syncing with Casa\./.test(ui.$("#notice").textContent));
+});
+
+test("Disconnect… with the hub away, or when the hub does not answer, offers Disconnect anyway, which keeps local files", async (t) => {
+  const away = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, route: "#/settings" });
+  await until(() => hubRow(away));
+  await away.click(hubRow(away).querySelector('[data-action="disconnect-hub"]'), () => away.$("#dialog").open);
+  assert.equal(away.$("#submit-dialog").textContent, "Disconnect anyway");
+  assert.match(away.$("#dialog-content").textContent, /cannot be reached/);
+  away.$("#submit-dialog").click();
+  await until(() => away.posts.some(([path]) => path === "/v1/disconnect"));
+  assert.deepEqual(away.posts.find(([path]) => path === "/v1/disconnect"), ["/v1/disconnect", { confirmed: true, force: true }]);
+  const silent = await boot(t, {
+    status: replicaStatus(),
+    route: "#/settings",
+    answers: (path, body) => (path === "/v1/disconnect" && !body.force ? failure("Could not disconnect from the hub. Check the connection and retry to complete disconnection.", 503) : undefined),
+  });
+  await until(() => hubRow(silent));
+  await silent.click(hubRow(silent).querySelector('[data-action="disconnect-hub"]'), () => silent.$("#dialog").open);
+  assert.equal(silent.$("#submit-dialog").textContent, "Disconnect");
+  silent.$("#submit-dialog").click();
+  await until(() => silent.$("#dialog").open && silent.$("#submit-dialog").textContent === "Disconnect anyway");
+  silent.$("#submit-dialog").click();
+  await until(() => silent.posts.some(([path, body]) => path === "/v1/disconnect" && body.force));
 });

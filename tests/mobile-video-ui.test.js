@@ -16,7 +16,8 @@ test("a Movies & TV library waits under On hub · not selected until it is start
   const glyph = app.match(/const folderIcon = ([^;]+);/)[1];
   assert.equal(vm.runInNewContext(glyph, { photoFolder: false, musicFolder: false, videoFolder: true, librarySymbol: () => "music", shownMusic: null }), "clapperboard");
   assert.match(app, /const streamedVolumes = volumes\.filter\(\s+\(v\) => \(\(isVideoFolder\(catalog, v\.id\) && videoHeld\(v\.id\)\) \|\| \(isMusicFolder\(catalog, v\.id\) && streamedSet\.has\(v\.id\)\)\) && !locals\.some\(\(f\) => f\.id === v\.id\),\s+\);/, "only a started library joins its section");
-  assert.match(app, /if \(isVideoFolder\(catalog, v\.id\)\) return `\$\{folderSize\(v\)\} · Streams from hub`;/, "a kept library is a selected folder and reads like any kept folder");
+  assert.match(app, /if \(isVideoFolder\(catalog, v\.id\)\) return folderSize\(v\);/, "a kept library is a selected folder and reads like any kept folder");
+  assert.match(app.slice(app.indexOf("const streamedRow"), app.indexOf("const shownFavorites")), /tag="Streaming"/, "a streamed library carries the Streaming tag");
   assert.match(app, /onPress=\{\(\) => openFolder\(\{ id: v\.id, name: v\.name, selected: 0 \}\)\.catch/, "a started library opens on its library");
   const streamed = app.slice(app.indexOf("const streamedRow"), app.indexOf("const streamedRow") + 600);
   assert.doesNotMatch(streamed, /disabled=/, "its cached list stays browsable offline");

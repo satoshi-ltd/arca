@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.33";
+const APP_VERSION = "0.8.34";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1000,7 +1000,6 @@ const hubOnlyActions = new Set([
   "select",
   "restore",
   "review-conflict",
-  "disconnect-hub",
   "video-download",
   "music-download",
   "music-download-all",
@@ -2479,12 +2478,13 @@ function folderRow(v, available = false) {
             )
           : "";
   const away = available === "streamed" ? streamedOffline(v) : "";
+  const streaming = available === "streamed" && v.mode !== "keep";
   const meta = away
-    ? `<span class="state-word">Offline</span> · ${escape(away)} · Streams from hub`
+    ? `<span class="state-word">Offline</span> · ${escape(away)}`
     : available
-      ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? (v.mode === "keep" ? " · Kept on this device" : " · Streams from hub") : ""}`
+      ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" && v.mode === "keep" ? " · Kept on this device" : ""}`
       : folderMeta(v, state, p);
-  const word = away ? "Offline" : available || p ? "" : stateWord(v, state);
+  const word = [away ? "Offline" : available || p ? "" : stateWord(v, state), streaming ? "Streaming" : ""].filter(Boolean).join(", ");
   const lead = available
     ? `<div class="tile large${away ? " id" : ""}"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
@@ -2494,7 +2494,7 @@ function folderRow(v, available = false) {
   const inline = (!available && Boolean(problemAction || v.conflicts)) || offered;
   const trailing = available
     ? available === "streamed"
-      ? icon("chevron-right")
+      ? `${streaming ? '<span class="tag">Streaming</span>' : ""}${icon("chevron-right")}`
       : selectFolderButton(v.id)
     : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`;
   if (inline)
@@ -9605,13 +9605,7 @@ function hubConnection() {
       }),
       end:
         status.role === "replica"
-          ? button(
-              "Disconnect…",
-              "disconnect-hub",
-              "",
-              "secondary small-button",
-              "unplug",
-            )
+          ? `<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="Actions for ${escape(hubName())}">${icon("ellipsis")}</summary><div class="menu-items">${button("Change address…", "change-hub-address", "", "secondary", "arrow-right-left")}${button("Disconnect…", "disconnect-hub", "", "danger menu-item-separated", "unplug")}</div></details>`
           : "",
     });
   }
@@ -10244,6 +10238,32 @@ document.addEventListener("keydown", (e) => {
     el.click();
   }
 });
+function forgetHubViews() {
+  catalog = [];
+  catalogLoaded = false;
+  catalogHubName = "";
+  roster = null;
+  discovered = null;
+  detailId = null;
+  view = "devices";
+}
+function disconnectAnyway() {
+  const hub = escape(hubName());
+  modal(
+    modalHeader(
+      `Disconnect from ${hub}?`,
+      `${hub} cannot be reached, so it cannot be told. This device stops syncing and keeps its local files and saved destinations; ${hub} keeps a stale entry for it that its administrator can remove in Devices.`,
+      "unplug",
+    ) + '<p class="hint">If the hub only moved to another address, use Change address… instead and keep syncing.</p>',
+    async () => {
+      await api("/v1/disconnect", { confirmed: true, force: true });
+      forgetHubViews();
+      notice("Disconnected. Your local files are kept.");
+    },
+    "Disconnect anyway",
+  );
+  $("#submit-dialog").classList.add("danger");
+}
 function connectModal(endpoint = "", recovery = false) {
   endpoint ||= status.hub || status.disconnectedHub?.url || "";
   modal(
@@ -11101,6 +11121,34 @@ async function handle(name, id, control) {
     $("#submit-dialog").classList.add("danger");
     return;
   }
+  if (name === "change-hub-address" && status.role === "replica" && status.hub) {
+    const hub = hubName();
+    modal(
+      modalHeader(
+        "Change hub address",
+        `Use this when ${escape(hub)} moved to another computer or address. This device keeps its pairing, folders and files, and nothing downloads again.`,
+        "arrow-right-left",
+      ) +
+        `<label for="hub-address">New address</label><input id="hub-address" name="url" class="mono" value="${escape(status.hub)}" placeholder="https://arca.your-network" required><p class="hint">The hub at the new address must be the same hub, with this device still paired. For a different hub, use replacement-hub recovery.</p>`,
+      async (f) => {
+        let endpoint;
+        try {
+          endpoint = new URL(f.get("url").trim());
+        } catch {
+          throw new Error("Enter the full hub address, including http:// or https:// and its port.");
+        }
+        const result = await api("/v1/hub-url", { url: endpoint.origin, confirmed: true });
+        roster = null;
+        notice(`Hub address changed. Syncing with ${result.name || hub}.`);
+      },
+      "Change address",
+    );
+    return;
+  }
+  if (name === "disconnect-hub" && status.role === "replica" && hubOffline()) {
+    disconnectAnyway();
+    return;
+  }
   if (name === "disconnect-hub" && status.role === "replica") {
     modal(
       modalHeader(
@@ -11108,16 +11156,15 @@ async function handle(name, id, control) {
         "Stops synchronization and any full backup on this device. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.",
         "unplug",
       ) +
-        '<p class="hint">Disconnects this device on both sides. The hub must be reachable to complete this action.</p>',
+        '<p class="hint">Disconnects this device on both sides. If the hub cannot be reached, you can disconnect anyway.</p>',
       async () => {
-        await api("/v1/disconnect", { confirmed: true });
-        catalog = [];
-        catalogLoaded = false;
-        catalogHubName = "";
-        roster = null;
-        discovered = null;
-        detailId = null;
-        view = "devices";
+        try {
+          await api("/v1/disconnect", { confirmed: true });
+        } catch (error) {
+          if (error?.status === 503 || /Could not disconnect from the hub/.test(error?.message || "")) return () => disconnectAnyway();
+          throw error;
+        }
+        forgetHubViews();
         notice("Disconnected. Your local files are kept.");
       },
       "Disconnect",
