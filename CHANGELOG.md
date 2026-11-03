@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.31 — 2026-11-03
+
+- Erase this device and Erase this hub finish even when the system refuses to delete a folder, such as one placed directly in Documents on a Mac: Arca deletes what it is allowed to, leaves that folder in place and names it, instead of staying stuck halfway. This lets a device whose hub is gone be erased and connected to a new hub.
+
+Needs: desktop build · hub redeploy
+
 ## 0.8.30 — 2026-11-02
 
 - No change for people using Arca; fixes an intermittent Windows test failure that blocked publishing.

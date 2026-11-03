@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.30";
+const APP_VERSION = "0.8.31";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -11040,7 +11040,7 @@ async function handle(name, id, control) {
           : "Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.",
         "trash-2",
       ) +
-        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately."} An interrupted cleanup can be retried.</p>`,
+        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place."} An interrupted cleanup can be retried.</p>`,
       async () => {
         try {
           localStorage.setItem("arca-erase-pending", "true");
@@ -11048,7 +11048,7 @@ async function handle(name, id, control) {
           /* A blocked retry marker must not prevent confirmed file erasure.
              Interface cleanup below still reports inaccessible storage. */
         }
-        await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
+        const { kept = [] } = await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
           confirmed: true,
         });
         ready = false;
@@ -11056,6 +11056,12 @@ async function handle(name, id, control) {
         onboarding = null;
         await eraseInterfaceData();
         theme("system");
+        if (kept.length)
+          notice(`${kept.length === 1 ? "A folder" : "Some folders"} could not be deleted`, false, {
+            kind: "warning",
+            icon: "triangle-alert",
+            body: `The system did not let Arca delete ${kept.join(", ")}. Arca deleted what it could; remove what is left, including any .arca-volume file, before using it again.`,
+          });
         if (native) await boot();
         else
           await showLogin(

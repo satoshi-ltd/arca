@@ -1393,3 +1393,43 @@ test("an interrupted erase that already removed a folder's marker still finishes
   assert.throws(() => finishInstallationReset(other), /changed during destruction/);
   assert.equal(fs.readFileSync(path.join(target, "new.txt"), "utf8"), "keep");
 });
+
+test("erase empties a folder the system refuses to delete, leaves it in place and still resets the device", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("protected-folder");
+  const folder = r.engine.store.volumes()[0].path;
+  fs.mkdirSync(path.join(folder, "notes"));
+  fs.writeFileSync(path.join(folder, "notes", "a.txt"), "synced");
+  fs.writeFileSync(path.join(folder, "b.txt"), "unsynced");
+  const attempts = [];
+  const refuse = (original) => (target, ...rest) => {
+    if (path.resolve(String(target)) === folder) {
+      attempts.push(rest[0]);
+      throw Object.assign(new Error("Operation not permitted"), { code: "EPERM" });
+    }
+    return original(target, ...rest);
+  };
+  t.mock.method(fs, "rmSync", refuse(fs.rmSync));
+  t.mock.method(fs, "rmdirSync", refuse(fs.rmdirSync));
+  const result = await r.api("/v1/destroy-replica", { confirmed: true });
+  assert.ok(attempts[0]?.maxRetries > 0, "a briefly locked file gets retried before the folder is kept");
+  assert.deepEqual(result.kept, [folder]);
+  assert.deepEqual(fs.readdirSync(folder), [], "everything Arca may delete is gone, its marker included");
+  assert.equal(r.engine.config.destroyPending, undefined, "the erase is complete, not pending forever");
+  assert.equal(r.engine.config.needsSetup, true);
+  assert.equal(r.engine.store.volumes().length, 0);
+});
+
+test("erase still stops on a failure that is not a refused permission", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("broken-disk");
+  const folder = r.engine.store.volumes()[0].path;
+  const original = fs.rmSync;
+  t.mock.method(fs, "rmSync", (target, ...rest) => {
+    if (path.resolve(String(target)) === folder) throw Object.assign(new Error("I/O error"), { code: "EIO" });
+    return original(target, ...rest);
+  });
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), { status: 500 });
+  assert.ok(r.engine.config.destroyPending, "the erase stays retryable");
+  assert.ok(fs.existsSync(folder));
+});

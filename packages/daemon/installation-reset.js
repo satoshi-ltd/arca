@@ -41,9 +41,31 @@ export function resetTargets(store) {
     return { path: target, dev: stat.dev, ino: stat.ino, born: stat.birthtimeMs };
   });
 }
+const PROTECTED = new Set(["EACCES", "EPERM", "EBUSY", "ENOTEMPTY"]);
+const allowed = (remove) => {
+  try {
+    remove();
+    return true;
+  } catch (error) {
+    if (!PROTECTED.has(error.code)) throw error;
+    return false;
+  }
+};
+function removeAllowed(target) {
+  if (allowed(() => fs.rmSync(target, { recursive: true, maxRetries: 3, retryDelay: 100 }))) return true;
+  let entries = [];
+  allowed(() => (entries = fs.readdirSync(target, { withFileTypes: true })));
+  for (const entry of entries) {
+    const child = path.join(target, entry.name);
+    if (entry.isDirectory()) removeAllowed(child);
+    else allowed(() => fs.unlinkSync(child));
+  }
+  return allowed(() => fs.rmdirSync(target));
+}
 export function finishInstallationReset(store) {
   const journal = store.config.destroyPending;
-  if (!journal) return;
+  if (!journal) return [];
+  const kept = [];
   for (const target of journal.targets) {
     if (target.skipped || !fs.existsSync(target.path)) continue;
     const stat = fs.lstatSync(target.path);
@@ -61,7 +83,7 @@ export function finishInstallationReset(store) {
         `Folder changed during destruction: ${target.path}. Restore its original location and retry.`,
         409,
       );
-    fs.rmSync(target.path, { recursive: true });
+    if (!removeAllowed(target.path)) kept.push(target.path);
   }
   // Keep service-owned open descriptors valid, including on Windows.
   for (const name of ["daemon.log", "service.log", "update-watch.log"]) {
@@ -150,6 +172,7 @@ export function finishInstallationReset(store) {
   atomic(store.configPath, JSON.stringify(next, null, 2));
   for (const key of Object.keys(old)) delete old[key];
   Object.assign(old, next);
+  return kept;
 }
 // A durable journal keeps interrupted deletion retryable without re-pairing.
 export function beginInstallationReset(store, targets) {

@@ -4197,8 +4197,8 @@ test("a version preview that waits on the hub shows a clock whose tooltip and la
   }
 });
 
-for (const storageDenied of [false, true])
-test(`desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion${storageDenied ? " with storage denied" : ""}`, async (t) => {
+for (const [storageDenied, protectedFolder] of [[false, false], [true, false], [false, true]])
+test(`desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion${storageDenied ? " with storage denied" : ""}${protectedFolder ? " with a folder the system protects" : ""}`, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
   const nodes = [];
   for (const role of ["hub", "replica"]) {
@@ -4318,6 +4318,14 @@ test(`desktop destroy confirmation cancels safely and returns to first-run onboa
       storageMethods.set(method, w.Storage.prototype[method]);
       w.Storage.prototype[method] = () => { throw new w.DOMException("Storage is disabled", "SecurityError"); };
     }
+  if (protectedFolder) {
+    const refuse = (original) => (target, ...rest) => {
+      if (path.resolve(String(target)) === destination) throw Object.assign(new Error("Operation not permitted"), { code: "EPERM" });
+      return original(target, ...rest);
+    };
+    t.mock.method(fs, "rmSync", refuse(fs.rmSync));
+    t.mock.method(fs, "rmdirSync", refuse(fs.rmdirSync));
+  }
   w.document.querySelector("#submit-dialog").click();
   if (storageDenied) {
     await until(() => replica.engine.config.needsSetup && w.document.body.getAttribute("aria-busy") === "false");
@@ -4340,7 +4348,11 @@ test(`desktop destroy confirmation cancels safely and returns to first-run onboa
   });
   assert.equal(cached, 0, "persistent thumbnails erased before setup");
   cache.close();
-  assert.equal(fs.existsSync(destination), false);
+  if (protectedFolder) {
+    assert.deepEqual(fs.readdirSync(destination), [], "the protected folder is emptied and left in place");
+    assert.match(w.document.querySelector("#notice .notice-warning").textContent, /could not be deleted/);
+    assert.ok(w.document.querySelector("#notice").textContent.includes(destination));
+  } else assert.equal(fs.existsSync(destination), false);
   assert.equal(replica.engine.config.needsSetup, true);
   assert.match(
     w.document.querySelector("#content").textContent,

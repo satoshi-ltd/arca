@@ -2400,13 +2400,13 @@ export class Engine {
         this.music = null;
         this.video?.close();
         this.video = null;
-        finishInstallationReset(this.store);
+        const kept = finishInstallationReset(this.store);
         this.folderStates.clear();
         this.paused = false;
         this.pauseUntil = null;
         this.error = this.progress = this.lastSync = null;
         this.phase = "unlinked";
-        return { destroyed: true, needsSetup: true };
+        return { destroyed: true, needsSetup: true, kept };
       });
     } finally {
       this.destroying = false;
