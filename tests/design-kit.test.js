@@ -113,3 +113,15 @@ test("the mobile Folders screens draw a pinned folder only in Favorites, with th
   assert.ok(!proposals.includes("UI-MOB-FAVORITES-MOVE"), "the shipped board is deleted");
   assert.doesNotMatch(read("design", "kit.css"), /kit-sp-/, "its kit-only styles go with it");
 });
+
+test("every class only the kit defines is used by a design page or the kit script", () => {
+  const production = new Set(
+    [...read("apps", "desktop", "src", "style.css").matchAll(/\.([a-zA-Z][\w-]*)/g)].map((match) => match[1]),
+  );
+  const used = [...pages.map((page) => read("design", page)), read("design", "kit.js"), read("design", "build.js")].join("\n");
+  const unused = new Set();
+  for (const css of kitStyles)
+    for (const [, name] of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/\.([a-zA-Z][\w-]*)/g))
+      if (!production.has(name) && !name.startsWith("kit-board") && !used.includes(name)) unused.add(name);
+  assert.deepEqual([...unused].sort(), [], "delete the kit rules no page draws");
+});

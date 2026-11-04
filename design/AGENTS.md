@@ -48,7 +48,7 @@ Every page links `favicon.svg` by a path inside `design/`, so the kit stays self
 
 ## Tests and versions
 
-- `tests/design-kit.test.js` fails when the generated tokens or favicon drift, a page does not use the production stylesheets, a page uses a class neither the app nor the kit defines, a page carries an inline style, or kit styles use an undefined token or a literal colour.
+- `tests/design-kit.test.js` fails when the generated tokens or favicon drift, a page does not use the production stylesheets, a page uses a class neither the app nor the kit defines, a page carries an inline style, kit styles use an undefined token or a literal colour, or a class only the kit defines is used by no page or kit script.
 - `tests/design-proposals.test.js` fails when a nav differs, a Proposals board is malformed or duplicated, a ROADMAP `ui` task has no board, a board reuses a non-`ui` task ID, or a split task does not cite its board.
 - `tests/design-module.test.js` fails when this contract is missing or `scripts/` holds a design file. `CLAUDE.md`, here and at the root, is a local pointer listed in `.gitignore` and never committed; tests read it only where it exists.
 - Version banners (`class="kit-version"`) on every page are managed by `scripts/release-manifests.js`; `bump-version.js` moves them and `check-release.js` fails when one lags.
