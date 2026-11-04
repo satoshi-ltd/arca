@@ -299,6 +299,20 @@ const titlesOf = (library) => [
   ...library.shows.flatMap((show) => show.seasons.flatMap((season) => season.episodes)),
 ];
 
+test("choosing Stream reports the library at once, so Watch next can be edited right away", async (t) => {
+  const f = await hub(t);
+  await showLibrary(f);
+  const r = await replicaOf(t, f);
+  const reported = () => JSON.parse(f.s.db.prepare("SELECT report FROM machine_reports").get()?.report || "{}").streamedFolderIds || [];
+  r.replica.engine.lastReport = Date.now();
+  await r.call("/v1/select", { id: f.v.id, mode: "stream" });
+  assert.deepEqual(reported(), [f.v.id], "the hub hears about the stream before the next cycle");
+  await r.call("/v1/video/watch-next/remove", { volume: f.v.id, id: "m:heat" });
+  await r.call("/v1/unselect", { id: f.v.id });
+  for (let i = 0; i < 100 && reported().length; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(reported(), [], "stopping the stream is reported too");
+});
+
 test("a streamed Movies & TV library downloads a movie and an episode that then play offline", async (t) => {
   const f = await hub(t);
   const { files, library } = await showLibrary(f);

@@ -39,7 +39,7 @@ import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
-import { acceptReport, machines, playerRoute } from "./machines.js";
+import { acceptReport, assertReportedFolder, machines, playerRoute } from "./machines.js";
 import { clearPosition, listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { listFavorites, saveFavorites } from "./favorites.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
@@ -1868,6 +1868,7 @@ export async function start(home, options = {}) {
             return send(200, await engine.hubAction(route, b));
           }
           requireHub();
+          if (route.endsWith("/delete")) assertReportedFolder(s, device, admin, b.volume);
           return send(
             200,
             await authorizedWork(() => {
@@ -1882,6 +1883,7 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/gallery/link") {
           requireHub();
+          assertReportedFolder(s, device, admin, b.volume);
           await authorizedWork(() => {
             if (music().isMusic(b.volume))
               fail(
@@ -2060,6 +2062,7 @@ export async function start(home, options = {}) {
             engine.interruptCycle();
             return send(200, restored);
           }
+          assertReportedFolder(s, device, admin, b.volume);
           return send(
             200,
             await authorizedWork(() => engine.restore(b.volume, b.path, b.rev)),
@@ -2309,17 +2312,17 @@ export async function start(home, options = {}) {
         if (route === "/v1/unselect") {
           if (b.deleteFiles !== undefined && typeof b.deleteFiles !== "boolean")
             fail("Choose whether to delete local files");
-          if (config.role !== "hub" && s.mediaMode(b.id))
-            return send(
-              200,
-              await authorizedWork(() => {
-                const audio = streamedAudio(b.id);
-                s.db.prepare("DELETE FROM media_modes WHERE volume=?").run(b.id);
-                if (b.deleteFiles) return { ...engine.videoDownloads.forgetVolume(b.id), kept: 0 };
-                if (audio) engine.videoDownloads.forgetVolume(b.id, "music");
-                return { retained: true };
-              }),
-            );
+          if (config.role !== "hub" && s.mediaMode(b.id)) {
+            const stopped = await authorizedWork(() => {
+              const audio = streamedAudio(b.id);
+              s.db.prepare("DELETE FROM media_modes WHERE volume=?").run(b.id);
+              if (b.deleteFiles) return { ...engine.videoDownloads.forgetVolume(b.id), kept: 0 };
+              if (audio) engine.videoDownloads.forgetVolume(b.id, "music");
+              return { retained: true };
+            });
+            void engine.reportMachine(true);
+            return send(200, stopped);
+          }
           s.volume(b.id);
           if (s.streamOnly(b.id))
             fail(

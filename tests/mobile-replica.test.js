@@ -1376,6 +1376,25 @@ async function galleryFixture(
   return { ...f, assets, data, media, exports, enable, uploaded };
 }
 
+test("the phone reports its folders before it links an album, so the hub accepts the link at once", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  const order = [];
+  const report = r.report.bind(r);
+  r.report = async (...args) => {
+    order.push("report");
+    return report(...args);
+  };
+  const api = r.client.api.bind(r.client);
+  r.client.api = async (route, ...args) => {
+    if (route === "/v1/gallery/link") order.push("link");
+    return api(route, ...args);
+  };
+  await f.enable();
+  assert.ok(order.includes("link"), "the album was linked on the hub");
+  assert.equal(order[order.indexOf("link") - 1], "report");
+});
+
 test("linked album uploads originals and keeps the complete shared folder locally", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume, store, files } = f;
@@ -4348,6 +4367,10 @@ test("another replica can delete a source photo without hub administration and w
       }),
     });
   assert.equal((await request("/v1/delete-file")).status, 403);
+  assert.equal((await request("/v1/gallery/delete")).status, 409, "a replica that never reported the gallery is refused");
+  f.daemon.engine.store.db
+    .prepare("INSERT INTO machine_reports(device,report) VALUES(?,?)")
+    .run("other-device", JSON.stringify({ folderIds: [f.volume.id] }));
   assert.equal((await request("/v1/gallery/delete")).status, 200);
   await sync(f);
   assert.equal(

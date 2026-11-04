@@ -2677,6 +2677,8 @@ export class Engine {
       if (mode === "stream") {
         this.rememberCatalogVolume(v);
         s.db.prepare("INSERT OR IGNORE INTO media_modes(volume,mode) VALUES(?,?)").run(id, mode);
+        await this.reportMachine(true);
+        this.lastReport = null;
         return { id, name: v.name, mode };
       }
     } else if (mode === "stream") fail("Only Audio and Movies & TV libraries stream", 400);

@@ -169,8 +169,10 @@ export class Gallery {
         issue: null,
         limited: permission.accessPrivileges === "limited",
       };
-      if (!away && r.client.state().catalog?.gallery && !remote.gallery)
+      if (!away && r.client.state().catalog?.gallery && !remote.gallery) {
+        await r.report();
         await r.client.api("/v1/gallery/link", { volume });
+      }
       await r.store.setGallery(r.scope, volume, source);
       if (reselect) {
         await r.store.dropQueuedGallery(r.scope, volume);
@@ -792,8 +794,10 @@ export class Gallery {
     if (
       catalog?.gallery &&
       !catalog.volumes.find((v) => v.id === folder.id)?.gallery
-    )
+    ) {
+      await r.report();
       await r.client.api("/v1/gallery/link", { volume: folder.id });
+    }
     if (catalog?.galleryDeletion) {
       const registration = await r.store.unregisteredGalleryAssets(
         r.scope,

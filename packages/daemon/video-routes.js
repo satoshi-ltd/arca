@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { Readable } from "node:stream";
 import { streamGalleryMedia } from "./gallery-media.js";
 import { digest, fail, token } from "./storage.js";
+import { assertReportedFolder } from "./machines.js";
 import { PREPARING } from "./video.js";
 import { videoType } from "../core/video-names.js";
 import { CLIENT_AUDIO, STREAMABLE_VIDEO, keyframeBefore } from "./video-sessions.js";
@@ -500,6 +501,7 @@ export async function videoRoute(context) {
       requireAdmin();
       return send(200, await forward(engine, route, body));
     }
+    assertReportedFolder(s, device, admin, body.volume, true);
     return send(200, route.endsWith("/remove") ? video.hideWatchNext(body.volume, body.id) : video.restoreWatchNext(body.volume, body.id));
   }
   if (DOWNLOAD_ROUTES.includes(route)) {

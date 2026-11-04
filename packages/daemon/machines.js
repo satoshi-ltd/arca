@@ -43,6 +43,9 @@ export function machineReport(engine) {
     lastSync: status.lastSync,
     selectedFolders: volumes.length,
     folderIds: volumes.map((v) => v.id),
+    streamedFolderIds: Object.entries(status.media || {})
+      .filter(([, mode]) => mode === "stream")
+      .map(([id]) => id),
     indexedFiles: volumes.reduce((n, v) => n + v.files, 0),
     indexedBytes: volumes.reduce((n, v) => n + v.bytes, 0),
   };
@@ -92,7 +95,7 @@ export function acceptReport(store, device, body) {
     /[\x00-\x1f]/.test(clean.name)
   )
     fail("Invalid machine report: name");
-  for (const key of ["folderIds", "albumFolderIds"]) {
+  for (const key of ["folderIds", "albumFolderIds", "streamedFolderIds"]) {
     if (body[key] === undefined) continue;
     if (
       !Array.isArray(body[key]) ||
@@ -168,4 +171,24 @@ export function machines(engine) {
         }),
     ],
   };
+}
+export const UNREPORTED_FOLDER = "Start syncing this folder on this device first.";
+export function assertReportedFolder(
+  store,
+  device,
+  admin,
+  volume,
+  streamed = false,
+) {
+  if (admin || device?.role !== "replica") return;
+  const row = store.db
+    .prepare("SELECT report FROM machine_reports WHERE device=?")
+    .get(device.id);
+  const report = row ? JSON.parse(row.report) : null;
+  if (
+    report?.folderIds?.includes(volume) ||
+    (streamed && report?.streamedFolderIds?.includes(volume))
+  )
+    return;
+  fail(UNREPORTED_FOLDER, 409);
 }

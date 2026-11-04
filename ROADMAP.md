@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
-  `chore · agent · normal`
-  Decided 2026-11-04: Watch next follows streamed libraries and the phone reports before acting. accept: desktop and phone machine reports add `streamedFolderIds` (Movies & TV and Audio libraries in stream mode); on the hub `/v1/restore`, `/v1/gallery/delete` and `/v1/gallery/link` from a replica require the folder in its latest `folderIds`, and `/v1/video/watch-next/remove|restore` in `folderIds` or `streamedFolderIds`, as `/v1/conflict-choice` does; the administrator keeps every folder and players keep their operations; the phone sends its machine report before `/v1/gallery/link` and `/v1/restore`, as the desktop's conflict choice does. Tests cover one refused replica call per route, a streamed Watch next edit, the player paths and the phone's report-before-link order; SPEC's API table says "linked replica, reported folder". A guard against mistakes, not a security boundary. The phone part ships with the next native build (VERIFY follow-up).
 - **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
   `bug · agent · low`
   accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
@@ -71,6 +68,9 @@ _None._
 
 ### Device checks
 
+- **VERIFY-FOLDER-SCOPE** — The phone links albums and restores against a guarded hub
+  `verify · maintainer · normal`
+  accept: with the hub on v0.8.43 or later and a phone build from v0.8.43, Link album… on a folder chosen moments before, and Restore in History, succeed at once; removing a Watch next card in a streamed Movies & TV library works on the phone and the desktop.
 - **VERIFY-OPEN-LAUNCHERS** — Programs are revealed, never opened, on installed desktops
   `verify · maintainer · normal`
   accept: on macOS and Windows desktop builds from v0.8.39 or later, a synced `.command`/`.app`-style file and a `.bat`/`.exe` show no Open file and are revealed in Finder or Explorer, and a conflict's Open reveals them too.

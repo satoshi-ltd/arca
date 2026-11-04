@@ -72,6 +72,21 @@ test("Keep selects a Movies & TV library as a complete copy, dropping its stream
   await assert.rejects(replica.stopVideo("v"), /Use Stop syncing to remove its copy/);
 });
 
+test("choosing to stream reports the library to the hub at once, with the streamed audio libraries", async (t) => {
+  const { store, replica } = setup(t);
+  await store.init();
+  const sent = [];
+  replica.client = {
+    state: () => ({ connection: { id: "phone" }, catalog }),
+    api: async (route, body) => sent.push([route, body]),
+  };
+  await store.set("streamed:hub", ["m"]);
+  await replica.streamVideo(catalog.volumes[0]);
+  const report = sent.find(([route]) => route === "/v1/machine-report")?.[1];
+  assert.ok(report, "the phone reported right after choosing Stream");
+  assert.deepEqual(report.streamedFolderIds.sort(), ["m", "v"]);
+});
+
 test("streaming records only the mode, and Stop syncing removes the mode and its downloads", async (t) => {
   const { store, replica } = setup(t);
   await store.init();

@@ -1285,6 +1285,7 @@ export default function App() {
       }
       run(
         async () => {
+          await engine.current.report();
           await client.api("/v1/video/watch-next/remove", { volume, id });
           setVideoEdits((count) => count + 1);
           notices.push({ kind: "info", id: "video-watch", title: "Removed from Watch next", action: "video-watch-undo", actionLabel: "Undo", volume, videoId: id });
@@ -2511,6 +2512,7 @@ export default function App() {
       confirmCopy.restoreVersion(row, date(row.created)),
       () =>
         run(async () => {
+          await engine.current.report();
           const restored = await client.api("/v1/restore", {
             volume: row.volume,
             path: row.path,
@@ -2649,7 +2651,10 @@ export default function App() {
   const noticeAction = (item) => {
     if (item.action === "video-watch-undo") {
       notices.clear(item.id);
-      client.api("/v1/video/watch-next/restore", { volume: item.volume, id: item.videoId }).then(
+      engine.current
+        .report()
+        .then(() => client.api("/v1/video/watch-next/restore", { volume: item.volume, id: item.videoId }))
+        .then(
         () => setVideoEdits((count) => count + 1),
         () => notices.push({ kind: "info", title: "Could not restore it. Try again when connected." }),
       );

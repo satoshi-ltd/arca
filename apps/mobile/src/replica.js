@@ -372,6 +372,7 @@ export class Replica {
       throw new Error("This library is already kept on this phone.");
     await this.store.set(videoModesKey(this.scope), { ...(await videoModes(this)), [volume.id]: "stream" });
     this.changed();
+    await this.report().catch(() => {});
   }
   async stopVideo(id) {
     await this.requireActiveReplica();
@@ -1464,6 +1465,14 @@ export class Replica {
       selectedFolders: folders.length,
       folderIds: folders.map((f) => f.id),
       albumFolderIds,
+      streamedFolderIds: [
+        ...new Set([
+          ...Object.entries(await videoModes(this))
+            .filter(([, mode]) => mode === "stream")
+            .map(([id]) => id),
+          ...(await streamedIds(this)),
+        ]),
+      ],
       indexedFiles: folders.reduce((n, f) => n + f.files, 0),
       indexedBytes: folders.reduce((n, f) => n + f.bytes, 0),
     }, options);

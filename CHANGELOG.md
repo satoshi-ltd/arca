@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.43 — 2026-11-04
+
+- The hub refuses a replica's restore, gallery link and gallery delete in a folder that replica does not sync, and Watch next edits in a library it neither syncs nor streams, with "Start syncing this folder on this device first.", so a stale view can no longer act on the wrong folder. Devices now report the libraries they stream (at once when Streaming is chosen) and the phone reports its folders right before linking an album, restoring or editing Watch next; Watch next in a streamed library therefore needs the desktop and the phone on 0.8.43 together with the hub.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.42 — 2026-11-04
 
 - When a full backup finds that a version it already copied is damaged, it asks the hub to keep that version until the backup has repaired it, so hub retention can no longer remove the only good copy first.
