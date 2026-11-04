@@ -16,13 +16,27 @@ export function recoverBackup(sourceHome, targetHome) {
       .all()
       .map((r) => JSON.parse(r.row));
     if (!history.length) fail("Backup has no archived versions");
-    for (const row of history)
-      if (
-        row.hash &&
-        (!fs.existsSync(source.blob(row.hash)) ||
-          hashFile(source.blob(row.hash)) !== row.hash)
-      )
-        fail("Backup object missing or corrupt");
+    const latest = new Map();
+    const rows = [
+      ...history.map((row) => ({ row, damaged: false })),
+      ...source.db
+        .prepare("SELECT row FROM backup_damaged")
+        .all()
+        .map((r) => ({ row: JSON.parse(r.row), damaged: true })),
+    ];
+    for (const entry of rows) {
+      const key = JSON.stringify([entry.row.volume, entry.row.path]);
+      if (!latest.has(key) || latest.get(key).row.rev < entry.row.rev) latest.set(key, entry);
+    }
+    const lost = [...latest.values()].filter((entry) => entry.damaged && !entry.row.deleted && entry.row.hash);
+    const lostHashes = [...new Set(lost.map((entry) => entry.row.hash.slice(0, 12)))].sort();
+    if (lost.length)
+      fail(
+        `The latest version of ${lost.length === 1 ? "1 file" : `${lost.length} files`} is damaged or missing in this backup (${lostHashes.slice(0, 3).join(", ")}${lostHashes.length > 3 ? ", …" : ""}); recovering would bring back older versions.`,
+      );
+    const skipped = [
+      ...new Set(rows.filter((entry) => entry.damaged && entry.row.hash).map((entry) => entry.row.hash.slice(0, 12))),
+    ].sort();
     init(targetHome, { role: "hub", name: "Recovered Arca" });
     target = new Store(targetHome);
     const names = new Set();
@@ -62,6 +76,7 @@ export function recoverBackup(sourceHome, targetHome) {
       home: path.resolve(targetHome),
       revisions: history.length,
       volumes: target.volumes().length,
+      damagedOlderVersions: skipped,
       note: "New hub identity. Connect fresh replica state directories; old copies are untouched.",
     };
   } finally {

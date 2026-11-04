@@ -957,6 +957,96 @@ test("a full backup mirrors the hub's retention, keeps deleted shares and holds 
   }
 });
 
+test("a damaged object never stops the backup or counts as backed up, and is retried until it verifies", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("scrub");
+  write(hub, volume, "a", "secret a");
+  write(hub, volume, "b", "plain b");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "scrub-backup") });
+  const backup = mac.engine.openBackup();
+  const download = backup.download.bind(backup);
+  const bad = digest("secret a");
+  backup.download = async (hash, size) => {
+    if (hash === bad) throw Object.assign(new Error("Downloaded content failed integrity verification"), { status: 409 });
+    return download(hash, size);
+  };
+  await mac.sync();
+  const aRev = hub.engine.store.current(volume.id, "a").rev;
+  const ack = () => hub.engine.store.db.prepare("SELECT revision FROM backup_ack").get().revision;
+  assert.equal(backedUp(mac, volume, "b"), "plain b", "unrelated objects keep being copied");
+  assert.equal(backedUp(mac, volume, "a"), null);
+  assert.equal(ack(), aRev - 1, "the hub is told everything below the damaged revision, never the revision itself");
+  const error = mac.engine.status().backup.error;
+  assert.match(error, new RegExp(bad.slice(0, 12)));
+  assert.doesNotMatch(error, /secret a/);
+  const { recoverBackup } = await import("../packages/daemon/recovery.js");
+  const copy = path.join(root, "scrub-copy");
+  backup.store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  fs.cpSync(path.join(root, "scrub-backup", "state"), copy, { recursive: true, filter: (file) => path.basename(file) !== "daemon.lock" });
+  assert.throws(() => recoverBackup(copy, path.join(root, "scrub-recovered")), new RegExp(`latest version of 1 file is damaged or missing in this backup \\(${bad.slice(0, 12)}\\)`), "recovery never brings back an older version in its place");
+  let fetched = 0;
+  backup.download = async (hash, size) => {
+    if (hash === bad) fetched++;
+    if (hash === bad) throw Object.assign(new Error("Hub 404: Object not found"), { status: 404 });
+    return download(hash, size);
+  };
+  await mac.sync();
+  assert.equal(fetched, 0, "a damaged object waits for the hourly retry instead of downloading every cycle");
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(fetched, 1);
+  assert.match(mac.engine.status().backup.error, /1 backed-up object is no longer on the hub/);
+  backup.download = download;
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(backedUp(mac, volume, "a"), "secret a", "the next cycle retries it");
+  assert.ok(ack() >= aRev);
+  assert.equal(mac.engine.status().backup.error, null);
+  const older = "f".repeat(64);
+  backup.store.db
+    .prepare("INSERT INTO backup_damaged(rev,row,hash,missing) VALUES(?,?,?,1)")
+    .run(0, JSON.stringify({ rev: 0, volume: volume.id, path: "a", hash: older, size: 1, deleted: 0 }), older);
+  backup.store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  const again = path.join(root, "scrub-copy-2");
+  fs.cpSync(path.join(root, "scrub-backup", "state"), again, { recursive: true, filter: (file) => path.basename(file) !== "daemon.lock" });
+  const recovered = recoverBackup(again, path.join(root, "scrub-recovered-2"));
+  assert.deepEqual(recovered.damagedOlderVersions, [older.slice(0, 12)], "a damaged older version is left out and named");
+});
+
+test("hourly maintenance finds a damaged object in the backup, reports it and repairs it from the hub", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("scrub-disk");
+  write(hub, volume, "a", "kept a");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "scrub-disk-backup") });
+  await mac.sync();
+  const backup = mac.engine.openBackup();
+  const hash = digest("kept a");
+  fs.writeFileSync(backup.store.blob(hash), "rotten");
+  const found = await backup.scrubBackup();
+  assert.deepEqual(found, [hash]);
+  assert.match(mac.engine.status().backup.error || "", new RegExp(hash.slice(0, 12)), "the damage is reported before repair");
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(fs.readFileSync(backup.store.blob(hash), "utf8"), "kept a", "the next cycle downloads a verified copy");
+  assert.equal(mac.engine.status().backup.error, null);
+  assert.deepEqual(await backup.scrubBackup(), []);
+  fs.writeFileSync(backup.store.blob(hash), "rotten again");
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(fs.readFileSync(backup.store.blob(hash), "utf8"), "kept a", "the hourly pass in the cycle finds and repairs it");
+  fs.rmSync(backup.store.blob(hash));
+  fs.mkdirSync(backup.store.blob(hash));
+  assert.deepEqual(await backup.scrubBackup(), [hash], "an object that cannot be read is damage, not a failed pass");
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(fs.readFileSync(backup.store.blob(hash), "utf8"), "kept a");
+  assert.equal(mac.engine.status().backup.error, null);
+});
+
 test("a backup left with selected folders by an older layout never publishes edits", async (t) => {
   const { root, hub, volume, connect } = await setup(t);
   write(hub, volume, "note.txt", "hub data");

@@ -413,6 +413,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS backup_damaged(rev INTEGER PRIMARY KEY,row TEXT NOT NULL,hash TEXT,missing INTEGER NOT NULL DEFAULT 0);
     `);
     if (
       !this.db

@@ -60,6 +60,7 @@ import {
 } from "./storage.js";
 
 const CHUNK = 1024 * 1024;
+const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
 const MIN_UPLOAD_CHUNK = 256 * 1024;
 const STALE_HISTORY_REQUESTS = 8;
 const hubIdentity = (hub) => (hub ? hub.id || hub.url : null);
@@ -206,7 +207,7 @@ export class Engine {
       backup: {
         enabled: false,
         ...this.config.backup,
-        error: this.backupError || null,
+        error: this.backupError || this.backupEngine?.damage || null,
         waiting: Boolean(this.backupWaiting),
         progress: this.backupProgress(),
       },
@@ -484,7 +485,7 @@ export class Engine {
   async download(hash, size) {
     const file = this.store.blob(hash);
     if (fs.existsSync(file)) {
-      if (await fingerprintMatches(file, hash)) return;
+      if (await fingerprintMatches(file, hash).catch(() => false)) return;
       // Keep the damaged object until a verified replacement is ready.
     }
     if (this.progress)
@@ -547,8 +548,9 @@ export class Engine {
     }
     if (fs.statSync(tmp).size !== size || !(await fingerprintMatches(tmp, hash))) {
       fs.unlinkSync(tmp);
-      fail("Downloaded content failed integrity verification", 409);
+      fail(INTEGRITY_FAILED, 409);
     }
+    if (fs.lstatSync(file, { throwIfNoEntry: false })?.isDirectory()) fs.rmSync(file, { recursive: true, force: true });
     fs.renameSync(tmp, file);
     syncDirectory(this.store.objects);
   }
@@ -1548,8 +1550,17 @@ export class Engine {
           }
         }
         if (this.config.role === "backup") {
+          const failed = new Map();
+          if (!this.scrubbedAt || Date.now() - this.scrubbedAt > 3600000) {
+            this.scrubbedAt = Date.now();
+            await this.scrubBackup();
+            for (const damaged of s.db.prepare("SELECT row FROM backup_damaged ORDER BY rev").all())
+              await this.copyBackupRow(JSON.parse(damaged.row), failed);
+          }
           let after = s.db
-              .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM backup_history")
+              .prepare(
+                "SELECT MAX(COALESCE((SELECT MAX(rev) FROM backup_history),0),COALESCE((SELECT MAX(rev) FROM backup_damaged),0)) AS n",
+              )
               .get().n,
             through,
             page;
@@ -1567,21 +1578,22 @@ export class Engine {
                     ? this.progress.filesDone
                     : 0) + 1,
               };
-              if (row.hash) await this.download(row.hash, row.size);
-              s.db
-                .prepare("INSERT OR REPLACE INTO backup_history(rev,row) VALUES(?,?)")
-                .run(row.rev, JSON.stringify(row));
+              await this.copyBackupRow(row, failed);
             }
             after = page.next;
           } while (after);
+          const listed = new Set((page.volumes || []).map((v) => v.id));
+          const damaged = s.db
+            .prepare("SELECT rev,row FROM backup_damaged ORDER BY rev")
+            .all()
+            .find((r) => listed.has(JSON.parse(r.row).volume))?.rev ?? null;
           if (through !== undefined)
             await this.json("/v1/backup-ack", {
               enabled: true,
-              revision: through,
+              revision: damaged === null ? through : Math.min(through, damaged - 1),
             });
-          await this.pruneBackup(
-            new Set((page.volumes || []).map((v) => v.id)),
-          );
+          await this.pruneBackup(listed);
+          this.damage = this.damagedMessage();
         }
       }
       if (this.config.role === "replica" && this.config.backup?.enabled) {
@@ -1689,6 +1701,87 @@ export class Engine {
       )
       .run(v.id, v.name, path.join(this.config.root, v.id));
   }
+  async copyBackupRow(row, failed) {
+    const s = this.store;
+    const setAside = (missing) =>
+      s.db
+        .prepare("INSERT OR REPLACE INTO backup_damaged(rev,row,hash,missing) VALUES(?,?,?,?)")
+        .run(row.rev, JSON.stringify(row), row.hash, missing ? 1 : 0);
+    if (row.hash && failed.has(row.hash)) return setAside(failed.get(row.hash));
+    try {
+      if (row.hash) await this.download(row.hash, row.size);
+    } catch (error) {
+      if (error.message !== INTEGRITY_FAILED && error.status !== 404) throw error;
+      failed.set(row.hash, error.status === 404);
+      return setAside(error.status === 404);
+    }
+    s.db.prepare("INSERT OR REPLACE INTO backup_history(rev,row) VALUES(?,?)").run(row.rev, JSON.stringify(row));
+    s.db.prepare("DELETE FROM backup_damaged WHERE rev=?").run(row.rev);
+  }
+  async scrubBackup(limit = 256, bytes = 1024 ** 3) {
+    const s = this.store;
+    const rows = s.db
+      .prepare(
+        "SELECT rev,row FROM backup_history WHERE rev>? AND json_extract(row,'$.hash') IS NOT NULL ORDER BY rev LIMIT ?",
+      )
+      .all(this.scrubAfter || 0, limit);
+    const checked = new Set(),
+      found = [];
+    let read = 0,
+      last = 0,
+      stopped = false;
+    for (const { rev, row } of rows) {
+      if (this.syncAbort?.signal.aborted || read >= bytes) {
+        stopped = true;
+        break;
+      }
+      last = rev;
+      const { hash, size } = JSON.parse(row);
+      if (checked.has(hash)) continue;
+      checked.add(hash);
+      const file = s.blob(hash);
+      read += size || 0;
+      if (fs.existsSync(file) && (await fingerprintMatches(file, hash).catch(() => false))) continue;
+      found.push(hash);
+      const held = s.db
+        .prepare("SELECT rev,row FROM backup_history WHERE json_extract(row,'$.hash')=?")
+        .all(hash);
+      s.db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const entry of held) {
+          s.db
+            .prepare("INSERT OR REPLACE INTO backup_damaged(rev,row,hash,missing) VALUES(?,?,?,0)")
+            .run(entry.rev, entry.row, hash);
+          s.db.prepare("DELETE FROM backup_history WHERE rev=?").run(entry.rev);
+        }
+        s.db.exec("COMMIT");
+      } catch (error) {
+        s.db.exec("ROLLBACK");
+        throw error;
+      }
+    }
+    this.scrubAfter = stopped || rows.length === limit ? last || this.scrubAfter || 0 : 0;
+    this.damage = this.damagedMessage();
+    return found;
+  }
+  damagedMessage() {
+    const rows = this.store.db
+      .prepare(
+        "SELECT hash,MAX(missing) AS missing FROM backup_damaged WHERE hash IS NOT NULL GROUP BY hash ORDER BY hash",
+      )
+      .all();
+    const named = (list) =>
+      `${list.slice(0, 3).map((row) => row.hash.slice(0, 12)).join(", ")}${list.length > 3 ? ", …" : ""}`;
+    const count = (n) => (n === 1 ? "1 backed-up object" : `${n} backed-up objects`);
+    const damaged = rows.filter((row) => !row.missing),
+      missing = rows.filter((row) => row.missing);
+    const parts = [];
+    if (damaged.length)
+      parts.push(`${count(damaged.length)} failed verification (${named(damaged)}); Arca downloads ${damaged.length === 1 ? "it" : "them"} again from the hub every hour.`);
+    if (missing.length)
+      parts.push(`${count(missing.length)} ${missing.length === 1 ? "is" : "are"} no longer on the hub (${named(missing)}).`);
+    return parts.join(" ") || null;
+  }
   // Mirrors the hub's retention: drop what the hub pruned, but keep deleted shares and never empty a folder.
   async pruneBackup(listed) {
     if (
@@ -1728,7 +1821,14 @@ export class Engine {
         throw e;
       }
     }
-    const keep = new Set();
+    for (const r of s.db.prepare("SELECT rev,row,missing FROM backup_damaged").all()) {
+      const listedVolume = listed.has(JSON.parse(r.row).volume);
+      if ((listedVolume && !retained.has(r.rev)) || (!listedVolume && r.missing))
+        s.db.prepare("DELETE FROM backup_damaged WHERE rev=?").run(r.rev);
+    }
+    const keep = new Set(
+      s.db.prepare("SELECT hash FROM backup_damaged WHERE hash IS NOT NULL").all().map((r) => r.hash),
+    );
     for (const r of s.db.prepare("SELECT row FROM backup_history").all()) {
       const hash = JSON.parse(r.row).hash;
       if (hash) keep.add(hash);

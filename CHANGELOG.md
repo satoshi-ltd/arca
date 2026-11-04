@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.38 — 2026-11-04
+
+- A full backup no longer stops at an object that fails verification: it keeps copying everything else, reports the damaged object by its hash, never tells the hub that revision is backed up, and downloads it again every hour until it verifies.
+- Once an hour a full backup re-verifies a batch of the objects it already stores and repairs any damaged one from the hub while the hub still keeps it; recovery refuses a backup whose latest version of a file is damaged or missing.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.8.37 — 2026-11-04
 
 - A desktop or server replica that keeps a Movies & TV library deletes a movie or episode from its own copy and lets sync carry the deletion, so an edit that never reached the hub goes to the Trash instead of being overwritten; a replica that only streams still deletes through the hub.

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-BACKUP-SCRUB** — Detect damaged objects without falsely acknowledging backup
-  `bug · agent · normal`
-  accept: detect and report corrupt objects by hash without logging contents, continue checking unrelated objects, and allow retry or repair. Never acknowledge a revision as backed up without its verified content, or release its retention hold; tests corrupt an object and verify both the error and the acknowledgement boundary. Hourly maintenance checks a bounded batch of stored objects and reports corruption.
 - **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
   `bug · agent · normal`
   accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
@@ -225,6 +222,9 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
   `verify · maintainer · high`
   accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or production servers for destructive tests.
 
+- **SEC-BACKUP-HOLD** — Damage the hourly backup check finds keeps its revision on the hub
+  `decision · maintainer · normal`
+  The backup's acknowledgement only rises, so damage found in an object already acknowledged cannot hold its revision: hub retention may prune it before the backup repairs it. Decide whether the hub accepts an explicit hold from a backup (a separate field, so enabling a backup with revision 0 never lowers it by accident) or keeps today's behaviour.
 - **SEC-ERASE-KEPT** — Erase says which folders it left in place
   `feature · maintainer · low`
   accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.
