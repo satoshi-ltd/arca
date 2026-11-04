@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.36 — 2026-11-04
+
+- In the video player the 10 and 30 second skip buttons show their number beside the arrow instead of on top of it, where it was unreadable.
+
+Needs: desktop build
+
 ## 0.8.35 — 2026-11-04
 
 - Start syncing warns "Not enough space: X to download · Y free" and stays off when a folder will not fit the destination, on the desktop and on the phone and the Fold.

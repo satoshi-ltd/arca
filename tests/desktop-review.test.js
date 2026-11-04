@@ -495,3 +495,10 @@ test("Resolve conflict shows the first line of a text version and a thumbnail fo
   assert.equal(failing.qa(".conflict-options .role-card").length, 2);
   assert.equal(failing.q(".conflict-options .conflict-excerpt"), null);
 });
+
+test("the skip buttons show their seconds beside the arrow, never on top of it", () => {
+  const css = source("style.css");
+  const block = (selector) => css.slice(css.indexOf(`${selector} {`), css.indexOf("}", css.indexOf(`${selector} {`)));
+  assert.doesNotMatch(block(".video-skip-count"), /position: absolute/);
+  assert.match(block(".video-skip"), /width: auto/);
+});

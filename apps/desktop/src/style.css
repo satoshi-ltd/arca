@@ -6713,15 +6713,14 @@ label.toggle {
   display: none;
 }
 .video-skip {
-  position: relative;
+  width: auto;
+  padding: 0 var(--space-2);
+  gap: var(--space-1);
 }
 .video-skip-count {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
   font-size: var(--text-caption);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
 .video-message > svg {
