@@ -507,9 +507,9 @@ export async function videoRoute(context) {
     if (route === "/v1/video/download") return send(200, await engine.videoDownloads.queue(body.volume, body.paths));
     if (s.mediaMode(body.volume) === "keep" && route === "/v1/video/download/cancel")
       fail("This library is kept on this device. Stop syncing it to stop its downloads.", 409);
-    if (route === "/v1/video/download/cancel") return send(200, engine.videoDownloads.cancel(body.volume, body.paths));
+    if (route === "/v1/video/download/cancel") return send(200, await engine.videoDownloads.cancel(body.volume, body.paths));
     if (s.mediaMode(body.volume) === "keep") fail("This library is kept on this device. Stop syncing it to remove its titles.", 409);
-    return send(200, engine.videoDownloads.remove(body.volume, body.paths));
+    return send(200, await engine.videoDownloads.remove(body.volume, body.paths));
   }
   if (MANAGED.includes(route)) {
     if (route === "/v1/video/match") return send(200, video.match(body));

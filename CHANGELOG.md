@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.41 — 2026-11-04
+
+- On Windows, Remove from this device works right after closing a video played through the compatible stream, and a newer copy replaces the old one at once: Arca first ends the conversion still reading that file instead of waiting up to a minute for it.
+
+Needs: desktop build
+
 ## 0.8.40 — 2026-11-04
 
 - HEIC and HEIF previews decode at most two at a time, refuse photos above 50 megapixels and pass the decoded pixels on without copying them, so a burst of large iPhone photos uses at most about 1.5 GB instead of growing with every request.

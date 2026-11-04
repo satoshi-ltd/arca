@@ -1134,8 +1134,8 @@ export async function start(home, options = {}) {
           return send(200, await downloads.queue(b.volume, b.paths, "music"));
         }
         if (route === "/v1/music/download/cancel")
-          return send(200, downloads.cancel(b.volume, b.paths));
-        return send(200, downloads.remove(b.volume, b.paths));
+          return send(200, await downloads.cancel(b.volume, b.paths));
+        return send(200, await downloads.remove(b.volume, b.paths));
       }
       if (
         req.method === "GET" &&

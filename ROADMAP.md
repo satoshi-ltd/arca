@@ -26,13 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
-  `chore · agent · normal`
-  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
-  This is a guard against unintended actions, not a security boundary: the replica supplies its own report, and the single-owner model grants a linked credential access across folders. A compromised device can report another folder; per-device folder ACLs are outside the current product contract.
-- **VIDEO-REMOVE-WINDOWS-SESSION** — Remove from this device fails on Windows for about a minute after closing a compatible-stream video
-  `bug · agent · normal`
-  Closing the desktop player never ends the hub-style HLS session the replica started on its downloaded copy, and on Windows FFmpeg keeps the file open until it finishes or the 60 s idle sweep ends it, so Remove answers 409 "Close the video before removing its download" about a closed video; a replacement download hits the same BUSY path and pruning silently leaves the file. Accept: sessions keep their source, removing or replacing a download first ends the sessions reading that file and waits for FFmpeg to exit, and `tests/video-downloads.test.js` drops its `videoSessions.halt()` stop-gap and still passes on Windows.
 - **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
   `bug · agent · low`
   accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
@@ -119,6 +112,11 @@ The JavaScript side of the phone sync audit shipped (per-file verification, no r
 
 ### Decisions
 
+- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
+  `chore · agent · normal`
+  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
+  This is a guard against unintended actions, not a security boundary: the replica supplies its own report, and the single-owner model grants a linked credential access across folders. A compromised device can report another folder; per-device folder ACLs are outside the current product contract.
+  Blocked on a decision (2026-11-04): a replica that streams a Movies & TV library edits its Watch next without selecting it, so streamed libraries never appear in `machine_reports.folderIds`; and the phone links an album (`/v1/gallery/link`) right after selecting its folder, before its next report reaches the hub, as it does for a restore in a folder selected but not yet reported. The guard as written refuses these. Decide whether Watch next follows the device's streamed libraries too (reported separately) and whether the phone reports before linking and restoring.
 - **DEC-VIDEO-INTEGRITY** — Require full-file integrity for Movies & TV?
   `decision · maintainer · high`
   accept: decide whether video identity and completed-download verification must cover every byte. The video fingerprint hashes only the size and first/last 4 MiB, and it now drives two-way sync of kept Movies & TV libraries: a same-size edit confined to the middle of a file never syncs to the hub or other devices, and download or upload corruption there is undetected; it also cannot distinguish those versions for resume. If full integrity is required, approve a bounded background full hash and a protocol field for clients to verify, with regression cases changing only the middle and measurements of hub I/O and phone verification cost. Keep this separate from the fast scan fingerprint.

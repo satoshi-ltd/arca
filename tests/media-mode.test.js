@@ -260,7 +260,7 @@ test("an interrupted track download resumes from its partial file", async (t) =>
   const name = "Miles Davis/Kind of Blue/01 So What.mp3";
   const library = await r.call(`/v1/music/library?volume=${f.music.id}`);
   const row = { ...trackNamed(library, name) };
-  r.downloads.enqueue(f.music.id, row, "music");
+  await r.downloads.enqueue(f.music.id, row, "music");
   const stored = r.downloads.row(f.music.id, name);
   fs.mkdirSync(path.join(r.home, "music-downloads"), { recursive: true });
   fs.writeFileSync(r.downloads.where(stored, ".part"), f.tracks[name].subarray(0, 2048));
@@ -377,7 +377,14 @@ test("on Windows a copy that cannot be replaced while open waits without holding
   t.after(() => {
     fs.renameSync = rename;
   });
+  const order = [];
+  const release = r.replica.engine.videoSessions.release.bind(r.replica.engine.videoSessions);
+  r.replica.engine.videoSessions.release = async (file) => {
+    order.push(["release", file]);
+    return release(file);
+  };
   fs.renameSync = (from, to) => {
+    order.push(["rename", to]);
     if (to === blocked) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}'`), { code: "EPERM" });
     return rename(from, to);
   };
@@ -385,6 +392,8 @@ test("on Windows a copy that cannot be replaced while open waits without holding
   await idle(r);
   fs.renameSync = rename;
   assert.equal(r.downloads.row(f.v.id, up).state, "done", "the next title still downloads");
+  const first = order.findIndex(([step, file]) => step === "rename" && file === blocked);
+  assert.deepEqual(order[first - 1], ["release", blocked], "the sessions reading the old copy end before it is replaced");
   const waiting = r.downloads.row(f.v.id, heat);
   assert.equal(waiting.state, "queued");
   assert.equal(waiting.error, "Close the video on this device so its new copy can replace the old one");

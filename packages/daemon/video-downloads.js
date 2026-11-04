@@ -45,6 +45,7 @@ export class VideoDownloads {
   constructor(engine, options = {}) {
     this.engine = engine;
     this.s = engine.store;
+    this.releasing = new Set();
     this.dir = path.join(this.s.home, "video-downloads");
     this.musicDir = path.join(this.s.home, "music-downloads");
     this.chunk = options.chunk || CHUNK;
@@ -160,11 +161,11 @@ export class VideoDownloads {
       .map((name) => (kind === "music" ? trackOf(library, name) : fileOf(library, name)))
       .filter((item) => item?.path && /^[a-f0-9]{64}$/.test(item.hash || ""));
     if (!found.length) fail(kind === "music" ? "This track is no longer available" : "This video is no longer available", 404);
-    for (const item of found) this.enqueue(volume, item, kind, kind === "music" ? null : this.showOf(library, item));
+    for (const item of found) await this.enqueue(volume, item, kind, kind === "music" ? null : this.showOf(library, item));
     void this.wake();
     return this.list(volume);
   }
-  enqueue(volume, item, kind = "video", show = null) {
+  async enqueue(volume, item, kind = "video", show = null) {
     const known = this.row(volume, item.path);
     if (known && ACTIVE.includes(known.state)) return false;
     if (known && known.state === "done" && known.hash === item.hash && !this.missing(known)) return false;
@@ -173,18 +174,21 @@ export class VideoDownloads {
       return true;
     }
     const added = Math.max(Date.now(), (this.s.db.prepare("SELECT max(added) AS added FROM video_downloads").get().added || 0) + 1);
-    if (known) this.discard(known);
+    if (known) {
+      await this.discard(known);
+      if (this.row(volume, item.path)) return false;
+    }
     const file = digest(`${this.hub}\0${volume}\0${item.path}`).slice(0, 32) + extension(item.path);
     this.s.db
       .prepare("INSERT INTO video_downloads(hub,volume,path,hash,size,state,file,item,show,added,kind) VALUES(?,?,?,?,?,'queued',?,?,?,?,?)")
       .run(this.hub, volume, item.path, item.hash, Number(item.size) || 0, file, JSON.stringify(item), show ? JSON.stringify(show) : null, added, kind);
     return true;
   }
-  drop(volume, paths, active) {
+  async drop(volume, paths, active) {
     if (typeof volume !== "string" || !Array.isArray(paths) || paths.some((name) => typeof name !== "string")) fail("Invalid download");
     for (const name of paths) {
       const row = this.row(volume, name);
-      if (row && (!active || ACTIVE.includes(row.state))) this.discard(row);
+      if (row && (!active || ACTIVE.includes(row.state))) await this.discard(row);
     }
     return this.list(volume);
   }
@@ -194,13 +198,21 @@ export class VideoDownloads {
   remove(volume, paths) {
     return this.drop(volume, paths, false);
   }
-  discard(row) {
+  async discard(row) {
     const remove = this.s.db.prepare("DELETE FROM video_downloads WHERE hub=? AND volume=? AND path=?");
     if (this.isCurrent(row)) {
       remove.run(row.hub, row.volume, row.path);
       this.current.controller.abort();
       return;
     }
+    const file = this.where(row);
+    this.releasing.add(file);
+    try {
+      await this.engine.videoSessions?.release(file);
+    } finally {
+      this.releasing.delete(file);
+    }
+    if (!this.row(row.volume, row.path)) return;
     try {
       this.erase(row);
     } catch {
@@ -214,9 +226,11 @@ export class VideoDownloads {
       remove.run(row.hub, row.volume, row.path);
       if (this.isCurrent(row)) this.current.controller.abort();
       else
-        try {
-          this.erase(row);
-        } catch {}
+        void Promise.resolve(this.engine.videoSessions?.release(this.where(row))).then(() => {
+          try {
+            this.erase(row);
+          } catch {}
+        });
     }
   }
   pruneLibrary(volume, library) {
@@ -379,6 +393,7 @@ export class VideoDownloads {
         fs.rmSync(part, { force: true });
         return this.restart(row, signal, MISMATCH);
       }
+      await this.engine.videoSessions?.release(file);
       try {
         fs.renameSync(part, file);
       } catch (error) {
@@ -535,6 +550,7 @@ export class VideoDownloads {
     const row = this.row(volume, name);
     if (!row || row.state !== "done" || row.hash !== hash || this.missing(row)) return null;
     const file = this.where(row);
+    if (this.releasing.has(file)) return null;
     if (row.kind === "music") return { file, size: row.size, type: audioType(name) || "application/octet-stream" };
     return { file, size: row.size, type: videoType(name) || "video/mp4", item: json(row.item, null) };
   }

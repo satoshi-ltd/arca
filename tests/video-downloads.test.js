@@ -170,8 +170,9 @@ test("a desktop replica downloads a title with its subtitles into its own storag
   assert.equal((await f.library()).movies[0].watched, true, "what was saved offline reaches the hub once it is back");
   assert.equal(r.replica.engine.store.db.prepare("SELECT count(*) AS n FROM video_outbox").get().n, 0);
 
-  await r.replica.engine.videoSessions.halt();
+  assert.ok([...r.replica.engine.videoSessions.sessions.values()].some((session) => session.source), "the compatible stream reads the downloaded copy");
   await r.call("/v1/video/download/remove", { volume: f.v.id, paths: [name] });
+  assert.equal([...r.replica.engine.videoSessions.sessions.values()].filter((session) => session.source).length, 0, "removing the download ends the sessions reading it first");
   assert.deepEqual(fs.readdirSync(folder), [], "Remove download frees the space");
   assert.deepEqual((await r.call(`/v1/video/downloads?volume=${f.v.id}`)).downloads, []);
 });

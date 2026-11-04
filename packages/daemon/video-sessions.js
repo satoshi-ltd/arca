@@ -142,6 +142,27 @@ export class VideoSessions {
     }
     await Promise.all(stopped);
   }
+  async release(file) {
+    const key = (name) => (process.platform === "win32" ? path.resolve(name).toLowerCase() : path.resolve(name));
+    const target = key(file);
+    const stopped = [];
+    for (const [id, session] of this.sessions) {
+      if (!session.source || key(session.source) !== target) continue;
+      const child = session.process;
+      if (child?.pid && child.exitCode === null && child.signalCode === null)
+        stopped.push(
+          new Promise((resolve) => {
+            const timer = setTimeout(resolve, this.releaseMs ?? 5000);
+            child.once("exit", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          }),
+        );
+      this.end(id);
+    }
+    await Promise.all(stopped);
+  }
   next(owner) {
     const value = (this.sequences.get(owner) || 0) + 1;
     this.sequences.set(owner, value);
@@ -277,7 +298,7 @@ export class VideoSessions {
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
-    const session = { id, owner, loopback, directory, process: child, created: Date.now(), touched: Date.now(), error: "" };
+    const session = { id, owner, loopback, source, directory, process: child, created: Date.now(), touched: Date.now(), error: "" };
     child.stderr.on("data", (chunk) => {
       if (session.error.length < 4096) session.error += chunk;
     });
