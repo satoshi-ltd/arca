@@ -403,7 +403,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS machine_reports(device TEXT PRIMARY KEY,report TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS auth_failures(purpose TEXT PRIMARY KEY,failures INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS pairing(code_hash TEXT PRIMARY KEY,name TEXT NOT NULL,expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS backup_ack(device TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 0,enabled INTEGER NOT NULL DEFAULT 1,updated TEXT);
+      CREATE TABLE IF NOT EXISTS backup_ack(device TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 0,enabled INTEGER NOT NULL DEFAULT 1,updated TEXT,hold INTEGER);
       CREATE TABLE IF NOT EXISTS sync_dirty(seq INTEGER PRIMARY KEY AUTOINCREMENT,volume TEXT NOT NULL,path TEXT NOT NULL,UNIQUE(volume,path));
       CREATE TABLE IF NOT EXISTS sync_state(volume TEXT PRIMARY KEY,cursor INTEGER NOT NULL DEFAULT 0,full_at INTEGER NOT NULL DEFAULT 0,policy TEXT);
       CREATE TABLE IF NOT EXISTS forgotten(volume TEXT,path TEXT,at INTEGER NOT NULL,PRIMARY KEY(volume,path));
@@ -413,8 +413,22 @@ export class Store {
       CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS backup_damaged(rev INTEGER PRIMARY KEY,row TEXT NOT NULL,hash TEXT,missing INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS backup_damaged(rev INTEGER PRIMARY KEY,row TEXT NOT NULL,hash TEXT,missing INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0);
     `);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(backup_damaged)")
+        .all()
+        .some((column) => column.name === "attempts")
+    )
+      this.db.exec("ALTER TABLE backup_damaged ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(backup_ack)")
+        .all()
+        .some((column) => column.name === "hold")
+    )
+      this.db.exec("ALTER TABLE backup_ack ADD COLUMN hold INTEGER");
     if (
       !this.db
         .prepare("PRAGMA table_info(gallery_metadata)")

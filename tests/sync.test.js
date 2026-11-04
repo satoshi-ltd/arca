@@ -1047,6 +1047,80 @@ test("hourly maintenance finds a damaged object in the backup, reports it and re
   assert.equal(mac.engine.status().backup.error, null);
 });
 
+test("damage the hourly check finds holds its revision on the hub until the backup repairs it", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("hold");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  write(hub, volume, "note", "second");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "hold-backup") });
+  await mac.sync();
+  const backup = mac.engine.openBackup();
+  const old = digest("first");
+  const oldRev = hub.engine.store.history(volume.id, "note").find((row) => row.hash === old).rev;
+  const ack = () => hub.engine.store.db.prepare("SELECT revision,hold FROM backup_ack").get();
+  assert.ok(ack().revision > oldRev, "the old version was acknowledged before any damage");
+  fs.writeFileSync(backup.store.blob(old), "rotten");
+  const download = backup.download.bind(backup);
+  backup.download = async (hash, size) => {
+    if (hash === old) throw Object.assign(new Error("Downloaded content failed integrity verification"), { status: 409 });
+    return download(hash, size);
+  };
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(ack().hold, oldRev, "the backup asks the hub to keep the revision it must repair");
+  const prune = async () => {
+    const preview = await hub.api("/v1/folder-retention", { id: volume.id, mode: "off" });
+    await hub.api("/v1/folder-retention", { id: volume.id, mode: "off", apply: true, confirmation: preview.confirmation });
+  };
+  await prune();
+  assert.ok(hub.engine.store.history(volume.id, "note").some((row) => row.rev === oldRev), "retention keeps the held revision");
+  backup.download = download;
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(ack().hold, null, "a repaired backup releases its hold");
+  assert.equal(fs.readFileSync(backup.store.blob(old), "utf8"), "first");
+  await prune();
+  assert.equal(hub.engine.store.history(volume.id, "note").some((row) => row.rev === oldRev), false, "then retention proceeds");
+  await assert.rejects(mac.engine.openBackup().json("/v1/backup-ack", { enabled: true, revision: 0, hold: 0 }), /Invalid backup acknowledgement/);
+});
+
+test("a hold the hub can never satisfy expires instead of freezing retention", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("hold-bound");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  write(hub, volume, "note", "second");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "hold-bound-backup") });
+  await mac.sync();
+  const backup = mac.engine.openBackup();
+  const old = digest("first");
+  const ack = () => hub.engine.store.db.prepare("SELECT hold FROM backup_ack").get().hold;
+  fs.writeFileSync(backup.store.blob(old), "rotten");
+  const download = backup.download.bind(backup);
+  let answer = { status: 404, message: "Hub 404: Object not found" };
+  backup.download = async (hash, size) => {
+    if (hash === old) throw Object.assign(new Error(answer.message), { status: answer.status });
+    return download(hash, size);
+  };
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(ack(), null, "an object the hub no longer has is never held");
+  answer = { status: 409, message: "Downloaded content failed integrity verification" };
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.ok(ack() > 0, "a corrupt hub copy is held while retries may still help");
+  backup.store.db.prepare("UPDATE backup_damaged SET attempts=24").run();
+  backup.scrubbedAt = 0;
+  await mac.sync();
+  assert.equal(ack(), null, "after a day of failed hourly retries the hold is released");
+  assert.match(mac.engine.status().backup.error, /failed verification/, "the damage is still reported");
+});
+
 test("a backup left with selected folders by an older layout never publishes edits", async (t) => {
   const { root, hub, volume, connect } = await setup(t);
   write(hub, volume, "note.txt", "hub data");

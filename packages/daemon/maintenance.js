@@ -86,7 +86,7 @@ export function retentionPlan(
   }
   const floor = store.db
     .prepare(
-      "SELECT MIN(a.revision) AS n FROM backup_ack a JOIN devices d ON d.id=a.device WHERE a.enabled=1 AND d.revoked=0",
+      "SELECT MIN(CASE WHEN a.hold IS NOT NULL AND a.hold-1<a.revision THEN a.hold-1 ELSE a.revision END) AS n FROM backup_ack a JOIN devices d ON d.id=a.device WHERE a.enabled=1 AND d.revoked=0",
     )
     .get().n;
   const counts = new Map(),

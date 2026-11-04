@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.42 — 2026-11-04
+
+- When a full backup finds that a version it already copied is damaged, it asks the hub to keep that version until the backup has repaired it, so hub retention can no longer remove the only good copy first.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.8.41 — 2026-11-04
 
 - On Windows, Remove from this device works right after closing a video played through the compatible stream, and a newer copy replaces the old one at once: Arca first ends the conversion still reading that file instead of waiting up to a minute for it.

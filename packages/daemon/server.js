@@ -1832,7 +1832,10 @@ export async function start(home, options = {}) {
             (b.enabled &&
               (!Number.isSafeInteger(b.revision) ||
                 b.revision < 0 ||
-                b.revision > highest))
+                b.revision > highest)) ||
+            (b.hold !== undefined &&
+              b.hold !== null &&
+              (!Number.isSafeInteger(b.hold) || b.hold < 1))
           )
             fail("Invalid backup acknowledgement");
           s.db
@@ -1845,6 +1848,10 @@ export async function start(home, options = {}) {
               b.enabled ? 1 : 0,
               new Date().toISOString(),
             );
+          if (b.hold !== undefined || !b.enabled)
+            s.db
+              .prepare("UPDATE backup_ack SET hold=? WHERE device=?")
+              .run(b.enabled && b.hold <= highest ? b.hold : null, device.id);
           return send(200, { ok: true });
         }
         if (

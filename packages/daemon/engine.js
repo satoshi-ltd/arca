@@ -61,6 +61,7 @@ import {
 
 const CHUNK = 1024 * 1024;
 const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
+const HOLD_ATTEMPTS = 24;
 const MIN_UPLOAD_CHUNK = 256 * 1024;
 const STALE_HISTORY_REQUESTS = 8;
 const hubIdentity = (hub) => (hub ? hub.id || hub.url : null);
@@ -1553,7 +1554,12 @@ export class Engine {
           const failed = new Map();
           if (!this.scrubbedAt || Date.now() - this.scrubbedAt > 3600000) {
             this.scrubbedAt = Date.now();
-            await this.scrubBackup();
+            if ((await this.scrubBackup()).length)
+              await this.json("/v1/backup-ack", {
+                enabled: true,
+                revision: 0,
+                hold: this.heldRevision(new Set(s.volumes().map((v) => v.id))),
+              });
             for (const damaged of s.db.prepare("SELECT row FROM backup_damaged ORDER BY rev").all())
               await this.copyBackupRow(JSON.parse(damaged.row), failed);
           }
@@ -1583,14 +1589,12 @@ export class Engine {
             after = page.next;
           } while (after);
           const listed = new Set((page.volumes || []).map((v) => v.id));
-          const damaged = s.db
-            .prepare("SELECT rev,row FROM backup_damaged ORDER BY rev")
-            .all()
-            .find((r) => listed.has(JSON.parse(r.row).volume))?.rev ?? null;
+          const damaged = this.heldRevision(listed);
           if (through !== undefined)
             await this.json("/v1/backup-ack", {
               enabled: true,
               revision: damaged === null ? through : Math.min(through, damaged - 1),
+              hold: damaged,
             });
           await this.pruneBackup(listed);
           this.damage = this.damagedMessage();
@@ -1705,7 +1709,9 @@ export class Engine {
     const s = this.store;
     const setAside = (missing) =>
       s.db
-        .prepare("INSERT OR REPLACE INTO backup_damaged(rev,row,hash,missing) VALUES(?,?,?,?)")
+        .prepare(
+          "INSERT INTO backup_damaged(rev,row,hash,missing,attempts) VALUES(?,?,?,?,1) ON CONFLICT(rev) DO UPDATE SET row=excluded.row,hash=excluded.hash,missing=excluded.missing,attempts=attempts+1",
+        )
         .run(row.rev, JSON.stringify(row), row.hash, missing ? 1 : 0);
     if (row.hash && failed.has(row.hash)) return setAside(failed.get(row.hash));
     try {
@@ -1717,6 +1723,14 @@ export class Engine {
     }
     s.db.prepare("INSERT OR REPLACE INTO backup_history(rev,row) VALUES(?,?)").run(row.rev, JSON.stringify(row));
     s.db.prepare("DELETE FROM backup_damaged WHERE rev=?").run(row.rev);
+  }
+  heldRevision(listed) {
+    return (
+      this.store.db
+        .prepare("SELECT rev,row FROM backup_damaged WHERE missing=0 AND attempts<? ORDER BY rev")
+        .all(HOLD_ATTEMPTS)
+        .find((r) => listed.has(JSON.parse(r.row).volume))?.rev ?? null
+    );
   }
   async scrubBackup(limit = 256, bytes = 1024 ** 3) {
     const s = this.store;
