@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
-  `bug · agent · normal`
-  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
 - **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
   `bug · agent · normal`
   accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
@@ -78,6 +75,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 _None._
 
 ## Needs maintainer
+
+### Device checks
+
+- **VERIFY-OPEN-LAUNCHERS** — Programs are revealed, never opened, on installed desktops
+  `verify · maintainer · normal`
+  accept: on macOS and Windows desktop builds from v0.8.39 or later, a synced `.command`/`.app`-style file and a `.bat`/`.exe` show no Open file and are revealed in Finder or Explorer, and a conflict's Open reveals them too.
 
 ### Waiting for evidence
 
@@ -225,6 +228,9 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 - **SEC-BACKUP-HOLD** — Damage the hourly backup check finds keeps its revision on the hub
   `decision · maintainer · normal`
   The backup's acknowledgement only rises, so damage found in an object already acknowledged cannot hold its revision: hub retention may prune it before the backup repairs it. Decide whether the hub accepts an explicit hold from a backup (a separate field, so enabling a backup with revision 0 never lowers it by accident) or keeps today's behaviour.
+- **SEC-OPEN-LAUNCHERS-2** — More file kinds that run code are revealed, never opened
+  `bug · agent · normal`
+  Synced files carry no quarantine or Mark-of-the-Web, so the OS never warns. Not yet in the list: `com pif cpl msc vbe jse wsf wsh url chm reg msp application appref-ms fileloc inetloc webloc mpkg jar py pyw`; an extensionless Unix file with an executable bit opens in Terminal on macOS (sync never sets modes, so only a local object already executable can cause it). Accept: the desktop and Rust lists gain these kinds, a Unix file with `mode & 0o111` and no extension is revealed, with tests; SPEC lists them.
 - **SEC-ERASE-KEPT** — Erase says which folders it left in place
   `feature · maintainer · low`
   accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.

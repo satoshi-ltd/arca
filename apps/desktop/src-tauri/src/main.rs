@@ -339,7 +339,7 @@ async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result
     let root=fs::canonicalize(root).map_err(|e|e.to_string())?;
     let file=fs::canonicalize(root.join(path)).map_err(|e|e.to_string())?;
     if !file.starts_with(&root)||!file.is_file(){return Err("File is outside the selected folder".into());}
-    let reveal=reveal.unwrap_or(false);
+    let reveal=reveal.unwrap_or(false)||launches_program(&file);
     #[cfg(target_os="macos")] let mut command={let mut c=Command::new("open");if reveal{c.arg("-R");}c.arg(&file);c};
     #[cfg(target_os="windows")] let mut command={
         use std::os::windows::process::CommandExt;
@@ -349,6 +349,10 @@ async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result
     };
     #[cfg(target_os="linux")] let mut command={let mut c=Command::new("xdg-open");c.arg(reveal_target(&file,reveal));c};
     command.spawn().map_err(|e|e.to_string())?;Ok(())
+}
+const LAUNCHERS:[&str;21]=["app","command","tool","terminal","workflow","pkg","dmg","exe","lnk","scr","bat","cmd","ps1","hta","js","vbs","msi","desktop","sh","run","appimage"];
+fn launches_program(file:&Path)->bool{
+    file.file_name().and_then(|n|n.to_str()).and_then(|n|n.rsplit_once('.')).map(|(_,e)|LAUNCHERS.contains(&e.to_ascii_lowercase().as_str())).unwrap_or(false)
 }
 #[cfg_attr(not(windows),allow(dead_code))]
 fn strip_verbatim(path:&str)->String{
@@ -1006,6 +1010,15 @@ mod tray_tests {
 #[cfg(test)]
 mod reveal_tests {
     use super::*;
+    #[test]
+    fn programs_and_launchers_are_revealed_instead_of_opened() {
+        for name in ["Setup.SH","a.app","b.command","c.tool","d.terminal","e.workflow","f.pkg","g.dmg","h.exe","i.lnk","j.scr","k.bat","l.cmd","m.ps1","n.hta","o.js","p.vbs","q.msi","r.desktop","s.run","t.AppImage",".bat"] {
+            assert!(launches_program(Path::new(name)),"{name}");
+        }
+        for name in ["notes.txt","photo.jpg","archive.zip","Makefile","sh","report.json"] {
+            assert!(!launches_program(Path::new(name)),"{name}");
+        }
+    }
     #[test]
     fn explorer_selects_the_file_and_never_sees_the_verbatim_prefix() {
         assert_eq!(select_argument(r"\\?\C:\Users\a b\Photos\trip.jpg"), "/select,\"C:\\Users\\a b\\Photos\\trip.jpg\"");

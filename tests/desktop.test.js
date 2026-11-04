@@ -1577,6 +1577,59 @@ test("the file detail reveals the file on every platform with the platform's own
   }
 });
 
+test("a synced program or launcher is only shown in its folder, never opened, and the native command enforces it", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-launchers-"));
+  init(home, { port: 0, name: "Test hub" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(volume.path, "Setup.SH"), "echo hi");
+  await daemon.engine.cycle();
+  const requests = new Set();
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const native = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false, status: { ...daemon.engine.status(), platform: "darwin" } };
+        if (command === "open_file" || command === "open_folder") {
+          native.push([command, { ...args }]);
+          return;
+        }
+        if (command !== "api") throw new Error("Unexpected native command");
+        const response = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+          ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error);
+        return args.route === "/v1/status" ? { ...value, platform: "darwin" } : value;
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
+  w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+  await until(() => w.document.querySelector(".browser-file-row") && w.document.body.getAttribute("aria-busy") === "false");
+  w.document.querySelector(".browser-file-row").click();
+  await until(() => w.document.querySelector('[data-action="history-reveal-file"]') && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(w.document.querySelector('[data-action="history-open-file"]'), null, "no Open file for a program");
+  w.document.querySelector('[data-action="history-reveal-file"]').click();
+  await until(() => native.length === 1);
+  assert.deepEqual(native[0], ["open_file", { volume: volume.id, path: "Setup.SH", reveal: true }]);
+  const main = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(main, /let reveal=reveal\.unwrap_or\(false\)\|\|launches_program\(&file\);/);
+});
+
 test("the photo viewer and the native command reveal the file's own folder on every platform", () => {
   const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
   const viewer = app.slice(app.indexOf('infoPanel.querySelector(".photo-reveal")?.addEventListener'));

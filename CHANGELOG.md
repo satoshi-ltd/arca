@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.39 — 2026-11-04
+
+- The desktop no longer opens synced programs and launchers of the common kinds (`.app`, `.command`, `.sh`, `.exe`, `.bat`, `.lnk`, `.AppImage` and the others SPEC lists): their file detail offers only Show in Finder or Show in folder, and the app reveals such a file even if asked to open it.
+
+Needs: desktop build
+
 ## 0.8.38 — 2026-11-04
 
 - A full backup no longer stops at an object that fails verification: it keeps copying everything else, reports the damaged object by its hash, never tells the hub that revision is backed up, and downloads it again every hour until it verifies.

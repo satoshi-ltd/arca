@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.38";
+const APP_VERSION = "0.8.39";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3215,13 +3215,15 @@ function revisionRow(v, compact = false) {
       : "activity-file";
   return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true, deleted ? "id" : conflict && !v.resolved ? "wa" : "")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time"${compact ? relativeAttrs(v.created) : ""}>${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
+const LAUNCHERS = new Set(["app", "command", "tool", "terminal", "workflow", "pkg", "dmg", "exe", "lnk", "scr", "bat", "cmd", "ps1", "hta", "js", "vbs", "msi", "desktop", "sh", "run", "appimage"]);
+const launchesProgram = (name) => name.includes(".") && LAUNCHERS.has(name.split(".").at(-1).toLowerCase());
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
   const current = historyVersions[0];
   const filename = historyPath.split("/").at(-1);
   const available = current && !current.deleted && !current.directory;
   const access =
-    available && native && volume?.path
+    available && native && volume?.path && !launchesProgram(filename)
       ? button(
           "Open file",
           "history-open-file",
@@ -10695,7 +10697,7 @@ async function handle(name, id, control) {
   if (name === "open-conflict") {
     const data = JSON.parse(id);
     for (const path of data.paths)
-      await invoke("open_file", { volume: data.volume, path });
+      await invoke("open_file", { volume: data.volume, path, ...(launchesProgram(path.split("/").at(-1)) ? { reveal: true } : {}) });
     return;
   }
 
