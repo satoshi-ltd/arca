@@ -1194,6 +1194,38 @@ test("a pending upload whose saved copy is gone is marked lost for the strip", a
   );
 });
 
+test("a failed upload names its reason from the real error paths and never invents one", async () => {
+  const { mergeTimeline } = await import("../apps/mobile/src/gallery-timeline.js");
+  const { uploadReason } = await import("../apps/mobile/src/upload-reasons.js");
+  const cases = [
+    ["Not enough storage. Free space to continue.", "Not enough space on this phone"],
+    ["Photo is no longer accessible. Check photo permissions.", "No longer accessible in Photos"],
+    ["Excluded by .arcaignore: Camera/IMG_1.HEIC", "Excluded by this folder’s .arcaignore"],
+    ["This photo was deleted on the hub. Restore it there before uploading edits.", "Deleted on the hub"],
+    ["Original changed during a pending upload. Restore the original in Photos and retry.", "The original changed in Photos"],
+    ["An original resource is unavailable. Restore it in Photos and retry.", "The original is unavailable in Photos"],
+    ["No original photo or video resources are available.", "The original is unavailable in Photos"],
+    ["The previous photo version could not be verified.", "The earlier version could not be verified"],
+    ["The hub has not confirmed this gallery resource. Retry synchronization.", "The hub has not confirmed it"],
+    ["Unsupported gallery resource size", "The file size is not supported"],
+    ["socket closed", "The upload failed"],
+    [undefined, "The upload failed"],
+  ];
+  for (const [issue, reason] of cases) assert.equal(uploadReason(issue), reason, String(issue));
+  const items = mergeTimeline({
+    uploads: [
+      { id: "a", state: "failed", lost: true, filename: "lost.jpg", issue: "The picked photo is no longer available." },
+      { id: "b", state: "failed", filename: "big.jpg", issue: "Not enough storage. Free space to continue." },
+      { id: "c", state: "uploading", filename: "going.jpg" },
+    ],
+  });
+  const byName = Object.fromEntries(items.map((item) => [item.name, item]));
+  assert.equal(byName["big.jpg"].reason, "Not enough space on this phone");
+  assert.equal(byName["big.jpg"].id, "b");
+  assert.equal(byName["lost.jpg"].reason, undefined, "a lost photo has a state, not a failure reason");
+  assert.equal(byName["going.jpg"].reason, undefined);
+});
+
 test("the rail labels undated photos instead of an invalid date", async () => {
   const { railMonthLabel } = await import("../apps/mobile/src/gallery-timeline.js");
   assert.equal(railMonthLabel("undated"), "Date unknown");

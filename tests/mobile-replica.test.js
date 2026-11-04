@@ -16,6 +16,7 @@ import {
   sourceAlbums,
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
+import { mergeTimeline } from "../apps/mobile/src/gallery-timeline.js";
 import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
 import { folderIgnored, withLocalOnly } from "../apps/mobile/src/hub-gallery.js";
 import { viewKey, warmViews } from "../apps/mobile/src/remote-views.js";
@@ -1732,6 +1733,39 @@ test("gallery pauses, resumes a partial upload, cleans staging and does not bloc
   );
 });
 
+test("Retry sends one failed upload now instead of waiting for the next background run", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume } = f;
+  await f.enable();
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.HEIC\n");
+  await f.daemon.engine.cycle();
+  await r.sync();
+  const [failed] = await f.store.galleryPreview(r.scope, volume.id, false, 24);
+  assert.equal(failed.state, "failed");
+  assert.equal(mergeTimeline({ uploads: [failed] })[0].reason, "Excluded by this folder’s .arcaignore");
+  assert.ok(failed.retryAt > Date.now(), "the background run waits a minute");
+  fs.rmSync(path.join(volume.path, ".arcaignore"));
+  await f.daemon.engine.cycle();
+  await r.sync();
+  assert.equal((await f.store.galleryAsset(r.scope, volume.id, failed.id)).state, "failed", "still waiting without Retry");
+  await r.gallery.retryUpload(volume.id, failed.id);
+  assert.equal((await f.store.galleryAsset(r.scope, volume.id, failed.id)).retryAt, 0);
+  await r.sync();
+  assert.equal((await f.store.galleryAsset(r.scope, volume.id, failed.id)).state, "accepted");
+  await assert.rejects(r.gallery.retryUpload(volume.id, failed.id), /not waiting for a retry/);
+  await f.store.putGalleryAsset(r.scope, volume.id, { ...failed, state: "failed", lost: true, retryAt: Date.now() + 60000 });
+  await assert.rejects(r.gallery.retryUpload(volume.id, failed.id), /not waiting for a retry/, "a lost photo is dismissed, never retried");
+  await f.store.putGalleryAsset(r.scope, volume.id, { ...failed, state: "failed", issue: "kept", retryAt: Date.now() + 60000 });
+  r.importing = true;
+  await assert.rejects(r.gallery.retryUpload(volume.id, failed.id), /Wait for synchronization/);
+  assert.ok((await f.store.galleryAsset(r.scope, volume.id, failed.id)).retryAt > Date.now(), "a running sync's row is left alone");
+  r.importing = false;
+  await r.gallery.retryUpload(volume.id, failed.id);
+  const retried = await f.store.galleryAsset(r.scope, volume.id, failed.id);
+  assert.equal(retried.retryAt, 0);
+  assert.equal(retried.issue, "kept", "only the retry time changes");
+});
+
 test("gallery excludes ignored paths, retries them after policy removal and handles unavailable albums", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume } = f;
@@ -2524,6 +2558,9 @@ test("a pick whose app copy is gone can be dismissed instead of staying failed, 
   assert.match(failed.issue, /Pick it again or dismiss it/);
   assert.match((await f.store.gallery(r.scope, f.volume.id)).issue, /Pick it again or dismiss it/);
   await r.gallery.dismissLost(f.volume.id);
+  await r.gallery.dismissLost(f.volume.id, "another-photo");
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, failed.id)).state, "failed", "Dismiss takes only the chosen photo");
+  await r.gallery.dismissLost(f.volume.id, failed.id);
   const dismissed = await f.store.galleryAsset(r.scope, f.volume.id, failed.id);
   assert.equal(dismissed.state, "unavailable");
   assert.equal(dismissed.picked, undefined);
@@ -2589,7 +2626,7 @@ test("a pick that still has its app copy is never dismissed", async (t) => {
   await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "kept.jpg" }]));
   const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
   await f.store.putGalleryAsset(r.scope, f.volume.id, { ...pending, state: "failed", lost: true });
-  await r.gallery.dismissLost(f.volume.id);
+  await r.gallery.dismissLost(f.volume.id, pending.id);
   assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "failed");
   assert.equal(fs.existsSync(f.files.picked(r.scope, f.volume.id, pending.id)), true);
 });

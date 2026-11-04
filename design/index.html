@@ -23,7 +23,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.8.34 · production</span>
+      <span class="kit-version">v0.8.35 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -181,6 +181,7 @@
         <div class="kit-grid wide">
           <div class="kit-card">
             <h3>Desktop · web</h3>
+            <div class="kit-type-row"><span class="kit-mono">display 28/34</span><span class="kit-text-display">arca</span></div>
             <div class="kit-type-row"><span class="kit-mono">title 20/26 · 600</span><strong class="kit-text-title">Folders</strong></div>
             <div class="kit-type-row"><span class="kit-mono">heading 16/22 · 600</span><strong class="kit-text-heading">Stop syncing “photos”?</strong></div>
             <div class="kit-type-row"><span class="kit-mono">row 14 · 600</span><strong class="kit-text-row">photos-yuri</strong></div>
@@ -191,6 +192,7 @@
           </div>
           <div class="kit-card">
             <h3>Touch · phone and Fold</h3>
+            <div class="kit-type-row"><span class="kit-mono">display 28/34</span><span class="kit-text-display">arca</span></div>
             <div class="kit-type-row"><span class="kit-mono">title 26/32 (Fold 20/26)</span><strong class="m-title">Folders</strong></div>
             <div class="kit-type-row"><span class="kit-mono">heading 18/24 · 600</span><span class="m-heading">Stop syncing “photos”?</span></div>
             <div class="kit-type-row"><span class="kit-mono">row 16/22 · 600</span><span class="m-row-title">photos-yuri</span></div>
@@ -294,7 +296,7 @@
               <button type="button" class="ghost small-button"><span data-icon="undo-2"></span>Restore</button>
               <button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
             </div>
-            <p class="kit-note">Four kinds in two sizes, the same on desktop and phone: primary (accent fill, one per screen), secondary (surface with the control border), ghost (no fill or border, ink text or icon, a hover fill) and danger (the danger fill, only on the button that confirms a destructive dialog). Regular is 32 px, small 24 px; an icon-only button is square at its size. A menu entry that deletes stays a menu row in danger text, and the trigger outside a menu is a secondary. Pressed: secondary, ghost and icon buttons fill with --press at once, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px.</p>
+            <p class="kit-note">Four kinds in two sizes, the same on desktop and phone: primary (accent fill, one per screen), secondary (surface with the control border), ghost (no fill or border, ink text or icon, a hover fill) and danger (the danger fill, only on the button that confirms a destructive dialog). Regular and small are both 32 px, small with 12 px text; an icon-only button is square at its size. A menu entry that deletes stays a menu row in danger text, and the trigger outside a menu is a secondary. Pressed: secondary, ghost and icon buttons fill with --press at once, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px.</p>
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>
@@ -390,7 +392,7 @@
               <article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p><div class="notice-actions"><button class="notice-link">Retry now</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>HUB_UNREACHABLE · GET http://100.99.29.84:17831/v1/catalog · connect ETIMEDOUT</pre></details></article>
               <article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Cannot reach casa</strong><p>Check your connection and retry.</p><div class="notice-actions"><button class="notice-link">Retry now</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
             </div>
-            <p class="kit-note">360 wide, three kinds. Info without an action auto-dismisses after four seconds; info with an action, warnings and errors stay until handled. One notice per condition, never per file. On the web, Cannot reach names the device and appears only after two status reads in a row fail, with the sidebar card turning Offline; any answer, status or events, clears both.</p>
+            <p class="kit-note">360 wide, three kinds. Info without an action auto-dismisses after four seconds; info with an action, an info notice whose body is over 90 characters, warnings and errors stay until handled, and at most 3 notices are visible at once. One notice per condition, never per file. On the web, Cannot reach names the device and appears only after two status reads in a row fail, with the sidebar card turning Offline; any answer, status or events, clears both.</p>
           </div>
           <div class="kit-card">
             <h3>Dialog anatomy</h3>

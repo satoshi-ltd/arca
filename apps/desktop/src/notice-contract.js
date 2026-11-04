@@ -4,7 +4,6 @@ export const noticeMetrics = Object.freeze({
   icon: 20,
   line: 21,
   detailsHeight: 32,
-  duration: 180,
   distance: 8,
   infoTimeout: 4000,
   lastingBody: 90,

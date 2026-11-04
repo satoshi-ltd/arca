@@ -35,8 +35,9 @@ import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 import { REPORTABLE_VERSION } from "./device-line.js";
 import { isVideoFolder, videoModes, videoModesKey } from "./video-sync.js";
 import { quickHash, subtitleFile } from "./video-downloads.js";
+import { HEADROOM, neededBytes } from "./space.js";
 export const CHUNK = 1024 * 1024;
-export const HEADROOM = 256 * 1024 * 1024;
+export { HEADROOM };
 export { validPath, validRow } from "./validation.js";
 export const VERIFY_MS = 3000;
 export const OFFLINE_HOLD_MS = 5 * 60000;
@@ -326,16 +327,7 @@ export class Replica {
       if ((await videoModes(this))[volume.id] === "keep")
         throw new Error("This library is kept on this device. Stop syncing it to remove its titles.");
       const folders = await this.store.selectionBytes(this.scope);
-      const catalog = new Map(
-        (this.client.state().catalog?.volumes || []).map((folder) => [folder.id, folder]),
-      );
-      const local = folders.find((folder) => folder.id === volume.id);
-      let required = Math.max(0, volume.bytes - (local?.bytes || 0));
-      for (const folder of folders) {
-        if (!folder.selected || folder.id === volume.id) continue;
-        const remote = catalog.get(folder.id);
-        if (remote) required += Math.max(0, remote.bytes - folder.bytes);
-      }
+      const required = neededBytes(volume, folders, this.client.state().catalog?.volumes || []);
       await this.space(required);
       await this.files.mkdir(this.files.folder(this.scope, volume.id));
       await this.store.select(this.scope, volume);

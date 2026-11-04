@@ -318,6 +318,48 @@ test("a kept Movies & TV title offers no Remove from this device", async (t) => 
   assert.equal((await open(streamed)).includes("Remove from this device"), true, "a streamed library keeps per-title Remove");
 });
 
+test("Start syncing warns and stays off when the folder is larger than the free space, and a roomier destination clears it", async (t) => {
+  const free = { value: 820 * 1024 ** 2 };
+  const ui = await boot(t, { status: replicaStatus(), pathCheck: (body) => ({ path: body.path, exists: false, writable: true, freeBytes: free.value }) });
+  await until(() => row(ui, "documents"));
+  await ui.click(row(ui, "documents").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
+  await until(() => ui.$("#folder-path-status.message-error"));
+  assert.equal(ui.$("#folder-path-status").textContent, "Not enough space: 9.6 GB to download · 820.0 MB free");
+  assert.equal(ui.$("#folder-path-status").getAttribute("role"), "alert");
+  assert.equal(submit(ui).disabled, true);
+  free.value = 589 * 1024 ** 3;
+  const input = ui.$('#dialog [name="path"]');
+  input.value = "/Volumes/Big/documents";
+  input.dispatchEvent(new ui.w.Event("input", { bubbles: true }));
+  await until(() => ui.$("#folder-path-status:not(.message-error)") && submit(ui).disabled === false);
+  assert.match(ui.$("#folder-path-status").textContent, /Needs 9\.6 GB · 589\.0 GB free/);
+});
+
+test("Start syncing an existing folder subtracts what the destination already holds before warning", async (t) => {
+  const held = { bytes: 9.5 * 1024 ** 3 };
+  const pathCheck = (body) => ({
+    path: body.path,
+    exists: true,
+    writable: true,
+    freeBytes: 820 * 1024 ** 2,
+    ...(body.preview ? { preview: { complete: true, files: 1200, bytes: held.bytes } } : {}),
+  });
+  const ui = await boot(t, { status: replicaStatus(), pathCheck });
+  await until(() => row(ui, "documents"));
+  await ui.click(row(ui, "documents").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
+  await until(() => /local files to sync/.test(ui.$("#folder-path-status")?.textContent || ""));
+  assert.equal(ui.$("#folder-path-status").classList.contains("message-error"), false);
+  assert.equal(submit(ui).disabled, false);
+
+  held.bytes = 0;
+  const empty = await boot(t, { status: replicaStatus(), pathCheck });
+  await until(() => row(empty, "documents"));
+  await empty.click(row(empty, "documents").querySelector('[data-action="add"]'), () => empty.$("#dialog[open] .folder-selection"));
+  await until(() => empty.$("#folder-path-status.message-error"));
+  assert.match(empty.$("#folder-path-status").textContent, /^Not enough space: 9\.6 GB to download/);
+  assert.equal(submit(empty).disabled, true);
+});
+
 test("switching back to Keep after a failed destination check keeps Start syncing disabled", async (t) => {
   const ui = await boot(t, { status: replicaStatus(), pathCheck: () => Promise.reject(Object.assign(new Error("Cannot read or write this folder"), { status: 403 })) });
   await until(() => row(ui, "music"));

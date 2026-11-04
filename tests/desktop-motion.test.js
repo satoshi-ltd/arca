@@ -428,7 +428,7 @@ test("⌘Enter on a month row opens that month in the gallery and closes the pal
 });
 
 const photo = (name, day) => ({ path: name, hash: `h-${name}`, kind: "image", date: `2026-09-${day}T10:00:00`, cursor: `2026-09-${day}T10:00:00|${name}`, size: 1, rev: 1, dateSource: "capture date" });
-async function viewerGallery(t, items, options = {}) {
+async function viewerGallery(t, items, { info = () => ({}), ...options } = {}) {
   const deleted = new Set();
   const ui = await boot(t, {
     ...options,
@@ -443,7 +443,7 @@ async function viewerGallery(t, items, options = {}) {
         return { items: shown, next: null, previous: null, days: { "2026-09-20": shown.length }, timeline: [{ month: "2026-09", count: shown.length, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } };
       },
       "/v1/gallery/preview": () => ({ data: "data:image/png;base64,AAAA" }),
-      "/v1/gallery/info": () => ({}),
+      "/v1/gallery/info": info,
       "/v1/gallery/memories": () => ({ items: [] }),
       "/v1/gallery/periods": () => ({ periods: [] }),
     },
@@ -464,6 +464,23 @@ async function confirmDelete(ui) {
   await until(() => ui.$("#background-dialog") && ui.$("#dialog").open && ui.$("#submit-dialog")?.textContent === "Delete");
   ui.$("#dialog-form").requestSubmit();
 }
+
+test("the viewer captions the photo with its name, capture date and place, and the name alone when it has none", async (t) => {
+  const info = (args) =>
+    args.route.includes("dated.jpg") ? { captured: "2026-09-12T18:42:00", location: { latitude: 41.3874, longitude: 2.1686 } } : {};
+  const ui = await viewerGallery(t, [photo("dated.jpg", "20"), photo("plain.jpg", "19")], { info });
+  const title = () => ui.$("#dialog .photo-viewer-head h2").textContent;
+  const caption = () => ui.$$("#dialog .photo-viewer-caption p").map((p) => p.textContent);
+  await openViewer(ui, 0);
+  assert.equal(title(), "dated.jpg");
+  await until(ui.settled(() => caption().length === 2));
+  assert.deepEqual(caption(), ["dated.jpg", "September 12, 2026 at 06:42 PM · 41.387400, 2.168600"]);
+  ui.$(".photo-next").click();
+  await until(ui.settled(() => title() === "plain.jpg"));
+  await until(ui.settled(() => ui.$("#dialog .photo-info-body")?.textContent && caption().length >= 1));
+  assert.deepEqual(caption(), ["plain.jpg"]);
+  assert.match(style, /\.photo-info-open \.photo-viewer-caption \{\s+display: none;/);
+});
 
 test("deleting the only photo from the viewer closes the viewer once the confirmation leaves, and focus lands in the gallery", async (t) => {
   const ui = await viewerGallery(t, [photo("solo.jpg", "20")]);
@@ -561,4 +578,20 @@ test("a row that leaves while the page's scroll is not yet restored fades where 
   const list = ghost.parentElement.getBoundingClientRect();
   assert.equal(ghost.style.getPropertyValue("--ghost-y"), `${index * 50 - list.top}px`, "measured in its list, so it scrolls with the rows");
   assert.match(style, /:has\(> \.row-leaving\) \{\s*position: relative;\s*\}\s*\.row-leaving \{\s*position: absolute;/);
+});
+
+test("stepping through photos asks for metadata only once the viewer rests on one", async (t) => {
+  const asked = [];
+  const info = (args) => {
+    asked.push(new URLSearchParams(args.route.split("?")[1]).get("path"));
+    return {};
+  };
+  const ui = await viewerGallery(t, [photo("a.jpg", "20"), photo("b.jpg", "19"), photo("c.jpg", "18")], { info });
+  await openViewer(ui, 0);
+  ui.$(".photo-next").click();
+  await until(ui.settled(() => ui.$("#dialog .photo-viewer-head h2")?.textContent === "b.jpg"));
+  ui.$(".photo-next").click();
+  await until(ui.settled(() => ui.$("#dialog .photo-viewer-head h2")?.textContent === "c.jpg"));
+  await until(() => asked.includes("c.jpg"));
+  assert.deepEqual(asked, ["c.jpg"]);
 });

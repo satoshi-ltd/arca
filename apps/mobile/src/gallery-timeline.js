@@ -1,4 +1,5 @@
 import { galleryDate, mediaKind } from "../../../packages/core/gallery-date.js";
+import { uploadReason } from "./upload-reasons.js";
 
 const isoDay = (value) => {
   const date = new Date(value);
@@ -60,12 +61,14 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
     .sort((a, b) => (b.creationTime || 0) - (a.creationTime || 0))
     .map((upload) => ({
       path: `upload:${upload.id}`,
+      id: upload.id,
       kind: upload.video ? "video" : "image",
       date: null,
       uri: upload.uri || null,
       size: 0,
       upload: upload.lost ? "lost" : upload.state,
       name: upload.filename,
+      ...(upload.state === "failed" && !upload.lost ? { reason: uploadReason(upload.issue) } : {}),
     }));
   return pending.concat(photos);
 }

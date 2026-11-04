@@ -515,12 +515,22 @@ export class Gallery {
     delete item.picked;
     delete item.lost;
   }
-  async dismissLost(volume) {
+  async retryUpload(volume, id) {
+    const r = this.r;
+    await r.requireActiveReplica();
+    if (r.importing || r.picking)
+      throw new Error("Wait for synchronization to finish.");
+    if (!(await r.store.retryGalleryAsset(r.scope, volume, id)))
+      throw new Error("This photo is not waiting for a retry.");
+    r.changed();
+  }
+  async dismissLost(volume, id) {
     const r = this.r;
     await r.requireActiveReplica();
     if (r.importing || r.picking)
       throw new Error("Wait for synchronization to finish.");
     for (const item of await r.store.galleryLost(r.scope, volume)) {
+      if (item.id !== id) continue;
       if (await r.files.stat(r.files.picked(r.scope, volume, item.id)))
         continue;
       await this.dropPicked(volume, item);

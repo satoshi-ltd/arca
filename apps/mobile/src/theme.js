@@ -140,7 +140,7 @@ export function styles(
     },
     pendingHeader: { flexWrap: "wrap", rowGap: sp[1] },
     pendingTitle: { flexGrow: 1 },
-    pendingUploadStrip: { gap: sp[2] },
+    pendingRow: { flexDirection: "row", alignItems: "center", gap: sp[3] },
     timelineGroup: { gap: sp[2] },
     galleryCanvas: { position: "relative" },
     galleryCell: { position: "absolute" },

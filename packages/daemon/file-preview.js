@@ -6,6 +6,7 @@ const BYTES = 4096;
 const LINES = 24;
 
 export const isTextName = (name) => TEXT.test(name);
+export const withoutConflictSuffix = (name) => name.replace(/\.conflict-[\w-]+$/, "");
 
 export function filePreview(store, volume, name, hash) {
   const folder = store.volume(volume);
@@ -20,7 +21,7 @@ export function filePreview(store, volume, name, hash) {
     store.visibleRules(volume)(name, false)
   )
     fail("This file is no longer available", 404);
-  if (!isTextName(name)) return { kind: "none" };
+  if (!isTextName(withoutConflictSuffix(name))) return { kind: "none" };
   const source = store.localContent(volume, name, hash);
   if (!source) return { kind: "none", missing: true };
   const handle = fs.openSync(source, "r");

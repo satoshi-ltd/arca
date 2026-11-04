@@ -212,6 +212,7 @@ import {
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, count, fileCount, folderSize, unbroken } from "./format";
+import { neededBytes, spaceShort } from "./space";
 import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, entryLabel, revealWindow } from "./browse";
 import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld, streamedOfflineCaption } from "./home-data";
@@ -957,6 +958,20 @@ export default function App() {
   );
   const selectMedia = shownSheet?.kind === "select" ? mediaKind(catalog, shownSheet.volume, playerAvailable) : null;
   const selectMode = shownSheet?.mode || (selectMedia ? defaultMode(selectMedia) : "keep");
+  const [sheetFolders, setSheetFolders] = useState(null);
+  const selectingId = shownSheet?.kind === "select" ? shownSheet.volume.id : null;
+  useEffect(() => {
+    setSheetFolders(null);
+    const r = engine.current;
+    if (!selectingId || !r?.scope) return;
+    let active = true;
+    r.store.selectionBytes(r.scope).then((rows) => active && setSheetFolders(rows)).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [selectingId]);
+  const sheetNeeds = sheetFolders && shownSheet?.kind === "select" ? neededBytes(shownSheet.volume, sheetFolders, volumes) : null;
+  const tooBig = sheetNeeds !== null && spaceShort(sheetNeeds, status.free);
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
   const pullSync = screen === "Folders" && !folder && connected && !!replica;
   const screenDepth = detail ? 2 : folder && screen === "Folders" ? 1 : 0;
@@ -2410,8 +2425,13 @@ export default function App() {
                 media: engine.current.gallery.media,
                 summary: source.summary,
                 scannedAt: source.scannedAt,
-                dismissLost: () =>
-                  run(() => engine.current.gallery.dismissLost(folder.id)),
+                dismissLost: (id) =>
+                  run(() => engine.current.gallery.dismissLost(folder.id, id)),
+                retry: (id) =>
+                  run(async () => {
+                    await engine.current.gallery.retryUpload(folder.id, id);
+                    startSync();
+                  }),
               }
             : null
         }
@@ -4951,11 +4971,10 @@ export default function App() {
                             ? "A full copy that syncs both ways."
                             : "Download this folder and keep it in sync."}
                         </Text>
-                        <Text style={s.caption}>
-                          {Number.isFinite(shownSheet.volume.bytes)
-                            ? `Needs ${bytes(shownSheet.volume.bytes)} · `
-                            : ""}
-                          {bytes(status.free)} free
+                        <Text style={[s.caption, tooBig && s.errorText]}>
+                          {tooBig
+                            ? `Not enough space: ${bytes(sheetNeeds)} to download · ${bytes(status.free)} free`
+                            : `${Number.isFinite(shownSheet.volume.bytes) ? `Needs ${bytes(shownSheet.volume.bytes)} · ` : ""}${bytes(status.free)} free`}
                         </Text>
                       </View>
                       <SheetFooter>
@@ -4963,6 +4982,7 @@ export default function App() {
                           label="Start syncing"
                           icon="refresh"
                           primary
+                          disabled={tooBig}
                           busy={busy}
                           onPress={() =>
                             run(async () => {

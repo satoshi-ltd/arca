@@ -148,25 +148,24 @@ test("a downloaded image opens offline without consulting the native library or 
   );
 });
 
-test("the pending uploads header carries one Dismiss action for photos whose app copy is gone", () => {
+test("pending uploads are rows with a thumbnail, a one-line state and one action: Retry for failed, Dismiss for lost, none while uploading", () => {
   const read = (file) =>
     fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const gallery = read("FolderGallery.jsx");
   assert.match(
     gallery,
-    /<Text style=\{s\.caption\}>\s+\{pendingUploadLabel\(pendingItems, uploads\?\.summary\)\}\s+<\/Text>\s+\{!!uploads\?\.dismissLost && !!lostCount && \(\s+<Pressable[\s\S]{0,260}onPress=\{uploads\.dismissLost\}[\s\S]{0,220}Dismiss \{lostCount\}/,
-    "the action sits in the section header, after the progress label",
+    /pendingUploadLabel\(pendingItems, uploads\?\.summary\)[\s\S]{0,200}pendingItems\.map\(\(item\) => \(\s+<PendingRow[\s\S]{0,260}onRetry=\{uploads\?\.retry\}\s+onDismiss=\{uploads\?\.dismissLost\}/,
   );
-  assert.doesNotMatch(gallery, /label="Dismiss unavailable photos"/, "the full-width button is gone");
-  assert.match(gallery, /no longer on this phone/);
+  assert.match(gallery, /lost \? "No longer on this phone" : failed \? item\.reason : "Uploading"/);
+  assert.match(gallery, /lost && onDismiss \? \["Dismiss", onDismiss\] : failed && onRetry \? \["Retry", onRetry\] : null/);
+  assert.match(gallery, /\[s\.caption, failed && s\.errorText\]/, "only a failed state is red");
+  assert.doesNotMatch(gallery, /pendingUploadStrip|Dismiss \{lostCount\}|Pick \{lostCount/, "the strip and the header Dismiss are gone");
   assert.match(gallery, /hitSlop=\{\{ top: 11, bottom: 11, left: 8, right: 8 \}\}/, "the link keeps a 44 dp target");
-  assert.match(gallery, /item\.upload && item\.upload !== "lost" \? item\.uri : null/, "a lost tile never loads its missing file");
+  assert.match(gallery, /item\.uri && !lost \?/, "a lost row never loads its missing file");
   assert.match(read("PhotoViewer.jsx"), /lost: "No longer on this phone"/, "the viewer names a lost photo instead of calling it Uploading");
-  assert.match(gallery, /item\.upload !== "lost"/, "a lost tile shows the placeholder, not an alert badge");
-  assert.match(
-    read("App.jsx"),
-    /dismissLost: \(\) =>\s+run\(\(\) => engine\.current\.gallery\.dismissLost\(folder\.id\)\)/,
-  );
+  const app = read("App.jsx");
+  assert.match(app, /dismissLost: \(id\) =>\s+run\(\(\) => engine\.current\.gallery\.dismissLost\(folder\.id, id\)\)/);
+  assert.match(app, /retry: \(id\) =>\s+run\(async \(\) => \{\s+await engine\.current\.gallery\.retryUpload\(folder\.id, id\);\s+startSync\(\);/);
 });
 
 test("a failed Add photos whose picks are journaled retries by syncing, not by reopening the picker", () => {

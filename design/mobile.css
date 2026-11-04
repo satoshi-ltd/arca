@@ -195,10 +195,6 @@
   background: var(--m-tint);
   color: var(--m-ok-fg);
 }
-.m-chip.m-warning {
-  background: var(--m-warning-bg);
-  color: var(--m-warning);
-}
 .m-chip.m-neutral {
   background: var(--m-hover);
   color: var(--m-soft);
@@ -280,13 +276,8 @@
   border-right: 1px solid var(--m-divider);
 }
 .m-sidebar.m-compact {
-  width: 64px;
-  padding: var(--m-workspace-inset) 10px 12px;
-}
-.m-sidebar.m-compact.m-labelled {
   width: 72px;
-  padding-left: 6px;
-  padding-right: 6px;
+  padding: var(--m-workspace-inset) 6px 12px;
 }
 .m-labelled .m-nav-item {
   flex-direction: column;
@@ -1122,11 +1113,6 @@
 .m-crumb {
   color: var(--m-accent);
 }
-.m-field-label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--m-section-label-gap);
-}
 .m-chevron {
   color: var(--m-mute);
 }
@@ -1435,24 +1421,12 @@
   gap: 12px;
   margin-left: auto;
 }
-.m-now {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-}
-.m-now .m-cover {
-  width: 280px;
-}
 .m-progress {
   align-self: stretch;
   height: 6px;
   border-radius: 3px;
   background: var(--m-line);
   overflow: hidden;
-}
-.m-progress .m-fill-32 {
-  width: 32%;
 }
 .m-progress i {
   display: block;
@@ -1548,17 +1522,6 @@
 .m-fp-art.m-fp-wide {
   aspect-ratio: 16 / 9;
 }
-.m-fp-art.m-fp-short {
-  aspect-ratio: 5 / 2;
-}
-.m-fp-actions {
-  display: flex;
-  gap: 8px;
-}
-.m-fp-actions .m-button {
-  flex: 1;
-  min-width: 0;
-}
 .m-fp-split {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -1579,15 +1542,6 @@
   border: 1px solid var(--m-divider);
   border-radius: var(--m-card-radius);
   background: var(--m-surface);
-}
-.m-fp-pane-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.m-fp-keys {
-  font: var(--m-touch-caption-font)/var(--m-touch-caption-line) var(--font-mono);
-  color: var(--m-mute);
 }
 .m-srch-bar {
   display: flex;
@@ -1647,9 +1601,6 @@
   background: var(--m-tint);
   color: var(--m-ok-fg);
 }
-.m-srch-stack {
-  flex-direction: column;
-}
 .m-srch-dialog {
   display: flex;
   flex-direction: column;
@@ -1702,10 +1653,6 @@
 .m-srch-sel {
   background: var(--m-tint);
 }
-.m-srch-mini {
-  width: var(--detail-tile);
-  flex: none;
-}
 .m-srch-hit .m-tile,
 .m-srch-hit .m-cover {
   width: var(--detail-tile);
@@ -1726,12 +1673,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-.m-srch-idle {
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
 }
 .m-vw-film {
   position: absolute;
@@ -2211,9 +2152,6 @@
   border-radius: 50%;
   background: var(--m-accent);
 }
-.m-state-dot.m-state-dot-warning {
-  background: var(--m-warning);
-}
 .m-device.m-fold.m-fold-wide {
   width: 1000px;
 }
@@ -2453,17 +2391,11 @@
   background: var(--m-accent);
   color: var(--m-on-accent);
 }
-.m-progress-line .m-video-fill-12 {
-  width: 12%;
-}
 .m-progress-line .m-video-fill-38 {
   width: 38%;
 }
 .m-progress-line .m-video-fill-64 {
   width: 64%;
-}
-.m-progress-line .m-video-fill-81 {
-  width: 81%;
 }
 .m-video-grid {
   display: flex;
@@ -2604,25 +2536,6 @@
 }
 .m-dock-tile.m-disabled {
   opacity: 0.5;
-}
-.m-video-split {
-  display: flex;
-  align-items: flex-start;
-  gap: 24px;
-}
-.m-video-side {
-  flex: none;
-  width: calc(var(--m-detail-side-width) + 40px);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.m-video-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 .m-video-episode {
   display: flex;
@@ -2776,9 +2689,6 @@
 .m-video-track .m-video-fill-38 {
   width: 38%;
 }
-.m-video-track .m-video-fill-99 {
-  width: 99%;
-}
 .m-video-times {
   display: flex;
   justify-content: space-between;
@@ -2869,14 +2779,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.m-video-main .m-title-row > .m-caption {
-  flex: none;
-  white-space: nowrap;
-}
-.m-video-main .m-title-row > .m-grow {
-  min-width: 0;
-  overflow: hidden;
-}
 .m-video-rating {
   position: absolute;
   left: 6px;
@@ -2937,11 +2839,6 @@
   padding: 0 12px;
   white-space: nowrap;
 }
-.m-video-board {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
 .m-video-saved {
   position: absolute;
   top: 6px;
@@ -2964,16 +2861,6 @@
 }
 .m-video-ring.m-video-ring-42 {
   background: conic-gradient(var(--m-accent) 0 42%, var(--m-line) 42% 100%);
-}
-.m-button.m-video-downloading {
-  padding-right: 4px;
-}
-.m-video-cancel {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  color: var(--m-mute);
 }
 .m-video-dl {
   flex: none;

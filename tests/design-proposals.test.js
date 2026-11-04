@@ -49,13 +49,18 @@ const boardSources = (html) => {
   const starts = [
     ...html.matchAll(/<article class="kit-board" data-board="([^"]+)">/g),
   ];
-  return starts.map((match, index) => ({
-    id: match[1],
-    body: html.slice(
-      match.index,
-      starts[index + 1]?.index ?? html.indexOf("</section>", match.index),
-    ),
-  }));
+  return starts.map((match, index) => {
+    const close = html.slice(match.index).search(/<\/article>\s*<\/section>/);
+    if (starts[index + 1] === undefined)
+      assert.notEqual(close, -1, `board ${match[1]} is not closed by </article></section>`);
+    return {
+      id: match[1],
+      body: html.slice(
+        match.index,
+        starts[index + 1]?.index ?? match.index + close + "</article>".length,
+      ),
+    };
+  });
 };
 
 const taskBodies = (text) => {
@@ -168,7 +173,7 @@ test("a board never reuses the ID of a ROADMAP task that is not type ui, and a s
 test("board sources end at their own article even when a drawing holds nested articles", () => {
   const html = [
     '<article class="kit-board" data-board="UI-A"><article class="notice-card"></article><strong>Accept</strong></article>',
-    '<article class="kit-board" data-board="UI-B"><strong>Accept</strong></article>',
+    '<article class="kit-board" data-board="UI-B"><strong>Accept</strong></article></section>',
   ].join("\n");
   const boards = boardSources(html);
   assert.deepEqual(

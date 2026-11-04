@@ -111,6 +111,44 @@ import {
 import { count } from "./format";
 import { tileLabel } from "./browse";
 
+const PendingRow = memo(function PendingRow({ item, onOpen, onRetry, onDismiss }) {
+  const { s } = useDesign();
+  const lost = item.upload === "lost";
+  const failed = item.upload === "failed";
+  const state = lost ? "No longer on this phone" : failed ? item.reason : "Uploading";
+  const action = lost && onDismiss ? ["Dismiss", onDismiss] : failed && onRetry ? ["Retry", onRetry] : null;
+  return (
+    <View style={s.pendingRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name || "Photo"} · ${state}`}
+        onPress={() => onOpen(item)}
+        style={s.rowThumb}
+      >
+        {item.uri && !lost ? (
+          <Image source={{ uri: item.uri }} style={s.rowThumbImage} resizeMode="cover" resizeMethod="resize" />
+        ) : (
+          <MediaPlaceholder size={44} video={item.kind === "video"} />
+        )}
+      </Pressable>
+      <View style={[s.stack, s.flex]}>
+        <Text numberOfLines={1} style={s.heading}>{item.name || "Photo"}</Text>
+        <Text style={[s.caption, failed && s.errorText]}>{state}</Text>
+      </View>
+      {action && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${action[0]} ${item.name || "photo"}`}
+          onPress={() => action[1](item.id)}
+          hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
+        >
+          <Text style={s.infoLink}>{action[0]}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+});
+
 const StickyMonth = memo(function StickyMonth({ month, top, height, start, scrollY }) {
   const { s } = useDesign();
   const motion = useMemo(() => {
@@ -1277,7 +1315,6 @@ export function FolderGallery({
     () => mergeTimeline({ uploads: pending }),
     [pending],
   );
-  const lostCount = pendingItems.filter((item) => item.upload === "lost").length;
   const thumb = (item) =>
     savedThumbnail(thumbnails, item) ||
     (item.upload && item.upload !== "lost" ? item.uri : null);
@@ -1511,41 +1548,16 @@ export function FolderGallery({
             <Text style={s.caption}>
               {pendingUploadLabel(pendingItems, uploads?.summary)}
             </Text>
-            {!!uploads?.dismissLost && !!lostCount && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Dismiss ${count(lostCount, "unavailable photo", "unavailable photos")}`}
-                onPress={uploads.dismissLost}
-                hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
-              >
-                <Text style={s.infoLink}>Dismiss {lostCount}</Text>
-              </Pressable>
-            )}
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.pendingUploadStrip}
-          >
-            {pendingItems.map((item) => (
-              <Tile
-                key={item.path}
-                item={item}
-                size={72}
-                uri={item.uri}
-                onPress={handlers.open}
-              />
-            ))}
-          </ScrollView>
-          {!!lostCount && (
-            <Text style={s.caption}>
-              {lostCount === 1
-                ? "1 photo is no longer on this phone."
-                : `${count(lostCount, "photo", "photos")} are no longer on this phone.`}{" "}
-              Pick {lostCount === 1 ? "it" : "them"} again to upload, or
-              dismiss {lostCount === 1 ? "it" : "them"}.
-            </Text>
-          )}
+          {pendingItems.map((item) => (
+            <PendingRow
+              key={item.path}
+              item={item}
+              onOpen={handlers.open}
+              onRetry={uploads?.retry}
+              onDismiss={uploads?.dismissLost}
+            />
+          ))}
         </View>
       )}
       {!!candidates.length &&

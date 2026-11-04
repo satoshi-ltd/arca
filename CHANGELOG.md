@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.35 — 2026-11-04
+
+- Start syncing warns "Not enough space: X to download · Y free" and stays off when a folder will not fit the destination, on the desktop and on the phone and the Fold.
+- A folder in conflict lists its conflict copies in a card above Files, and Resolve conflict shows the first line of a text version or a thumbnail of an image under each version; hubs and server replicas need the new daemon for the previews.
+- The photo viewer names the file, its capture date and coordinates under the photo, and Settings puts Tailscale, Local network and Device discovery right after the hub or sync sections instead of below media and backup.
+- Pending photo uploads on the phone are rows that say why each failed, with Retry sending that photo now, or Dismiss for one no longer on the phone.
+- The System, Desktop, Phone and Auto views were corrected against the code: control and sidebar sizes, the seven type roles, Settings order, the Erase wording and a dimmed Not on this phone row; unused kit rules were removed.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.34 — 2026-11-03
 
 - A hub moved to another computer with its state copied can be followed from the desktop and server replicas: Change address… on the hub row (or `arca relocate URL`) checks that the new address is the same hub with this device still paired and not an older copy, then keeps syncing with the same pairing, folders and files, without downloading what it already has or adding a second entry on the hub. Phones do the same from the hub row's ⋯ in Devices.

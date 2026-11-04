@@ -504,6 +504,15 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
+  async retryGalleryAsset(scope, volume, asset) {
+    const result = await this.db.runAsync(
+      "UPDATE gallery_assets SET retryAt=0, row=json_set(row,'$.retryAt',0) WHERE scope=? AND volume=? AND asset=? AND state='failed' AND COALESCE(json_extract(row,'$.lost'),0)=0",
+      scope,
+      volume,
+      asset,
+    );
+    return result.changes > 0;
+  }
   async retryGallery(scope, volume) {
     await this.db.runAsync(
       "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable')",

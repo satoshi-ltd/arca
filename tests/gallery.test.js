@@ -83,6 +83,16 @@ test("accepted photos prepare persistent bounded thumbnails and preserve origina
   await assert.rejects(f.api(f.preview("other.jpg", hash)), { status: 404 });
 });
 
+test("a conflict copy of a photo previews like its original name", async (t) => {
+  const f = await fixture(t);
+  const copy = "one.jpg.conflict-phone123-ab12cd34-7";
+  const { hash } = await f.photo(copy, "2025-01-02T03:04:05.000Z");
+  const result = await f.api(f.preview(copy, hash));
+  assert.match(result.data, /^data:image\/jpeg;base64,/);
+  const { hash: other } = await f.photo("notes.bin.conflict-phone123-ab12cd34-7", "2025-01-02T03:04:05.000Z", "blue");
+  assert.deepEqual(await f.api(f.preview("notes.bin.conflict-phone123-ab12cd34-7", other)), { unavailable: true });
+});
+
 test("every photo keeps a thumbnail while large previews fill only their own budget", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });

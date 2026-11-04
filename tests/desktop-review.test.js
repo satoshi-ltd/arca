@@ -406,3 +406,92 @@ test("the main window installs an update when the tray asks", () => {
   assert.match(app, /listen\("install-update", \(\) =>\s+action\(async \(\) => \{\s+try \{\s+await handle\("install-update"\);\s+\} catch \(error\) \{\s+await invoke\("show_main", \{ folder: null \}\);\s+throw error;/);
   assert.match(app, /name === "install-update"\) \{\s+if \(updating\) return;/);
 });
+
+const sectionLabels = (ui) => ui.qa("#content .section-label").map((el) => el.textContent);
+
+test("Settings puts Tailscale, Local network and Device discovery right after Access to this hub on a hub, and after Local synchronization on a device", async (t) => {
+  const volumes = [{ ...base, id: "docs", name: "docs" }];
+  const onHub = await boot(t, hub(volumes), { hash: "#/settings" });
+  await until(() => onHub.q("#machine-name"));
+  const hubLabels = sectionLabels(onHub);
+  const hubFrom = hubLabels.indexOf("Access to this hub");
+  assert.deepEqual(hubLabels.slice(hubFrom, hubFrom + 4), ["Access to this hub", "Tailscale", "Local network", "Device discovery"]);
+  for (const later of ["Hub backup", "History", "Photos", "Movies & TV"])
+    assert.ok(hubLabels.indexOf(later) > hubLabels.indexOf("Device discovery"), `${later} follows the network sections`);
+  const onDevice = await boot(t, replica(volumes), { hash: "#/settings" });
+  await until(() => onDevice.q("#machine-name"));
+  const labels = sectionLabels(onDevice);
+  assert.equal(labels[0], "Hub connection");
+  const from = labels.indexOf("Local synchronization");
+  assert.deepEqual(labels.slice(from, from + 3), ["Local synchronization", "Tailscale", "Device discovery"]);
+  for (const later of ["Full backup on this device", "Movies & TV"])
+    assert.ok(labels.indexOf(later) > labels.indexOf("Device discovery"), `${later} follows the network sections`);
+});
+
+const conflictVersion = (path, rev, extra = {}) => ({ volume: "docs", path, rev, created: new Date().toISOString(), size: 11, deleted: false, author: "hub", hash: `h-${rev}`, ...extra });
+const conflictAnswers = (extra = {}) => {
+  const copy = "brief.md.conflict-phone-fold-9f3a";
+  return {
+    "/v1/activity": (args) => (args.route.includes("filter=conflicts") ? { versions: [conflictVersion(copy, 12)], next: null } : { versions: [], next: null }),
+    "/v1/browse": () => ({ entries: [], next: null }),
+    "/v1/history": (args) => ({ versions: [conflictVersion(new URLSearchParams(args.route.split("?")[1]).get("path"), args.route.includes("conflict-") ? 12 : 11)] }),
+    ...extra,
+  };
+};
+const openConflictCard = async (ui) => {
+  await until(() => ui.q('.folder-card[data-id="docs"]'));
+  ui.q('.folder-card[data-id="docs"] .row-main').click();
+  await until(() => ui.q(".folder-conflicts .history-row"));
+};
+
+test("a folder in conflict lists its conflict copies in a card above Files, and a row opens Resolve conflict; with none the card is absent", async (t) => {
+  const ui = await boot(t, hub([{ ...base, id: "docs", name: "docs", conflicts: 1 }]), { answers: conflictAnswers() });
+  await openConflictCard(ui);
+  assert.equal(ui.q(".folder-conflicts h3").textContent, "1 conflict to review");
+  assert.equal(ui.q(".folder-conflicts .history-row strong").textContent, "brief.md.conflict-phone-fold-9f3a");
+  assert.equal(ui.q(".folder-conflicts").nextElementSibling.className, "folder-browser-tools");
+  assert.equal(ui.q(".folder-conflicts [data-action='folder-conflicts']").textContent, "Review");
+  ui.q(".folder-conflicts .history-row").click();
+  await until(() => ui.q("#dialog[open] .conflict-options"));
+  assert.equal(ui.qa(".conflict-options .role-card").length, 2);
+  const clean = await boot(t, hub([{ ...base, id: "docs", name: "docs" }]), { answers: conflictAnswers() });
+  await until(() => clean.q('.folder-card[data-id="docs"]'));
+  clean.q('.folder-card[data-id="docs"] .row-main').click();
+  await until(() => clean.q(".folder-browser-tools"));
+  assert.equal(clean.q(".folder-conflicts"), null);
+});
+
+test("Resolve conflict shows the first line of a text version and a thumbnail for an image, and nothing when the preview fails", async (t) => {
+  const text = await boot(t, hub([{ ...base, id: "docs", name: "docs", conflicts: 1 }]), {
+    answers: conflictAnswers({
+      "/v1/file-preview": (args) => ({ kind: "text", lines: args.route.includes("conflict-") ? ["", "  Ship on Monday.", "second"] : ["Ship on Friday.", "second"], truncated: false }),
+    }),
+  });
+  await openConflictCard(text);
+  text.q(".folder-conflicts .history-row").click();
+  await until(() => text.qa(".conflict-options .conflict-excerpt").length === 2);
+  assert.deepEqual(text.qa(".conflict-options .conflict-excerpt").map((el) => el.textContent), ["Ship on Friday.", "Ship on Monday."]);
+  assert.equal(text.q(".conflict-options .conflict-thumb"), null);
+
+  const copy = "photo.png.conflict-phone-fold-9f3a";
+  const image = await boot(t, hub([{ ...base, id: "docs", name: "docs", conflicts: 1 }]), {
+    answers: conflictAnswers({
+      "/v1/activity": (args) => (args.route.includes("filter=conflicts") ? { versions: [conflictVersion(copy, 12)], next: null } : { versions: [], next: null }),
+      "/v1/gallery/preview": () => ({ data: "data:image/png;base64,AAAA" }),
+    }),
+  });
+  await openConflictCard(image);
+  image.q(".folder-conflicts .history-row").click();
+  await until(() => image.qa(".conflict-options .conflict-thumb").length === 2);
+  assert.equal(image.q(".conflict-options .conflict-excerpt"), null);
+
+  const failing = await boot(t, hub([{ ...base, id: "docs", name: "docs", conflicts: 1 }]), {
+    answers: conflictAnswers({ "/v1/file-preview": () => { throw new Error("gone"); } }),
+  });
+  await openConflictCard(failing);
+  failing.q(".folder-conflicts .history-row").click();
+  await until(() => failing.calls.filter(([route]) => route === "/v1/file-preview").length === 2);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(failing.qa(".conflict-options .role-card").length, 2);
+  assert.equal(failing.q(".conflict-options .conflict-excerpt"), null);
+});

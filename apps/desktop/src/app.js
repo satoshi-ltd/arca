@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.34";
+const APP_VERSION = "0.8.35";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -743,8 +743,8 @@ function previewKind(name) {
 }
 const previewQuery = (volume, path, hash, large) =>
   new URLSearchParams({ volume, path, hash, ...(large ? { size: "large" } : {}) });
-async function loadPreview(volume, path, hash, large = true) {
-  const kind = previewKind(path);
+async function loadPreview(volume, path, hash, large = true, typeName = path) {
+  const kind = previewKind(typeName);
   if (kind === "image" || kind === "video") {
     const result = await cachedPhoto(`/v1/gallery/preview?${previewQuery(volume, path, hash, large && kind === "image")}`);
     return result?.data ? { kind, data: result.data } : { kind: "none" };
@@ -4851,6 +4851,15 @@ function galleryPhotoDate(item) {
     ...(value.length > 10 ? { hour: "2-digit", minute: "2-digit" } : {}),
   });
 }
+let captionTimer;
+function galleryCaption(item) {
+  const meta = item.metadata || {};
+  const detail = [
+    meta.captured ? galleryPhotoDate({ date: meta.captured }) : "",
+    meta.location ? `${meta.location.latitude.toFixed(6)}, ${meta.location.longitude.toFixed(6)}` : "",
+  ].filter(Boolean).join(" · ");
+  return `<p class="mono">${escape(item.path.split("/").pop())}</p>${detail ? `<p>${escape(detail)}</p>` : ""}`;
+}
 // Keep only a small window of decoded previews; share work between navigation and prefetch.
 async function galleryPreview(state, item) {
   state.previews ||= new Map();
@@ -4973,7 +4982,7 @@ async function openGalleryPhoto(index) {
   if (viewing && tile) dialogOpeners.set($("#dialog"), tile);
   state.selected = index;
   modal(
-    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
+    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><div class="photo-viewer-caption">${galleryCaption(item)}</div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
     null,
     "",
     true,
@@ -5030,6 +5039,8 @@ async function openGalleryPhoto(index) {
           }),
       );
       item.metadata = metadata;
+      const caption = $(".photo-viewer-caption");
+      if (caption && infoPanel.isConnected) caption.innerHTML = galleryCaption(item);
       if (infoPanel.isConnected) {
         infoPanel.querySelector(".photo-info-body").innerHTML = galleryInfo(
           item,
@@ -5097,6 +5108,8 @@ async function openGalleryPhoto(index) {
   $(".photo-info-toggle").onclick = () => toggleInfo(!infoExpanded);
   $(".photo-info-close").onclick = () => toggleInfo(false);
   toggleInfo(false);
+  clearTimeout(captionTimer);
+  captionTimer = setTimeout(loadInfo, 150);
   $(".photo-previous").onclick = () => openGalleryPhoto(previousIndex);
   $(".photo-next").onclick = () => openGalleryPhoto(nextIndex);
   $(".photo-file").onclick = () => {
@@ -8999,6 +9012,7 @@ async function renderDetail(pending = false) {
     `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
+  void refreshConflictCard(v, current, pending);
   if (!pending && folderTab === "gallery") mountGallery(v.id);
 
   // Patch only what depends on Recent, so scrolling, focus and typed search survive.
@@ -9019,11 +9033,28 @@ async function renderDetail(pending = false) {
       next.innerHTML = browser;
       next.querySelector(".folder-browser-tools")?.remove();
       for (const child of [...target.children])
-        if (!child.matches(".folder-browser-tools")) child.remove();
+        if (!child.matches(".folder-browser-tools, .folder-conflicts")) child.remove();
       target.append(...next.childNodes);
       icons();
     }
   });
+}
+async function refreshConflictCard(v, current, pending) {
+  if (!v.conflicts || folderTab === "gallery") return;
+  let page;
+  try {
+    page = await readFolderPage(`/v1/activity?volume=${encodeURIComponent(v.id)}&limit=5&filter=conflicts`, pending);
+  } catch {
+    return;
+  }
+  const target = $("#content .detail-revisions");
+  if (!current() || !target || !page?.versions?.length) return;
+  target.querySelector(".folder-conflicts")?.remove();
+  target.insertAdjacentHTML(
+    "afterbegin",
+    `<div class="panel folder-conflicts"><h3>${countLabel(v.conflicts, "conflict")} to review</h3><div class="history-group">${page.versions.map((r) => revisionRow(r, true)).join("")}</div>${button("Review", "folder-conflicts", v.id, "secondary small-button", "triangle-alert")}</div>`,
+  );
+  icons();
 }
 async function renderHistory(
   cursor = "",
@@ -9657,6 +9688,37 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       "Access to this hub",
       `<div class="settings-card">${setting("Authorized devices", "Issue pairing codes and remove devices from this hub.", button("Manage devices", "machines", "", "secondary small-button", "monitor-smartphone"))}</div>`,
     );
+  html += section(
+    "Tailscale",
+    `<div class="settings-card">${setting(
+      "Connection mode",
+      network
+        ? network.mode === "tailscale"
+          ? "Encrypted access through your Tailscale network. Pairing is still required."
+          : "Uses the configured server address without adding a Tailscale listener."
+        : "Network information unavailable.",
+      segmented(
+        "Network mode",
+        ["standalone", "tailscale"].map((m) => ({
+          action: m,
+          label: m === "tailscale" ? "Tailscale" : "Standalone",
+          symbol: m === "tailscale" ? "shield-check" : "cable",
+          active: network?.mode === m,
+          disabled:
+            m === "tailscale" && network?.tailscale.state !== "connected",
+        })),
+      ),
+    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")}${status.port ? ` · port ${status.port}` : ""}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
+  );
+  if (status.role === "hub")
+    html += section(
+      "Local network",
+      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Anyone on that network could read your files and sign-in details, so use it only on a network you trust.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
+    );
+  html += section(
+    "Device discovery",
+    `<div class="settings-card">${setting("Find devices on Tailscale", "Look for Arca on connected devices. Finding a device does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
+  );
   if (!native)
     html += section(
       "Browser session",
@@ -9688,37 +9750,6 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   html += section(
     "Movies &amp; TV",
     status.role === "hub" ? '<div id="video-settings"><p class="hint">Loading video settings…</p></div>' : '<p class="hint">Movies &amp; TV settings live on the hub’s web page.</p>',
-  );
-  html += section(
-    "Tailscale",
-    `<div class="settings-card">${setting(
-      "Connection mode",
-      network
-        ? network.mode === "tailscale"
-          ? "Encrypted access through your Tailscale network. Pairing is still required."
-          : "Uses the configured server address without adding a Tailscale listener."
-        : "Network information unavailable.",
-      segmented(
-        "Network mode",
-        ["standalone", "tailscale"].map((m) => ({
-          action: m,
-          label: m === "tailscale" ? "Tailscale" : "Standalone",
-          symbol: m === "tailscale" ? "shield-check" : "cable",
-          active: network?.mode === m,
-          disabled:
-            m === "tailscale" && network?.tailscale.state !== "connected",
-        })),
-      ),
-    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")}${status.port ? ` · port ${status.port}` : ""}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
-  );
-  if (status.role === "hub")
-    html += section(
-      "Local network",
-      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Anyone on that network could read your files and sign-in details, so use it only on a network you trust.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
-    );
-  html += section(
-    "Device discovery",
-    `<div class="settings-card">${setting("Find devices on Tailscale", "Look for Arca on connected devices. Finding a device does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
   );
   html += section(
     "Service",
@@ -10131,6 +10162,12 @@ function checkFolderPath(name, id = "") {
       if (serial !== sequence || !row.isConnected) return;
       const needed = selection && catalog.find((v) => v.id === id)?.bytes;
       const capacity = `${Number.isFinite(needed) ? `Needs ${bytes(needed)} · ` : ""}${bytes(result.freeBytes)} free`;
+      const short = (download) => Number.isFinite(download) && Number.isFinite(result.freeBytes) && download > result.freeBytes;
+      const refuse = (download) => {
+        setMessage(row, `Not enough space: ${bytes(download)} to download · ${bytes(result.freeBytes)} free`, "error");
+        $("#submit-dialog").disabled = true;
+      };
+      if (!result.exists && short(needed)) return refuse(needed);
       setMessage(
         row,
         selection
@@ -10147,6 +10184,7 @@ function checkFolderPath(name, id = "") {
           });
           if (serial !== sequence || !row.isConnected) return;
           const p = counted.preview;
+          if (p?.complete && short(needed - p.bytes)) return refuse(needed - p.bytes);
           setMessage(
             row,
             p?.complete
@@ -10445,6 +10483,23 @@ function authorName(id) {
     `Device ${String(id).slice(0, 8)}`
   );
 }
+function showConflictPreviews(volume, versions, dialog) {
+  const cards = dialog.querySelectorAll(".conflict-options .role-card");
+  versions.forEach(([version, path], index) => {
+    if (version.deleted || !["text", "image"].includes(previewKind(versions[0][1]))) return;
+    loadPreview(volume, path, version.hash, false, versions[0][1])
+      .then((preview) => {
+        const card = cards[index];
+        if (!card?.isConnected || card.querySelector(".conflict-excerpt, .conflict-thumb")) return;
+        if (preview.data) card.insertAdjacentHTML("beforeend", `<img class="conflict-thumb" alt="" src="${escape(preview.data)}">`);
+        else {
+          const line = preview.lines?.find((text) => text.trim());
+          if (line) card.insertAdjacentHTML("beforeend", `<p class="conflict-excerpt">${escape(line.trim())}</p>`);
+        }
+      })
+      .catch(() => {});
+  });
+}
 async function reviewConflict(item) {
   if (
     status.role !== "hub" &&
@@ -10539,6 +10594,14 @@ async function reviewConflict(item) {
     true,
   );
   $("#dialog").classList.add("conflict-dialog");
+  showConflictPreviews(
+    item.volume,
+    [
+      [original, originalPath],
+      [conflict, conflictPath],
+    ],
+    $("#dialog"),
+  );
   const extra = $("#dialog-content .form-actions");
   extra.id = "dialog-extra-actions";
   $("#dialog-form > .dialog-actions").prepend(extra);

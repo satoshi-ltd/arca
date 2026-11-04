@@ -2623,6 +2623,19 @@ html:has(.tray-body) {
   font-family: var(--font-ui);
   font-size: var(--text-body);
 }
+.conflict-options .role-card .conflict-excerpt {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conflict-thumb {
+  width: calc(var(--detail-tile) * 2);
+  height: calc(var(--detail-tile) * 2);
+  object-fit: cover;
+  border-radius: var(--r-control);
+}
 
 /* Handoff text stacks use normal UI leading, with explicit leading for prose. */
 .folder-card .row-main {
@@ -2743,6 +2756,18 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+.folder-conflicts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.folder-conflicts h3 {
+  margin: 0;
+}
+.folder-conflicts .history-group {
+  align-self: stretch;
 }
 .section-heading {
   display: flex;
@@ -3995,6 +4020,30 @@ dialog.photo-viewer {
   padding: var(--space-3) var(--space-4);
   z-index: 2;
   background: linear-gradient(var(--mediaFade), transparent);
+}
+.photo-viewer-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  background: linear-gradient(transparent, var(--mediaFade));
+  color: var(--onMedia);
+  font-size: var(--text-control);
+  pointer-events: none;
+}
+.photo-viewer-caption p {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.photo-info-open .photo-viewer-caption {
+  display: none;
 }
 .photo-viewer-operations {
   display: flex;

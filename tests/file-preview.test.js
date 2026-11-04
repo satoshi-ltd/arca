@@ -35,6 +35,14 @@ async function fixture(t) {
   return { daemon, v, api, add, preview };
 }
 
+test("a conflict copy previews by its original name", async (t) => {
+  const f = await fixture(t);
+  const text = await f.add("brief.md.conflict-phone123-ab12cd34-7", "Ship on Monday.\nsecond");
+  const image = await f.add("photo.png.conflict-phone123-ab12cd34-7", "not really an image");
+  assert.deepEqual(await f.preview("brief.md.conflict-phone123-ab12cd34-7", text.hash), { kind: "text", lines: ["Ship on Monday.", "second"], truncated: false, size: text.size });
+  assert.deepEqual(await f.preview("photo.png.conflict-phone123-ab12cd34-7", image.hash), { kind: "none" });
+});
+
 test("a text file previews its first lines, other types and binary files preview nothing", async (t) => {
   const f = await fixture(t);
   const long = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
@@ -243,4 +251,16 @@ test("search folds case for any script, ranks an older exact name above newer pa
   store.visibleRules = () => { throw new Error("broken ignore policy"); };
   assert.deepEqual((await search("report")).files, [], "a volume with an unreadable ignore file is skipped instead of failing the search");
   store.visibleRules = original;
+});
+
+test("only a real conflict suffix is stripped for typing, so a copy of a copy and lookalikes stay unpreviewed", async (t) => {
+  const { withoutConflictSuffix } = await import("../packages/daemon/file-preview.js");
+  assert.equal(withoutConflictSuffix("brief.md.conflict-phone123-ab12cd34-7"), "brief.md");
+  assert.equal(withoutConflictSuffix("foo.conflict-x.bak"), "foo.conflict-x.bak");
+  assert.equal(withoutConflictSuffix("conflict-notes.md"), "conflict-notes.md");
+  const f = await fixture(t);
+  const twice = await f.add("brief.md.conflict-a1.conflict-b2", "text");
+  const lookalike = await f.add("notes.conflict-x.bak", "text");
+  assert.deepEqual(await f.preview("brief.md.conflict-a1.conflict-b2", twice.hash), { kind: "none" });
+  assert.deepEqual(await f.preview("notes.conflict-x.bak", lookalike.hash), { kind: "none" });
 });

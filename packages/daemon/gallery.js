@@ -6,6 +6,7 @@ import path from "node:path";
 import sharp from "sharp";
 import exifr from "exifr";
 import { fail } from "./storage.js";
+import { withoutConflictSuffix } from "./file-preview.js";
 import { PREVIEW_SIZES } from "./preview-sizes.js";
 import { mediaKind, galleryDate, realDate } from "../core/gallery-date.js";
 
@@ -553,7 +554,8 @@ export class Gallery {
       s.visibleRules(volume)(name, false)
     )
       fail("This photo is no longer available", 404);
-    if (!mediaKind(name)) return { unavailable: true };
+    const typed = withoutConflictSuffix(name);
+    if (!mediaKind(typed)) return { unavailable: true };
     const key = `${hash}:${size}`;
     if (regenerate) await this.discard(hash, size);
     if (this.cache.has(key)) {
@@ -577,7 +579,7 @@ export class Gallery {
     const scaled = size === "medium" && this.cachedLarge(hash);
     const source = scaled || original();
     if (!source) fail("Sync this photo before previewing it", 409);
-    const job = this.render(name, source, size, key, diskKey, disk, scaled && original).finally(
+    const job = this.render(typed, source, size, key, diskKey, disk, scaled && original).finally(
       () => this.pending.delete(key),
     );
     this.pending.set(key, job);
