@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.40 — 2026-11-04
+
+- HEIC and HEIF previews decode at most two at a time, refuse photos above 50 megapixels and pass the decoded pixels on without copying them, so a burst of large iPhone photos uses at most about 1.5 GB instead of growing with every request.
+
+Needs: desktop build · hub redeploy
+
 ## 0.8.39 — 2026-11-04
 
 - The desktop no longer opens synced programs and launchers of the common kinds (`.app`, `.command`, `.sh`, `.exe`, `.bat`, `.lnk`, `.AppImage` and the others SPEC lists): their file detail offers only Show in Finder or Show in folder, and the app reveals such a file even if asked to open it.

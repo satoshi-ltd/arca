@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
@@ -1943,4 +1944,18 @@ test("a replica forgets the added dates of a share it stops syncing", async (t) 
   } finally {
     await replica.close();
   }
+});
+
+test("HEIC previews render at most two at a time and refuse images above the pixel limit", async () => {
+  const { heicPreview, heicPeak, HEIC_MAX_PIXELS } = await import("../packages/daemon/heic-preview.js");
+  assert.equal(HEIC_MAX_PIXELS, 50000000);
+  const file = fileURLToPath(new URL("./fixtures/gallery.heic", import.meta.url));
+  const { width, height, bytes } = await heicPreview(file, "thumb", true);
+  assert.ok(bytes.length > 0);
+  const exact = await heicPreview(file, "thumb", true, width * height);
+  assert.equal(exact.width, width, "an image exactly at the limit renders");
+  await assert.rejects(heicPreview(file, "thumb", false, width * height - 1), /HEIC dimensions exceed preview limit/);
+  const four = await Promise.all([1, 2, 3, 4].map(() => heicPreview(file, "thumb")));
+  assert.equal(four.length, 4);
+  assert.equal(heicPeak(), 2, "four requests never decode more than two at once");
 });

@@ -14,7 +14,31 @@ export function isHeifContent(file) {
     fs.closeSync(fd);
   }
 }
-export function heicPreview(file, size = "thumb", dimensions = false) {
+export const HEIC_MAX_PIXELS = 50000000;
+const HEIC_RENDERS = 2;
+const waiting = [];
+let active = 0,
+  peak = 0;
+export const heicPeak = () => peak;
+async function slot() {
+  if (active >= HEIC_RENDERS) await new Promise((resolve) => waiting.push(resolve));
+  else active++;
+  peak = Math.max(peak, active);
+  return () => {
+    const next = waiting.shift();
+    if (next) next();
+    else active--;
+  };
+}
+export async function heicPreview(file, size = "thumb", dimensions = false, maxPixels = HEIC_MAX_PIXELS) {
+  const release = await slot();
+  try {
+    return await render(file, size, dimensions, maxPixels);
+  } finally {
+    release();
+  }
+}
+function render(file, size, dimensions, maxPixels) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL("./heic-preview-worker.js", import.meta.url),
@@ -23,8 +47,10 @@ export function heicPreview(file, size = "thumb", dimensions = false) {
           file,
           edge: PREVIEW_SIZES[size].edge,
           quality: PREVIEW_SIZES[size].quality,
+          maxPixels,
         },
         execArgv: [],
+        resourceLimits: { maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 32 },
       },
     );
     const finish = (error, jpeg, width, height) => {

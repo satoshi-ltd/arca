@@ -17,7 +17,7 @@ try {
   if (!image) throw new Error("No HEIC image found");
   const width = image.get_width(),
     height = image.get_height();
-  if (!(width > 0 && height > 0) || width * height > 100000000)
+  if (!(width > 0 && height > 0) || width * height > workerData.maxPixels)
     throw new Error("HEIC dimensions exceed preview limit");
   const pixels = await new Promise((resolve, reject) => {
     image.display(
@@ -27,7 +27,7 @@ try {
     );
   });
   // libheif applies the container's orientation during decoding.
-  const jpeg = await sharp(Buffer.from(pixels), {
+  const jpeg = await sharp(Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), {
     raw: { width, height, channels: 4 },
   })
     .resize(workerData.edge, workerData.edge, {
