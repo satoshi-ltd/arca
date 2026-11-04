@@ -169,6 +169,40 @@ function embeddedQuery(query) {
   return { hash: query.get("hash"), stream, poll: query.get("poll") === "1" };
 }
 
+const keptHere = (engine, volume) => engine.store.volumes().some((v) => v.id === volume && v.selected);
+
+function withoutLocalDeletions(engine, volume, value) {
+  if (!keptHere(engine, volume)) return value;
+  const listed = new Set([
+    ...(value.movies || []),
+    ...(value.other || []),
+    ...(value.shows || []).flatMap((show) => show.seasons.flatMap((season) => season.episodes)),
+  ].map((item) => item.path));
+  const gone = engine.store.db
+    .prepare(`SELECT path FROM ${engine.store.fileSource()} WHERE volume=? AND deleted=1 ORDER BY path`)
+    .all(volume)
+    .map((row) => row.path)
+    .filter((name) => listed.has(name));
+  if (!gone.length) return value;
+  const removed = new Set(gone);
+  const keep = (item) => !removed.has(item.path);
+  const shows = (value.shows || [])
+    .map((show) => ({
+      ...show,
+      seasons: show.seasons
+        .map((season) => ({ ...season, episodes: season.episodes.filter(keep) }))
+        .filter((season) => season.episodes.length),
+    }))
+    .filter((show) => show.seasons.length);
+  return {
+    ...value,
+    version: `${value.version}-${digest(gone.join("\0")).slice(0, 12)}`,
+    movies: (value.movies || []).filter(keep),
+    other: (value.other || []).filter(keep),
+    shows,
+  };
+}
+
 export async function replicaLibrary(context, volume, known, stop = null) {
   const { engine, s } = context;
   const key = `${engine.config.hub?.id || ""}:video-library:${volume}`;
@@ -199,6 +233,7 @@ export async function replicaLibrary(context, volume, known, stop = null) {
     value = downloaded || { ...cached, offline: true };
     if (engine.videoDownloads) value = engine.videoDownloads.queued(volume, value);
   }
+  value = withoutLocalDeletions(engine, volume, value);
   if (known && known === value.version)
     return {
       version: value.version,
@@ -431,6 +466,15 @@ export async function videoRoute(context) {
     if (hub) {
       if (!video.isVideo(body.volume)) fail("This folder is not a video library", 404);
       deleted = await context.authorizedWork(() => engine.deleteFile(body.volume, body.path, body.rev));
+    } else if (keptHere(engine, body.volume)) {
+      if (!video.isVideo(body.volume)) fail("This folder is not a video library", 404);
+      deleted = await context.authorizedWork(async () => {
+        const synced = engine.store.current(body.volume, body.path);
+        if (synced && !synced.deleted && synced.rev === Number(body.rev)) return engine.deleteFile(body.volume, body.path, body.rev);
+        if (synced && !synced.deleted && !(await engine.unchangedCopy(body.volume, body.path)))
+          fail("This copy has changes that have not reached the hub yet. Try again after it syncs.", 409);
+        return forward(engine, "/v1/delete-file", { volume: body.volume, path: body.path, rev: body.rev });
+      });
     } else deleted = await forward(engine, "/v1/delete-file", { volume: body.volume, path: body.path, rev: body.rev });
     const downloads = engine.videoDownloads;
     if (downloads) downloads.forget(downloads.rows(body.volume).filter((row) => row.path === body.path));

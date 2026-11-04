@@ -692,6 +692,87 @@ test("a replica that only streams a library deletes a title through the hub and 
   await assert.rejects(r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev }), { status: 404 });
 });
 
+async function keptLibrary(t, f) {
+  const r = await replicaOf(t, f);
+  const destination = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-kept-")), "Videos");
+  t.after(() => fs.rmSync(path.dirname(destination), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  await r.call("/v1/select", { id: f.v.id, mode: "keep", path: destination });
+  await r.replica.engine.cycle();
+  return { r, destination };
+}
+
+test("a replica that keeps a library deletes a title locally, preserves an unsynced edit, and sync carries the deletion", async (t) => {
+  const f = await hub(t);
+  const { name } = await movieLibrary(f);
+  const { r, destination } = await keptLibrary(t, f);
+  const local = path.join(destination, ...name.split("/"));
+  const library = await r.call(`/v1/video/library?volume=${f.v.id}`);
+  const kept = library.movies[0];
+  assert.ok(fs.existsSync(local), "the library is kept here");
+  assert.equal((await r.call(`/v1/video/library?volume=${f.v.id}&version=${encodeURIComponent(library.version)}`)).unchanged, true);
+  const hubRev = f.s.current(f.v.id, name).rev;
+  const trashed = [];
+  r.replica.engine.moveToTrash = async (files) => {
+    for (const file of files) trashed.push(fs.readFileSync(file, "utf8"));
+    for (const file of files) fs.rmSync(file);
+  };
+  fs.writeFileSync(local, "edited here, never synced");
+  await r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: kept.rev });
+  assert.deepEqual(trashed, ["edited here, never synced"], "the unsynced edit goes to the Trash, never lost");
+  assert.equal(fs.existsSync(local), false, "the kept copy is removed here");
+  assert.equal(f.s.current(f.v.id, name).rev, hubRev, "the delete ran on this copy, not on the hub");
+  const listed = await r.call(`/v1/video/library?volume=${f.v.id}`);
+  assert.deepEqual(listed.movies, [], "the library stops listing the deleted title before sync");
+  const before = await r.call(`/v1/video/library?volume=${f.v.id}&version=${encodeURIComponent(library.version)}`);
+  assert.notEqual(before.unchanged, true, "a client holding the old version sees the change");
+  await r.replica.engine.cycle();
+  await f.daemon.engine.cycle();
+  assert.equal(f.s.current(f.v.id, name).deleted, 1, "sync carries the deletion to the hub");
+  offline(r);
+  assert.deepEqual((await r.call(`/v1/video/library?volume=${f.v.id}`)).movies, [], "the cached library offline does not bring the title back");
+  assert.ok(fs.existsSync(f.s.versionFile(f.v.id, f.s.history(f.v.id, name).find((row) => !row.deleted).hash)), "the hub keeps the version beside the folder");
+});
+
+test("a kept copy behind the hub deletes through the hub, unless it holds an unsynced edit", async (t) => {
+  const f = await hub(t);
+  const { name } = await movieLibrary(f);
+  const { r, destination } = await keptLibrary(t, f);
+  const local = path.join(destination, ...name.split("/"));
+  fs.writeFileSync(path.join(f.v.path, ...name.split("/")), clip({ seconds: 3, tone: 777 }));
+  await f.daemon.engine.cycle();
+  await f.settled();
+  const behind = (await r.call(`/v1/video/library?volume=${f.v.id}`)).movies[0];
+  assert.notEqual(behind.rev, r.replica.engine.store.current(f.v.id, name).rev, "the library shows the hub's newer revision");
+  fs.writeFileSync(local, "edited here, never synced");
+  await assert.rejects(r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: behind.rev }), { status: 409, message: "This copy has changes that have not reached the hub yet. Try again after it syncs." });
+  assert.equal(fs.readFileSync(local, "utf8"), "edited here, never synced");
+  assert.equal(f.s.current(f.v.id, name).deleted, 0, "the hub keeps the title");
+  fs.rmSync(local);
+  const second = await keptLibrary(t, f);
+  const fresh = (await second.r.call(`/v1/video/library?volume=${f.v.id}`)).movies[0];
+  fs.writeFileSync(path.join(f.v.path, ...name.split("/")), clip({ seconds: 3, tone: 555 }));
+  await f.daemon.engine.cycle();
+  await f.settled();
+  const newer = (await second.r.call(`/v1/video/library?volume=${f.v.id}`)).movies[0];
+  assert.notEqual(newer.rev, fresh.rev);
+  await second.r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: newer.rev });
+  assert.equal(f.s.current(f.v.id, name).deleted, 1, "an unchanged copy behind the hub deletes on the hub");
+});
+
+test("a replica refuses a video delete in a kept folder that is not a video library", async (t) => {
+  const f = await hub(t);
+  const notes = f.s.addVolume("Notes");
+  fs.writeFileSync(path.join(notes.path, "a.txt"), "a");
+  await f.daemon.engine.cycle();
+  const r = await replicaOf(t, f);
+  const destination = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-notes-")), "Notes");
+  t.after(() => fs.rmSync(path.dirname(destination), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  await r.call("/v1/select", { id: notes.id, path: destination });
+  await r.replica.engine.cycle();
+  await assert.rejects(r.call("/v1/video/delete", { volume: notes.id, path: "a.txt", rev: r.replica.engine.store.current(notes.id, "a.txt").rev }), { status: 404, message: "This folder is not a video library" });
+  assert.ok(fs.existsSync(path.join(destination, "a.txt")));
+});
+
 test("the hub deletes a video through the same route, only in video libraries", async (t) => {
   const f = await hub(t);
   const { movie, name } = await movieLibrary(f);

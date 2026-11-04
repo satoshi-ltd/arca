@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.37 — 2026-11-04
+
+- A desktop or server replica that keeps a Movies & TV library deletes a movie or episode from its own copy and lets sync carry the deletion, so an edit that never reached the hub goes to the Trash instead of being overwritten; a replica that only streams still deletes through the hub.
+- Arca 0.8 is the phase 1 release.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.8.36 — 2026-11-04
 
 - In the video player the 10 and 30 second skip buttons show their number beside the arrow instead of on top of it, where it was unreadable.

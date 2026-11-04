@@ -1,6 +1,7 @@
 const file = (path, extra = {}) => ({
   path,
   hash: `h-${path}`,
+  rev: 7,
   size: 4.2 * 1024 ** 3,
   duration: 2880,
   width: 1920,

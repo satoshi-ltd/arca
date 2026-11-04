@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-31 · Phase 1 functional, not release-qualified.
+Updated 2026-11-04 · Phase 1 release.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,7 +26,55 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **SEC-BACKUP-SCRUB** — Detect damaged objects without falsely acknowledging backup
+  `bug · agent · normal`
+  accept: detect and report corrupt objects by hash without logging contents, continue checking unrelated objects, and allow retry or repair. Never acknowledge a revision as backed up without its verified content, or release its retention hold; tests corrupt an object and verify both the error and the acknowledgement boundary. Hourly maintenance checks a bounded batch of stored objects and reports corruption.
+- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
+  `bug · agent · normal`
+  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
+- **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
+  `bug · agent · normal`
+  accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
+- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
+  `chore · agent · normal`
+  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
+  This is a guard against unintended actions, not a security boundary: the replica supplies its own report, and the single-owner model grants a linked credential access across folders. A compromised device can report another folder; per-device folder ACLs are outside the current product contract.
+- **VIDEO-REMOVE-WINDOWS-SESSION** — Remove from this device fails on Windows for about a minute after closing a compatible-stream video
+  `bug · agent · normal`
+  Closing the desktop player never ends the hub-style HLS session the replica started on its downloaded copy, and on Windows FFmpeg keeps the file open until it finishes or the 60 s idle sweep ends it, so Remove answers 409 "Close the video before removing its download" about a closed video; a replacement download hits the same BUSY path and pruning silently leaves the file. Accept: sessions keep their source, removing or replacing a download first ends the sessions reading that file and waits for FFmpeg to exit, and `tests/video-downloads.test.js` drops its `videoSessions.halt()` stop-gap and still passes on Windows.
+- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
+  `bug · agent · low`
+  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
+- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
+  `feature · agent · low`
+  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
+- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
+  `chore · agent · normal`
+  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
+- **SEC-SIGNING-STEP** — The updater key never enters the build graph
+  `chore · agent · normal`
+  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures. Follow-up `verify` on the next real release; do not assume `createUpdaterArtifacts` succeeds without a key.
+- **SEC-DEPS** — Dependency advisories are checked in CI
+  `chore · agent · normal`
+  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
+- **SEC-MOBILE-MANIFEST** — Limit Android cover-provider access without breaking external players
+  `chore · agent · normal`
+  accept: limit `CoverProvider` to authorized cover consumers with URI grants or another appropriate mechanism, while preserving Media3 notifications and Android Auto; tests exercise access and grants. A follow-up `verify` checks external controllers in a native build. The provider currently serves covers to other apps, so making it private without working grants is not sufficient.
+- **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting in a folder that is no longer a video library gets the hub's video-library message
+  `bug · agent · low`
+  The hub's `/v1/delete-file` answers a linked replica outside a video library with "Local administrator credential required" instead of "This folder is not a video library", which a stale replica catalog can surface. Accept: the hub's linked branch fails with the video-library message (404), with a test through a replica's `/v1/video/delete`.
+- **VIDEO-DELETE-TESTS** — Error paths of a replica's video delete
+  `chore · agent · low`
+  Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
+- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
+  `chore · agent · low`
+  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a hub redeploy to verify.
+- **DESK-ZOOM-CHROME** — Window-control offsets follow the zoom level
+  `bug · agent · normal`
+  accept: `installDesktopZoom` publishes the zoom as a CSS custom property and the window-controls inset, the controls drop and `.window-drag` divide by it, so at 70% the photo viewer's Back button and the sidebar lockup clear the native traffic lights and at 150% they do not drift away; the 760 px breakpoint is evaluated in unzoomed window pixels so a normal window at 130–150% keeps the full sidebar. Tests cover the property and the computed offsets; a follow-up `verify` checks a macOS desktop build at 70%, 100% and 150%.
+- **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
+  `bug · agent · low`
+  accept: dialogs whose content outgrows the window (Choose folders, Restore versions with many rows) scroll their body while the title and the action row stay visible at the 620 px minimum height, as form dialogs already do; a DOM test fills a dialog past the window height.
 
 ## In progress
 
@@ -34,79 +82,16 @@ _None._
 
 ## Needs maintainer
 
-### Builds and deployments
+### Waiting for evidence
 
-- **VERIFY-HUB-RELOCATE** — Follow a moved hub from an installed desktop and phone
-  `verify · maintainer · high`
-  After a desktop build and a native build, move a desktop replica and a phone to a copied hub with Change address… (the hub row's ⋯). Accept: both keep syncing, nothing re-downloads, the hub's roster gains no entry, and the Streaming tag and offline captions read as SPEC says.
-
-- **VERIFY-DOCKER-NET** — Network policy through Docker's published ports
-  `verify · maintainer · high`
-  accept: with a disposable candidate container, confirm first web login through the default localhost binding, then pairing and authenticated requests through Tailscale and LAN bindings with the LAN option on and off. Record the socket peer seen inside the container and verify a gateway address does not get mistaken for a verified tailnet peer. Check a configured HTTPS proxy separately; do not expose or alter the production servers.
-
-- **VERIFY-LOCAL-WATCHERS** — Native filesystem notifications on the maintainer Mac
-  `verify · maintainer · high`
-  accept: raw `fs.watch` delivers repeated changes in recursive and per-directory modes on this Mac, including after streams close and reopen, and the native watcher integration tests execute without capability skips. Identify the OS or resource cause if delivery stays silent; an independent probe reproduced the loss without loading Arca. The capability guard now checks sustained delivery and reopening, while deterministic tests cover the guard itself; passing source suites does not establish that this host's native notifications recovered.
-
-- **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on the hub
-  `verify · maintainer · normal`
-  accept: shipped installers and the hub carry the production dependencies (Sharp, exifr) and the gallery opens on both.
-
-### Device checks
-
-- **VERIFY-ANDROID-SECURITY** — Verify Android backup and permissions
-  `verify · maintainer · normal`
-  accept: inspect the merged manifest in a new Android build: cloud backup is disabled and the overlay permission is absent; on a disposable install check pairing, gallery, background sync, music notifications and Android Auto. Confirm that a phone migration still copies app data, as Android 12+ ignores `allowBackup` for device-to-device transfers. Source configuration alone does not establish the installed manifest or device behavior.
-
-- **VERIFY-PLAYER-SECURITY** — Player media after hub hardening
-  `verify · maintainer · normal`
-  accept: after deploying the candidate hub, arca TV plays gallery images and videos and Audio tracks, including seeks, and no longer opens removed or replaced media; record the hub and TV versions. Source tests do not establish behavior on the installed TV.
-
-- **VERIFY-ERASE-PRIVACY** — Erase privacy on installed desktop and mobile clients
-  `verify · maintainer · high`
-  accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch; on Android and iOS, Arca's scheduled and delivered notifications and its background-sync registration are gone, and tapping an old notification during or after the erase does nothing. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
-
-- **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
-  `verify · maintainer · high`
-  accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
-- **FOLD-STORAGE** — Account for persistent storage on the Fold
-  `verify · maintainer · high`
-  accept: after sync and a restart, account separately for complete working copies, pending originals, transfer staging, databases and derivative caches. No unexplained second full copy or unbounded staging growth remains; low-space recovery preserves pending originals and existing working files. Never remove live files to meet a storage target.
-- **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
-  `verify · maintainer · high`
-  accept: identify the candidate SHA and installed binary; with originals fully synchronized and thumbnails already generated, measure process launch, first photo rows and first visible thumbnails after force-stop, both connected and in airplane mode, on a gallery above 2,000 photos. Also check grid thumbnails and video posters while folders sync, HEIC, the viewer's immediate thumbnail, offline originals and recovery of failed derivatives. Record timings, cache presence and native errors for grey tiles or crashes after suspension and cold start; source fixes alone do not close this task.
-- **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
-  `verify · maintainer · high`
-  accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
-- **P2-GALLERY** — Album uploads on physical devices
-  `verify · maintainer · high`
-  accept: original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (limited access and editor workflows included), and a Samsung run with a library over 10 GiB covering screen-off/background continuity, battery restrictions, interruption and resumed completion. Pending picks survive process termination, lost upload responses and low storage without losing names, duplicating accepted paths or deleting Photos originals. Verify the historical archive and real-phone uploads before removing Immich or claiming a migration.
-- **P2-GALLERY-DELETE-DEVICE** — Shared gallery deletion on devices
-  `verify · maintainer · high`
-  accept: with disposable photos on Android and iOS: direct shared deletion, Live Photo groups, connection failure, partial selection failure and unchanged Photos originals; deletions persist across remounts; non-recursive directory deletion works (Android `Files.delete`, iOS `rmdir`).
-- **P2-MOBILE** — Mobile replica acceptance
-  `verify · maintainer · high`
-  accept: complete persistent copies, honest incomplete-work reporting, imports reaching the hub, resumable transfers without corruption, no data loss on suspension; low storage, interrupted downloads, revoked credentials and offline access. Reimporting a file preserves edited conflict copies; failed imports preserve existing files. Cached views remain usable during slow refreshes and back navigation. Check keyboard handling and text scaling on phone, Fold and iOS; launcher and splash in a standalone build; rename; APK opening on Samsung; Fold sticky scroll; settings visuals; iOS LAN pairing; name propagation; Fold throughput.
-- **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
-  `verify · maintainer · normal`
-  accept: on a Windows and a Linux desktop build, a file detail's Show in folder and the photo viewer's open the file's own folder (Explorer with the file selected on Windows, a file manager on the file's folder on Linux), including a file in a nested folder, a path with spaces and, on Windows, a path longer than 260 characters (the verbatim prefix is stripped for Explorer).
-- **FOLD-GALLERY-UX** — Gallery gestures and playback
-  `verify · maintainer · normal`
-  accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
-- **P2-VIDEO** — Video on physical devices
-  `verify · maintainer · normal`
-  accept: identify the 0.8 candidate and running builds; verify Movies & TV on desktop, web, Android, iOS and arca TV with direct and compatible playback, alternate audio, sidecar and embedded subtitles, long seeks, resume between devices, offline downloads, network loss, rotation and local posters on iOS. On disposable hub state, verify Erase stops active playback and removes temporary media; measure CPU and temporary-disk use during long high-bitrate streams, including Windows. Source tests do not establish these device results.
-- **P2-SHARING** — Incoming sharing
-  `verify · maintainer · low`
-  accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
+- **MOB-SHARE-SAVE** — Sending a file to Arca on the phone sometimes does not save it
+  `bug · agent · high`
+  Reported by the maintainer on 2026-11-04 and still happening; waiting for the maintainer's screenshots the next time it fails, with the entry point, device and source app. Known weak spots in `IncomingShare.jsx` and `incoming-files.js`: on Android `native.receiveShared` has no timeout, so a stalled provider leaves "Preparing files…" up and ignores later shares; a size mismatch reports "The shared file is incomplete". Accept: a test that reproduces the reported failure and passes with the fix; a stalled receive ends with an actionable error and the next share is accepted.
 
 ### Phone sync (native follow-ups)
 
 The JavaScript side of the phone sync audit shipped (per-file verification, no re-hash of downloads, one inventory per run, deferred download recovery, outage hold, 1 Hz progress, the long-lived preview queue). What remains needs native code; the loop writes it with JS and contract tests, a maintainer build proves it.
 
-- **VERIFY-PHONE-SYNC** — Phone sync cadence on the Fold and an iPhone
-  `verify · maintainer · high`
-  accept: after reloading the JavaScript on the Fold and an iPhone, a podcast folder of several 100 MB episodes downloads to the end with the app open and through a Wi-Fi drop of a minute (one Android notification throughout), an open photo folder that is still downloading shows "N photos still downloading" and its Preparing previews row reaches its total and disappears, Sync now on a large folder returns in seconds instead of re-reading every file, and the app stays responsive while it syncs.
 - **NAT-IOS-HASH** — Native hashing on iOS
   `feature · agent · high`
   accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js` (today every download verification, scan and preview check on iOS hashes in JavaScript and blocks the UI); device evidence under VERIFY-NAT-IOS-HASH.
@@ -129,37 +114,6 @@ The JavaScript side of the phone sync audit shipped (per-file verification, no r
   `feature · agent · low`
   accept: `replaceFile` runs its fsyncs and rename as an async native function on Android and iOS, `files.js` awaits it, and the recovery contract (a failure before the rename leaves the destination untouched) keeps its tests; device evidence rides on VERIFY-NAT-TRANSFER-STREAM.
 
-### Phase 1 qualification
-
-Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sync, independent destinations, offline edits, reconnection, conflict preservation, deletion, restoration, revocation and restart recovery; backup restore is checked independently; web authentication and unauthorized access are verified; users can identify the managed machine and recover from errors without guessing.
-
-Qualification evidence identifies one candidate version/SHA and the running builds, dataset, duration and result. Source tests, published artifacts, deployment and real-device verification are separate gates. Data-preservation fixes and recovery qualification take precedence over new features and visual work; pending Proposed fixes still need approval before implementation.
-
-- **P1-LOAD** — Sustained load
-  `verify · maintainer · high`
-  accept: a 24-hour run on a disposable dataset of at least 100,000 entries with concurrent replicas, edits, reconnects and large transfers; record CPU/RSS/disk growth, HTTP and mutation latency, pause/unlink responsiveness and snapshot-lease cleanup. After activity settles, content hashes agree, queues drain and resource use returns to a bounded idle level. Workloads containing application state use safe test copies.
-- **P1-RECOVERY** — Recovery drill
-  `verify · maintainer · high`
-  accept: on disposable state, interrupt a transfer and an acknowledged replacement with process termination and physical power loss, then restart and reconcile. Independently restore a full backup into a fresh isolated hub after the original hub is unavailable; compare current file hashes, retained history and deletions against the expected dataset, including after retention/GC. Record any lost acknowledgement or bytes; never reset production state or enable its backup incidentally. A directory flush that fails after the rename is reported but not repeated on recovery (the file already matches, so `replaceFile` is not called again), and iOS `fsync` is not `F_FULLFSYNC`; decide whether the drill needs either.
-- **P1-RELEASE** — Installer acceptance
-  `verify · maintainer · high`
-  accept: the candidate's exact SHA has successful hosted `publish`, `publish-docker` and `publish-site` runs; its installers install and launch on each supported platform. Published assets, updater signatures and image tags identify that candidate; Docker amd64/arm64 smoke checks and the macOS installer retry pass. Record hosted evidence separately from `validate-local`.
-- **P1-UPDATER** — Real desktop update
-  `verify · maintainer · high`
-  accept: update to the candidate from a prior published version on macOS (with and without Launch at login), Windows NSIS and Linux AppImage/deb. Verify signatures, unchanged identity/selections/files, exactly one running daemon answering under the new version, and recovery after a failed install or spawn. Verify hosted `.deb.sig` generation; qualify Windows unattended recovery under WIN-UPDATE-WATCHER.
-- **P1-SCHEDULER** — Scheduler measurements
-  `verify · maintainer · normal`
-  accept: idle wakeups, CPU, disk reads, traffic, battery and recovery correctness measured before any timing default changes.
-- **P1-UX** — Native binary acceptance
-  `verify · maintainer · normal`
-  accept: tray transitions, light/dark menu bars, reduced motion, long paths, dialogs, offline startup and error recovery; real sleep/wake on macOS, Windows and Linux; OS notifications, activation and click routing on Windows and Linux; the native gallery Save dialog and Maps launch; the 320 px tray viewport, device identity and hub-only role labels in Tauri, and WebKit/Windows motion.
-- **P1-SERVER-ONBOARDING** — Server onboarding acceptance
-  `verify · maintainer · normal`
-  accept: real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding](SPEC.md#server-onboarding).
-- **WIN-RECYCLE** — Recycle Bin on real Windows
-  `verify · maintainer · normal`
-  accept: relinking a replica on a fixed Windows drive moves outdated files to the Recycle Bin, and a file larger than the bin or a disabled bin is refused rather than deleted (only a simulated PowerShell covers this today).
-
 ### Music
 
 - **MOB-SLEEP-FADE** — The phone's sleep timer fades out before pausing
@@ -178,8 +132,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `decision · maintainer · normal`
 - **DEC-RENAME-MODIFIED** — Allow renaming modified synced files?
   `decision · maintainer · low`
-- **DEC-OFFLINE-DISCONNECT** — Allow desktop/server Disconnect while offline? Mobile already persists a pending leave.
-  `decision · maintainer · low`
 - **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
   `decision · maintainer · low`
 - **DEC-LAST-CHANGE-SCOPE** — Should Last change count deletions and conflict copies, or be named "Last saved version"?
@@ -191,21 +143,60 @@ Suggested order for approval: exposed security boundaries and preservation of us
 
 ### Video delete follow-ups (review of 2026-10-30)
 
-- **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting in a folder that is no longer a video library gets the hub's video-library message
-  `bug · agent · low`
-  The hub's `/v1/delete-file` answers a linked replica outside a video library with "Local administrator credential required" instead of "This folder is not a video library", which a stale replica catalog can surface. Accept: the hub's linked branch fails with the video-library message (404), with a test through a replica's `/v1/video/delete`.
-- **VIDEO-DELETE-SELECTED-REPLICA** — A replica that keeps a Movies & TV library keeps its local delete checks
-  `bug · agent · normal`
-  Every desktop or server replica that keeps a Movies & TV library is affected: Delete movie, episode, season or show (`/v1/video/delete`) always forwards to the hub, so the kept copy skips the local rescan, signature check, Trash for unsynced content and Windows "in use", and the local file goes on the next cycle. Accept: the kept path deletes through `engine.deleteFile` locally and lets sync carry the deletion (the hub then keeps the version beside the folder), with a kept-replica test proving a local unsynced edit is preserved. Drop the desktop `/v1/history` rev fallback, which sends a local rev to the hub.
-- **VIDEO-DELETE-TESTS** — Error paths of a replica's video delete
-  `chore · agent · low`
-  Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
-
 ### Video downloads on Windows (review of 2026-11-02)
 
-- **VIDEO-REMOVE-WINDOWS-SESSION** — Remove from this device fails on Windows for about a minute after closing a compatible-stream video
-  `bug · agent · normal`
-  Closing the desktop player never ends the hub-style HLS session the replica started on its downloaded copy, and on Windows FFmpeg keeps the file open until it finishes or the 60 s idle sweep ends it, so Remove answers 409 "Close the video before removing its download" about a closed video; a replacement download hits the same BUSY path and pruning silently leaves the file. Accept: sessions keep their source, removing or replacing a download first ends the sessions reading that file and waits for FFmpeg to exit, and `tests/video-downloads.test.js` drops its `videoSessions.halt()` stop-gap and still passes on Windows.
+### Performance and caching (audit of 2026-11-04)
+
+Source reading only, no measurements; figures are estimates from the code.
+
+- **PERF-GALLERY-PAGE** — A gallery page does not re-read the whole photo library
+  `feature · agent · high`
+  `gallery.js` `page()` builds and sorts every visible photo before `LIMIT 61` and reads it again for `months`; the open desktop gallery re-requests every loaded page with `fresh=true` every 5 s (`refreshGallery`), 20 pages for 1,200 photos. Accept: the ordered rows are memoized on the folder's file generation, the rules and a gallery counter bumped by every metadata, member and asset write; the 5 s timer runs only while `/v1/events` is stale; a test counts the `WITH media` statements across two unchanged pages (0 the second time) and sees a new photo.
+- **PERF-STATUS-TOTALS** — `/v1/status` does not scan the index, and the hidden tray does not poll
+  `feature · agent · high`
+  Per-folder totals, conflict counts and `historyRevisions` are full scans on each call; the hidden tray window polls every 2 s for the whole run, about 42 status calls a minute while idle. Accept: totals memoized on `file_generations.generation` and a revision counter; the tray refreshes only while visible; a test shows a second unchanged `status()` runs no counting query and that a commit and retention update the counts.
+- **PERF-THUMB-HITS** — A thumbnail served from disk costs no fsync'd write
+  `feature · agent · normal`
+  A disk hit does `UPDATE gallery_derivatives SET used` (fsync under `synchronous=FULL`) and a synchronous read, and never enters the 32 MB memory LRU. Accept: disk hits enter the LRU and `used` is flushed in one transaction about once a minute and on close; a test sees at most one update and one read across two requests.
+- **PERF-SEARCH-FOLD** — Search does not re-fold every path per keystroke
+  `feature · agent · normal`
+  `instr(arca_fold(f.path),?)` calls a JavaScript fold for every file on every keystroke, and stale searches are never cancelled. Accept: a per-folder folded path list keyed on the file generation, as the music and video indexes do; a test sees no fold calls on a repeated search and finds a newly committed file.
+- **PERF-RULES-HOIST** — Exclusion rules resolve once per loop, not once per file
+  `feature · agent · normal`
+  `visibleRules()` does a folder SELECT and an `lstat` of `.arcaignore` per call and runs per row in `replaceLocal` and several engine loops, about 200k of each for 100k files. Accept: rules resolved once per loop or page (the cycle keeps its `.arcaignore` hash check); a test counts at most two `lstat` calls for 1,000 entries with an unchanged result.
+- **PERF-WEB-ASSETS** — The web UI revalidates its assets instead of downloading them again
+  `feature · agent · normal`
+  About 1.2 MB (`app.js`, lucide, CSS, fonts) is read from disk and sent uncompressed with `no-store` on every browser load. Accept: assets hashed once (re-read when mtime changes), `ETag` with `no-cache`, 304 on `If-None-Match`, optional gzip with `Vary`; CSP stays on 200; tests cover 304 and gzip round trip.
+- **PERF-PREVIEW-BUDGET** — The preview budget check does not scan the table per render
+  `feature · agent · low`
+  After each render `SUM(size) … WHERE key LIKE '%…'` scans every derivative, quadratic over a large folder's first preparation. Accept: per-size totals in memory, adjusted by render, discard and eviction and resynchronised at start; a test renders 50 images with at most one sum query and stays under a small budget.
+- **PERF-WEB-IMAGE-CACHE** — Pages and thumbnails get separate browser quotas
+  `feature · agent · low`
+  Thumbnails, covers and art travel as base64 JSON with `no-store`, and the IndexedDB store holds 128 entries shared by pages and thumbnails, so two or three pages of thumbnails evict every stored page. Accept: separate quotas (pages by count, thumbnails by bytes) in a pure module with a test; whether private images may be cached by the browser is a maintainer decision.
+- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
+  `feature · agent · high`
+  The foreground rediscovery pages the whole camera roll every 60 s, 100 assets per page with one store read each, and every 4 pages runs another full sync cycle with hub requests: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes, so this needs the maintainer's approval of that wording.
+- **PERF-MOB-PROGRESS** — Finished files respect the 1 Hz progress limit
+  `feature · agent · high`
+  The throttle skips ticks where `bytesDone === bytesTotal`, so every small file fires `changed()`, a notification post and a full snapshot read, up to 10 a second. Accept: completion ticks are throttled too and the last tick of a run is always shown; a test of 50 completions in one second sees at most two `changed()` calls.
+- **PERF-MOB-FOLDER-LIST** — An open folder keeps its listing when nothing changed
+  `feature · agent · high`
+  Every refresh walks the open folder, sorts it, sets a new array and writes the whole listing as one JSON value, which recomputes the gallery model; 20,000 photos is about 40,000 native calls and 4–5 MB written per run. Accept: an unchanged walk keeps the previous array and skips the write, the listing persists on a debounce; a `folder-listing.js` test checks identity and change detection.
+- **PERF-MOB-THUMB-MAP** — The gallery's thumbnail map is not rewritten while scrolling
+  `feature · agent · normal`
+  The whole map (full `file://` URIs, 1–4 MB) is stringified and written after scroll-driven passes, and every flush spreads it and re-creates every photo object up to four times a second. Accept: thumbnails stored as rows with only the changes written, the map passed by ref and version; a test sees three deltas write three rows and reload give the same thumbnails.
+- **PERF-MOB-MUSIC-MEMO** — The phone's music library is rebuilt only when it changed
+  `feature · agent · normal`
+  Every cycle parses and rebuilds each music library even when the hub answers `unchanged`, and the music screen, now playing and Folders rebuild or parse it again; video parses its saved library on every request to read its version. Accept: the built library memoized on its version, journal, file rows and playlists; a test sees no store reads or `player.reload` on a second unchanged refresh and a rebuild after a local rename.
+- **PERF-MOB-HASH-CACHE** — Inventory scans load the hash cache once per folder
+  `feature · agent · normal`
+  `cachedRecord` never keeps a store hit in memory, so each inventory makes one SQLite read per file (20,000 for a 20k-file replica). Accept: one query per folder fills the map; a test sees no per-file `cachedHash` calls and no hashing on a second scan of an unchanged folder.
+- **PERF-MOB-FOLDERS-CACHE** — Folder totals survive settings writes
+  `feature · agent · normal`
+  `folders()` caches on a counter that every write bumps, settings included, so the aggregate over every file row runs on nearly every UI refresh during sync. Accept: a counter bumped only by methods that touch files, folders or gallery sources, with a test listing every mutating method; `store.set` then `folders()` runs no query.
+- **PERF-MOB-SEARCH** — Phone search parses only matching rows
+  `feature · agent · low`
+  Every ASCII query also reads up to 10,000 accented rows per folder and parses each, folder after folder, and outdated searches keep running. Accept: match on `path` before parsing and stop when a newer query starts; a test with 5,000 accented rows parses only the 3 matches.
 
 ### Hub relocation follow-ups (2026-11-03)
 
@@ -233,40 +224,6 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 - **SEC-RELEASE-PENTEST** — Exercise the security boundaries before distribution
   `verify · maintainer · high`
   accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or production servers for destructive tests.
-- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
-  `chore · agent · normal`
-  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
-  This is a guard against unintended actions, not a security boundary: the replica supplies its own report, and the single-owner model grants a linked credential access across folders. A compromised device can report another folder; per-device folder ACLs are outside the current product contract.
-- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
-  `bug · agent · normal`
-  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
-- **SEC-SIGNING-STEP** — The updater key never enters the build graph
-  `chore · agent · normal`
-  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures. Follow-up `verify` on the next real release; do not assume `createUpdaterArtifacts` succeeds without a key.
-- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
-  `chore · agent · normal`
-  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
-- **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
-  `bug · agent · normal`
-  accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
-- **SEC-BACKUP-SCRUB** — Detect damaged objects without falsely acknowledging backup
-  `bug · agent · normal`
-  accept: detect and report corrupt objects by hash without logging contents, continue checking unrelated objects, and allow retry or repair. Never acknowledge a revision as backed up without its verified content, or release its retention hold; tests corrupt an object and verify both the error and the acknowledgement boundary. Hourly maintenance checks a bounded batch of stored objects and reports corruption.
-- **SEC-MOBILE-MANIFEST** — Limit Android cover-provider access without breaking external players
-  `chore · agent · normal`
-  accept: limit `CoverProvider` to authorized cover consumers with URI grants or another appropriate mechanism, while preserving Media3 notifications and Android Auto; tests exercise access and grants. A follow-up `verify` checks external controllers in a native build. The provider currently serves covers to other apps, so making it private without working grants is not sufficient.
-- **SEC-DEPS** — Dependency advisories are checked in CI
-  `chore · agent · normal`
-  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
-- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
-  `bug · agent · low`
-  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
-- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
-  `chore · agent · low`
-  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a hub redeploy to verify.
-- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
-  `feature · agent · low`
-  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
 
 - **SEC-ERASE-KEPT** — Erase says which folders it left in place
   `feature · maintainer · low`
@@ -297,12 +254,6 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 
 These are the parts of the desktop and mobile sizing audit that are not purely visual; its visual findings have shipped.
 
-- **DESK-ZOOM-CHROME** — Window-control offsets follow the zoom level
-  `bug · agent · normal`
-  accept: `installDesktopZoom` publishes the zoom as a CSS custom property and the window-controls inset, the controls drop and `.window-drag` divide by it, so at 70% the photo viewer's Back button and the sidebar lockup clear the native traffic lights and at 150% they do not drift away; the 760 px breakpoint is evaluated in unzoomed window pixels so a normal window at 130–150% keeps the full sidebar. Tests cover the property and the computed offsets; a follow-up `verify` checks a macOS desktop build at 70%, 100% and 150%.
-- **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
-  `bug · agent · low`
-  accept: dialogs whose content outgrows the window (Choose folders, Restore versions with many rows) scroll their body while the title and the action row stay visible at the 620 px minimum height, as form dialogs already do; a DOM test fills a dialog past the window height.
 - **DEC-MOB-FOLD-WIDE** — Does the unfolded Fold get the wide search and file preview?
   `decision · maintainer · normal`
   The kit draws the Fold with the centred search dialog and preview panes and a Files Preview column, but the app shows them only from 1100 dp, so the Fold gets the phone search (rows 8 dp from the edge, four photo cells of 150–190 dp) and no preview. Either let the Fold use them or redraw the kit to show what ships.

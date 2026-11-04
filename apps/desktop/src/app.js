@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.36";
+const APP_VERSION = "0.8.37";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7173,9 +7173,7 @@ function videoAvailable(volume) {
 const videoBrowsable = (volume) => status.role === "hub" || !!volume?.selected;
 const videoEditable = (volume) => status.role === "hub" || !!volume?.selected || !!volume?.video;
 async function deleteVideoFile(v, file) {
-  const rev =
-    file.rev ?? (status.role === "hub" || v.selected ? (await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: file.path, limit: "1" })}`)).versions[0]?.rev : undefined);
-  await api("/v1/video/delete", { volume: v.id, path: file.path, rev });
+  await api("/v1/video/delete", { volume: v.id, path: file.path, rev: file.rev });
 }
 function videoModeButton(volume) {
   if (!videoAvailable(volume) || !videoBrowsable(volume)) return "";

@@ -2817,6 +2817,12 @@ export class Engine {
     if (next === null) fail("This playlist changed. Try again.", 409);
     return this.writePlaylist(volume, target, file, next);
   }
+  async unchangedCopy(volume, name) {
+    await this.reconcileLocal(volume, [name]);
+    const view = this.store.viewCurrent(volume, name);
+    const synced = this.store.current(volume, name);
+    return !!view && !!synced && !view.deleted && view.hash === synced.hash;
+  }
   async deleteFile(volume, name, rev, author = this.config.id) {
     validPath(name);
     const v = this.store.volume(volume);
