@@ -4,13 +4,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import bundledFfmpeg from "ffmpeg-static";
 import { PREVIEW_SIZES } from "./preview-sizes.js";
+import { holdingProcess } from "./open-files.js";
 
 const execute = promisify(execFile);
 export async function videoPreview(file, name, size = "thumb") {
   const { edge } = PREVIEW_SIZES[size];
   const binary =
     bundledFfmpeg && fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : "ffmpeg";
-  const { stdout } = await execute(
+  const { stdout } = await holdingProcess(file, () => execute(
     binary,
     [
       "-hide_banner",
@@ -48,7 +49,7 @@ export async function videoPreview(file, name, size = "thumb") {
       maxBuffer: 8 * 1024 ** 2,
       windowsHide: true,
     },
-  );
+  ));
   if (!stdout.length) throw new Error("No video frame available");
   return stdout;
 }
@@ -57,7 +58,7 @@ export async function videoPreview(file, name, size = "thumb") {
 export async function videoCaptureDate(file, name) {
   const binary =
     bundledFfmpeg && fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : "ffmpeg";
-  const { stdout } = await execute(
+  const { stdout } = await holdingProcess(file, () => execute(
     binary,
     [
       "-v",
@@ -82,7 +83,7 @@ export async function videoCaptureDate(file, name) {
       maxBuffer: 1024 * 1024,
       windowsHide: true,
     },
-  );
+  ));
   const tags = new Map(
     stdout.split(/\r?\n/).map((line) => {
       const at = line.indexOf("=");

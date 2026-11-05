@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
-  `bug · agent · low`
-  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
 - **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
   `feature · agent · low`
   accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
@@ -221,6 +218,9 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 - **SEC-OPEN-LAUNCHERS-2** — More file kinds that run code are revealed, never opened
   `bug · agent · normal`
   Synced files carry no quarantine or Mark-of-the-Web, so the OS never warns. Not yet in the list: `com pif cpl msc vbe jse wsf wsh url chm reg msp application appref-ms fileloc inetloc webloc mpkg jar py pyw`; an extensionless Unix file with an executable bit opens in Terminal on macOS (sync never sets modes, so only a local object already executable can cause it). Accept: the desktop and Rust lists gain these kinds, a Unix file with `mode & 0o111` and no extension is revealed, with tests; SPEC lists them.
+- **SEC-HUB-IN-USE-OTHER** — Other hub changes to a file FFmpeg holds open wait instead of failing on Windows
+  `bug · agent · low`
+  The Windows in-use check covers `/v1/delete-file` and Delete movie or episode only. Gallery deletion (`deleteGalleryAsset`), a replica's proposed deletion applied on the hub, hub rename and Movies & TV moves can still record a change whose move then fails while a preview or probe holds the file. Accept: each path ends the hub's own work on the file or answers 409 before recording anything, with Windows-shaped tests.
 - **SEC-ERASE-KEPT** — Erase says which folders it left in place
   `feature · maintainer · low`
   accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.

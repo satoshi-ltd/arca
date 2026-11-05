@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import bundledFfmpeg from "ffmpeg-static";
 import { fail } from "./storage.js";
 import { extensionOf } from "../core/video-names.js";
+import { holdingProcess, holdFile } from "./open-files.js";
 
 export const BUSY = "The hub is busy with another video. Try again in a moment.";
 const COPY_AUDIO = new Set(["aac", "mp3"]);
@@ -82,10 +83,12 @@ function size(directory) {
 export async function keyframeBefore(binary, source, start, signal, name = source) {
   if (!(start > 0)) return 0;
   try {
-    const { stdout, stderr } = await execute(
-      binary,
-      ["-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-copyts", "-noaccurate_seek", "-ss", String(start), ...inputFormat(name), "-i", source, "-map", "0:V:0", "-c", "copy", "-frames:v", "1", "-f", "framecrc", "-"],
-      { encoding: "utf8", timeout: 15000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024, windowsHide: true, signal },
+    const { stdout, stderr } = await holdingProcess(source, () =>
+      execute(
+        binary,
+        ["-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-copyts", "-noaccurate_seek", "-ss", String(start), ...inputFormat(name), "-i", source, "-map", "0:V:0", "-c", "copy", "-frames:v", "1", "-f", "framecrc", "-"],
+        { encoding: "utf8", timeout: 15000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024, windowsHide: true, signal },
+      ),
     );
     const base = /#tb 0: (\d+)\/(\d+)/.exec(stdout);
     const packet = stdout.split(/\r?\n/).find((line) => /^0,/.test(line));
@@ -299,13 +302,16 @@ export class VideoSessions {
       windowsHide: true,
     });
     const session = { id, owner, loopback, source, directory, process: child, created: Date.now(), touched: Date.now(), error: "" };
+    const release = holdFile(source);
     child.stderr.on("data", (chunk) => {
       if (session.error.length < 4096) session.error += chunk;
     });
     child.on("error", () => {
       session.failed = true;
+      if (!child.pid) release();
     });
     child.on("exit", (code) => {
+      release();
       session.exited = true;
       if (code) session.failed = true;
     });

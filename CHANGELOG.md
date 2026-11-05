@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.44 — 2026-11-05
+
+- On a Windows hub, deleting a movie or episode first stops the hub's own leftover conversions and subtitle extraction of that file, and if a probe or preview still holds it answers "This file is in use. Close it and try again." without recording the deletion, instead of recording it and then failing to move the file away on every sync.
+
+Needs: hub redeploy · desktop build
+
 ## 0.8.43 — 2026-11-04
 
 - The hub refuses a replica's restore, gallery link and gallery delete in a folder that replica does not sync, and Watch next edits in a library it neither syncs nor streams, with "Start syncing this folder on this device first.", so a stale view can no longer act on the wrong folder. Devices now report the libraries they stream (at once when Streaming is chosen) and the phone reports its folders right before linking an album, restoring or editing Watch next; Watch next in a streamed library therefore needs the desktop and the phone on 0.8.43 together with the hub.

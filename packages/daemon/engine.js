@@ -41,6 +41,7 @@ import {
 import { ADDED_DATES_FEED, SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import { moveToTrash } from "./trash.js";
+import { fileHeld } from "./open-files.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -2954,7 +2955,15 @@ export class Engine {
     if (current.directory) fail("Use file deletion only for files", 409);
     if (current.rev !== Number(rev))
       fail("File changed. Reload before deleting.", 409);
+    const file = this.store.filePath(v, name);
     if (this.config.role === "hub") {
+      if ((this.platform ?? process.platform) === "win32" && fileHeld(file)) {
+        this.video?.releaseFile(current.hash);
+        await this.videoSessions?.release(file);
+        for (let wait = 0; wait < 20 && fileHeld(file); wait++)
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        if (fileHeld(file)) fail("This file is in use. Close it and try again.", 409);
+      }
       this.store.assertVersionBeside(volume, name);
       return this.store.commit(
         volume,
@@ -2965,7 +2974,6 @@ export class Engine {
         current.hash,
       );
     }
-    const file = this.store.filePath(v, name);
     const local = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!local) fail(MISSING_LOCAL, 409);
     const before = fileSignature(file);

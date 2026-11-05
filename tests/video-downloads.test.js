@@ -9,6 +9,7 @@ import ffmpeg from "ffmpeg-static";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 import { api, clip, hub, image } from "./video-support.js";
+import { fileHeld, holdFile } from "../packages/daemon/open-files.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-downloads-"));
 process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -772,6 +773,60 @@ test("a replica refuses a video delete in a kept folder that is not a video libr
   await r.replica.engine.cycle();
   await assert.rejects(r.call("/v1/video/delete", { volume: notes.id, path: "a.txt", rev: r.replica.engine.store.current(notes.id, "a.txt").rev }), { status: 404, message: "This folder is not a video library" });
   assert.ok(fs.existsSync(path.join(destination, "a.txt")));
+});
+
+test("on Windows the hub ends its own conversions of a file before deleting it, and refuses while something else still holds it", async (t) => {
+  const f = await hub(t);
+  const { movie, name } = await movieLibrary(f);
+  const file = path.join(f.v.path, ...name.split("/"));
+  f.daemon.engine.platform = "win32";
+  const before = f.s.history(f.v.id, name).length;
+  const release = holdFile(file);
+  await assert.rejects(f.call("/v1/delete-file", { volume: f.v.id, path: name, rev: movie.rev }), { status: 409, message: "This file is in use. Close it and try again." });
+  assert.equal(f.s.current(f.v.id, name).deleted, 0, "no tombstone is recorded");
+  assert.equal(f.s.history(f.v.id, name).length, before);
+  release();
+  const compatible = await f.call(`/v1/video/compatible?${new URLSearchParams({ volume: f.v.id, path: name, hash: movie.hash })}`);
+  assert.match(compatible.url, /\/v1\/video\/hls\//);
+  assert.equal(fileHeld(file), true, "the hub's conversion holds the file");
+  await f.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev });
+  assert.equal(fileHeld(file), false, "the lingering conversion was ended first");
+  assert.equal(f.s.current(f.v.id, name).deleted, 1);
+});
+
+test("a delete on a Windows hub cancels the subtitle extraction reading the file without blocking its subtitles later", async (t) => {
+  const f = await hub(t);
+  const { movie, name } = await movieLibrary(f, subtitledFilm());
+  const file = path.join(f.v.path, ...name.split("/"));
+  const video = f.daemon.engine.video;
+  const streams = video.textStreams(movie.hash);
+  assert.ok(streams.length, "the film carries an embedded subtitle stream");
+  const queued = video.extractAll(file, name, movie.hash, streams, movie.size);
+  video.releaseFile(movie.hash);
+  await assert.rejects(queued);
+  assert.equal(video.cancels.has(movie.hash), false, "a cancelled queued extraction leaves nothing behind");
+  assert.equal(video.subtitleFailures?.get(movie.hash), undefined, "subtitles are not marked unreadable");
+  f.daemon.engine.platform = "win32";
+  const release = holdFile(file);
+  const releaseFile = video.releaseFile.bind(video);
+  video.releaseFile = (hash) => {
+    releaseFile(hash);
+    if (hash === movie.hash) release();
+  };
+  await f.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev });
+  assert.equal(f.s.current(f.v.id, name).deleted, 1, "the delete stopped the extraction and went ahead");
+});
+
+test("a direct media stream never holds the file", async (t) => {
+  const f = await hub(t);
+  const { movie, name } = await movieLibrary(f);
+  const file = path.join(f.v.path, ...name.split("/"));
+  const response = await fetch(`http://127.0.0.1:${f.daemon.port}/v1/video/media?${new URLSearchParams({ volume: f.v.id, path: name, hash: movie.hash })}`, {
+    headers: { Authorization: `Bearer ${f.daemon.engine.config.adminToken}`, Range: "bytes=100-" },
+  });
+  assert.equal(response.status, 206);
+  assert.equal(fileHeld(file), false);
+  await response.body.cancel();
 });
 
 test("the hub deletes a video through the same route, only in video libraries", async (t) => {

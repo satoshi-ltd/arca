@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import bundledFfmpeg from "ffmpeg-static";
 import sharp from "sharp";
 import { fail } from "./storage.js";
+import { holdingProcess } from "./open-files.js";
 import { SyncWork } from "./sync-work.js";
 import { relatedTitles } from "../core/video-related.js";
 import { watchNext } from "../core/video-watch-next.js";
@@ -28,6 +29,7 @@ import {
 } from "../core/video-names.js";
 import { detectLanguage, stripSpans } from "../core/subtitle-language.js";
 import { CONTENT_KEY, Tmdb, closestContent, imagePath, kidsCertification, videoSettings } from "./tmdb.js";
+const RELEASED = "released";
 
 const execute = promisify(execFile);
 const INDEX_VERSION = 2;
@@ -161,10 +163,12 @@ export async function probeVideo(file, name) {
   const format = { mkv: "matroska", webm: "matroska", avi: "avi" }[extensionOf(name)] || "mov";
   let stderr;
   try {
-    ({ stderr } = await execute(
-      binary,
-      ["-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-f", format, "-i", file],
-      { encoding: "utf8", timeout: 15000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024, windowsHide: true },
+    ({ stderr } = await holdingProcess(file, () =>
+      execute(
+        binary,
+        ["-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-f", format, "-i", file],
+        { encoding: "utf8", timeout: 15000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024, windowsHide: true },
+      ),
     ));
   } catch (error) {
     if (error.code === "ENOENT") return undefined;
@@ -184,13 +188,15 @@ export async function extractSubtitles(file, name, streams, timeout = 180000, si
   try {
     const outputs = streams.flatMap((stream) => ["-map", `0:s:${stream}`, "-c:s", "webvtt", "-f", "webvtt", "-fs", String(SUBTITLE_BYTES + 1), path.join(directory, `${stream}.vtt`)]);
     try {
-      await execute(binary, ["-hide_banner", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-f", format, "-i", file, "-vn", "-an", ...outputs], {
-        timeout,
-        killSignal: "SIGKILL",
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-        signal,
-      });
+      await holdingProcess(file, () =>
+        execute(binary, ["-hide_banner", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-f", format, "-i", file, "-vn", "-an", ...outputs], {
+          timeout,
+          killSignal: "SIGKILL",
+          maxBuffer: 1024 * 1024,
+          windowsHide: true,
+          signal,
+        }),
+      );
     } catch {
       fail("These subtitles could not be read", 422);
     }
@@ -1237,10 +1243,12 @@ export class Video {
     const controller = new AbortController();
     const stop = () => controller.abort();
     this.extractions.signal.addEventListener("abort", stop, { once: true });
+    this.cancels ||= new Map();
+    this.cancels.set(hash, controller);
     const run = async () => {
-      if (this.closed || controller.signal.aborted) fail("These subtitles could not be read", 422);
-      if (warm) this.warming = { hash, controller };
       try {
+        if (this.closed || controller.signal.aborted) fail("These subtitles could not be read", 422);
+        if (warm) this.warming = { hash, controller };
         const found = await extractSubtitles(file, name, streams, Math.max(180000, Math.ceil(size / (5 * 1024 * 1024)) * 1000), controller.signal);
         if (this.closed) return;
         const dir = path.join(this.s.home, "video-subtitles");
@@ -1252,6 +1260,7 @@ export class Video {
         pruneDirectory(dir, SUBTITLE_CACHE_BYTES, hash);
       } finally {
         if (this.warming?.controller === controller) this.warming = null;
+        if (this.cancels.get(hash) === controller) this.cancels.delete(hash);
         this.extractions?.signal.removeEventListener("abort", stop);
       }
     };
@@ -1259,11 +1268,14 @@ export class Video {
     const job = this.subtitleQueue.finally(() => this.extracting.delete(hash));
     this.extracting.set(hash, job);
     job.catch(() => {
-      if (warm && controller.signal.aborted) return;
+      if (controller.signal.aborted && (warm || controller.signal.reason === RELEASED)) return;
       this.subtitleFailures ||= new Map();
       this.subtitleFailures.set(hash, Date.now() + 10 * 60000);
     });
     return job;
+  }
+  releaseFile(hash) {
+    this.cancels?.get(hash)?.abort(RELEASED);
   }
   warmSubtitles(volume, name, hash) {
     try {
