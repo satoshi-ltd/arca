@@ -85,10 +85,12 @@ import {
   scopedActivity,
   historyFolderIds,
 } from "../../../packages/core/scoped-activity.js";
+import { enterKind, screenDepth } from "./screen-depth.js";
 import {
   KeyboardPane,
   Reveal,
   KeyboardScrollView,
+  ScrollMemory,
   useKeyboardVisible,
 } from "./KeyboardPane";
 import React, { useEffect, useState, useMemo, useRef } from "react";
@@ -527,6 +529,7 @@ export default function App() {
     current?.resolve(ok);
   };
   const [photoSelection, setPhotoSelection] = useState(null);
+  const [shownSelection, releaseSelection] = useRetained(photoSelection);
   const [galleryRailModel, setGalleryRailModel] = useState(null);
   const [galleryViewport, setGalleryViewport] = useState({ y: 0, height: 0 });
   const galleryScroll = useRef(null);
@@ -974,17 +977,6 @@ export default function App() {
   const tooBig = sheetNeeds !== null && spaceShort(sheetNeeds, status.free);
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
   const pullSync = screen === "Folders" && !folder && connected && !!replica;
-  const screenDepth = detail ? 2 : folder && screen === "Folders" ? 1 : 0;
-  const lastDepth = useRef(screenDepth);
-  const screenEnter =
-    screenDepth > lastDepth.current
-      ? "forward"
-      : screenDepth < lastDepth.current
-        ? "back"
-        : "fade";
-  useEffect(() => {
-    lastDepth.current = screenDepth;
-  }, [screenDepth]);
   useEffect(() => {
     let cancelled = false;
     if (
@@ -2389,6 +2381,24 @@ export default function App() {
   const searchable = !!connection && locals.some((f) => f.selected);
   const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
   const musicDeep = !!musicAt && musicAt.level > 0;
+  const depth = screenDepth({
+    onboarding,
+    step: onboardingStep,
+    detail,
+    inFolder: !!folder && screen === "Folders",
+    musicLevel: musicView ? musicAt?.level || 0 : null,
+    videoRoute: videoView ? videoRoute : null,
+    directory,
+  });
+  const place = `${onboarding}:${view}`;
+  const lastDepth = useRef(depth);
+  const lastPlace = useRef(place);
+  const screenEnter = place === lastPlace.current ? enterKind(depth, lastDepth.current) : "fade";
+  useEffect(() => {
+    lastDepth.current = depth;
+    lastPlace.current = place;
+  }, [depth, place]);
+  const screenKey = `${screen}:${onboarding ? onboardingStep : ""}:${folder?.id || ""}${musicView ? `:${musicRoute.length}:${JSON.stringify(musicRoute.at(-1))}` : videoView ? `:${videoRoute.length}:${videoRoute[1]?.id ?? ""}` : `:${directory}`}`;
   const musicPageMenu = musicDeep && !wide ? musicMenu(musicRoute[musicAt.level], musicShown, audioStreaming) : null;
   const musicArtist =
     musicDeep && wide && musicRoute[musicAt.level].kind === "artist"
@@ -3111,7 +3121,7 @@ export default function App() {
                   }}
                 >
                 <KeyboardScrollView
-                  key={`${screen}:${folder?.id || ""}${musicView ? `:${musicRoute.length}:${JSON.stringify(musicRoute.at(-1))}` : ""}`}
+                  key={screenKey}
                   onScroll={(event) => {
                     const { contentOffset } = event.nativeEvent;
                     if (Platform.OS === "ios") pull.setValue(Math.max(0, Math.min(1, -contentOffset.y / 56)));
@@ -3144,6 +3154,7 @@ export default function App() {
                   enter={screenEnter}
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
+                  {!musicView && <ScrollMemory id={screenKey} restore={screenEnter === "back"} />}
                   {folder && screen === "Folders" && !videoView && !photoFolder && !musicView && (
                     <View style={[s.group, s.statsGrid]}>
                       {[
@@ -4327,7 +4338,7 @@ export default function App() {
                   />
                 )}
                 <View onLayout={({ nativeEvent: { layout } }) => setBottomBars(layout.height)}>
-                {folder && screen === "Folders" && musicFolder && !sheet && (
+                {folder && screen === "Folders" && musicFolder && (
                   <MiniPlayer
                     library={playingLibrary}
                     cover={musicCover}
@@ -4336,13 +4347,15 @@ export default function App() {
                     sleep={audio.sleep}
                   />
                 )}
-                {!!photoSelection && !!folder && view === "Folders" && !sheet && (
+                {!!shownSelection && !!folder && view === "Folders" && (
                   <SelectionBar
-                    count={photoSelection.count}
+                    count={shownSelection.count}
                     linked={connected && !status.offline}
                     reason={HUB_ONLY_REASON}
-                    onClear={photoSelection.clear}
-                    onDelete={photoSelection.remove}
+                    onClear={shownSelection.clear}
+                    onDelete={shownSelection.remove}
+                    leaving={!photoSelection}
+                    onLeft={releaseSelection}
                   />
                 )}
                 {!onboarding && !wide && !keyboardVisible && (

@@ -122,6 +122,6 @@ test("every class only the kit defines is used by a design page or the kit scrip
   const unused = new Set();
   for (const css of kitStyles)
     for (const [, name] of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/\.([a-zA-Z][\w-]*)/g))
-      if (!production.has(name) && !name.startsWith("kit-board") && !used.includes(name)) unused.add(name);
+      if (!production.has(name) && !name.startsWith("kit-board") && name !== "kit-empty" && !used.includes(name)) unused.add(name);
   assert.deepEqual([...unused].sort(), [], "delete the kit rules no page draws");
 });

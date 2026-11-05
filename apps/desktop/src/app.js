@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.44";
+const APP_VERSION = "0.8.45";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2598,6 +2598,7 @@ const EXIT_ROLES = {
     ],
   }),
   list: () => ({ duration: motionDuration("--motion-exit"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
+  overlay: () => ({ duration: motionDuration("--motion-exit"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
 };
 const leavingSurfaces = new Map();
 function leave(element, role, done) {
@@ -8135,6 +8136,7 @@ async function videoPlay(v, item, at = 0) {
   };
   videoPlayer = state;
   const root = videoPlayerRoot();
+  revive(root);
   const title = item.kind === "episode" ? item.showTitle : item.title;
   const line = item.kind === "episode" ? [episodeCode(item), item.title].filter(Boolean).join(" · ") : videoTechLine(item);
   root.setAttribute("aria-label", title);
@@ -8274,8 +8276,10 @@ function closeVideoPlayer(repaint = true) {
     video.load?.();
   }
   if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
-  root.hidden = true;
-  root.innerHTML = "";
+  void leave(root, "overlay", () => {
+    root.hidden = true;
+    root.innerHTML = "";
+  });
   document.body.classList.remove("video-open");
   for (const node of document.querySelectorAll("[data-video-inert]")) {
     node.removeAttribute("inert");

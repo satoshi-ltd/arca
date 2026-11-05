@@ -2,7 +2,7 @@ import { brandMark, palettes } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion, radius } from "./design-tokens.js";
 import { railLabelFontCap } from "./text-size.js";
-import { ChangeFade, Pop, RollText, useBreathe, useFlight, useMotion } from "./motion";
+import { ChangeFade, Pop, RiseOnce, RollText, useBreathe, useFlight, useMotion } from "./motion";
 import {
   brandDraw,
   brandDrawLength,
@@ -1105,10 +1105,11 @@ export function ConfirmDialog({
   );
 }
 
-export function SelectionBar({ count, linked, reason, onClear, onDelete }) {
+export function SelectionBar({ count, linked, reason, onClear, onDelete, leaving = false, onLeft }) {
   const { s } = useDesign();
+  const seen = useRef({ current: false }).current;
   return (
-    <View style={s.selectionBar}>
+    <RiseOnce seen={seen} leaving={leaving} onLeft={onLeft} style={s.selectionBar}>
       <View style={s.row}>
         <Text accessibilityLiveRegion="polite" style={[s.caption, s.flex]}>
           {`${count} selected`}
@@ -1117,7 +1118,7 @@ export function SelectionBar({ count, linked, reason, onClear, onDelete }) {
         <Button label="Delete…" disabled={!linked} onPress={onDelete} />
       </View>
       {!linked && <Text style={s.caption}>{reason}</Text>}
-    </View>
+    </RiseOnce>
   );
 }
 

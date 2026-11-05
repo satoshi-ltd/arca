@@ -1392,8 +1392,6 @@ export function styles(
     searchPane: { width: 260, gap: sp[2], padding: sp[4], borderLeftWidth: 1, borderLeftColor: c.divider },
     searchPaneCover: { width: 96, height: 96, borderRadius: g.controlRadius, backgroundColor: c.placeholder },
     searchPaneRow: { flexDirection: "row", alignItems: "center", gap: sp[2] },
-    searchSheetBackdrop: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, justifyContent: "flex-end", backgroundColor: c.backdrop },
-    searchSheet: { gap: sp[2], padding: sp[4], borderTopLeftRadius: g.cardRadius, borderTopRightRadius: g.cardRadius, backgroundColor: c.noticeSurface },
     viewerTransparent: { backgroundColor: "transparent" },
     viewerBackdrop: { backgroundColor: c.media },
     viewerStrip: { position: "absolute", left: 0, right: 0, bottom: 0, gap: sp[2], paddingTop: sp[2], backgroundColor: c.mediaScrim },
@@ -1410,9 +1408,6 @@ export function styles(
     nowUpNext: { flexDirection: "row", alignItems: "center", gap: sp[2], alignSelf: "stretch", minHeight: g.touchControlHeight, paddingHorizontal: sp[3], borderRadius: g.controlRadius, borderWidth: 1, borderColor: c.divider, backgroundColor: c.surface },
     nowSplit: { flex: 1, flexDirection: "row" },
     nowQueue: { width: g.detailSideWidth, backgroundColor: c.paper, borderLeftWidth: 1, borderLeftColor: c.divider },
-    nowQueueScrim: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
-    nowQueueHead: { flexDirection: "row", alignItems: "center", paddingLeft: sp[4], paddingRight: sp[1] },
-    nowQueueSheet: { position: "absolute", left: 0, right: 0, bottom: 0, height: "55%", backgroundColor: c.surface, borderTopLeftRadius: g.cardRadius, borderTopRightRadius: g.cardRadius, borderWidth: 1, borderColor: c.divider },
     rowThumb: {
       width: g.touchHeight,
       height: g.touchHeight,

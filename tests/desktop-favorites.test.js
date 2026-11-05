@@ -246,7 +246,7 @@ test("the sidebar Search is a borderless nav-style row that opens the one palett
   assert.match(rule, /background: none;/);
   assert.match(rule, /color: var\(--soft\);/);
   assert.match(rule, /font-weight: 500;/);
-  assert.match(css, /\n\.palette-open:hover \{\s*background: var\(--surface\);/);
+  assert.match(css, /\n\.palette-open:hover \{\s*background: var\(--hover\);/);
   assert.match(css, /\n\.palette-open \.palette-key \{\s*margin-left: auto;\s*border-color: transparent;\s*background: none;\s*color: var\(--mute\);/);
   const atRest = [...css.matchAll(/(?:^|\n)([^{}@]+)\{([^}]*)\}/g)]
     .filter(([, selectors]) => selectors.split(",").some((one) => /\.palette-open(?![\w-])(?!\S*:(hover|active|focus))(?! \S)/.test(one.trim())))

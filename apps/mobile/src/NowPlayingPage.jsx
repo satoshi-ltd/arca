@@ -12,6 +12,7 @@ import { useMusicPlayer } from "./music-player";
 import { savedPosition } from "./audio-positions.js";
 import { sleepLabel, sleepOptions } from "./sleep-timer.js";
 import { useNow } from "./audio-session.js";
+import { count } from "./format";
 
 const isPlaying = (state) => !!state && (state.playing || (state.playWhenReady && !state.ended && !state.error));
 const clock = (ms) =>
@@ -106,6 +107,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const [state] = useMusicPlayer(visible);
   const [trackWidth, setTrackWidth] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [shownQueue, releaseQueue] = useRetained(queueOpen);
   const [sleepOpen, setSleepOpen] = useState(false);
   const [shownSleep, releaseSleep] = useRetained(sleepOpen ? "open" : null);
   const slide = useRef(new Animated.Value(0)).current;
@@ -177,13 +179,18 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
       />
     );
   });
-  const list = (
-    <ScrollView style={s.flex} contentContainerStyle={s.searchBody}>
+  const queueRows = (
+    <>
       {!!track && <Row track={track} current />}
       {rows}
       {!rows.length && (
         <Text style={s.caption}>{queue.shuffled ? "Shuffling: the order is chosen as you go." : "Nothing after this track."}</Text>
       )}
+    </>
+  );
+  const list = (
+    <ScrollView style={s.flex} contentContainerStyle={s.searchBody}>
+      {queueRows}
     </ScrollView>
   );
   const main = !state?.id ? (
@@ -302,19 +309,17 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
             </ScrollView>
             {twoPane && !!state?.id && <View style={s.nowQueue}>{list}</View>}
           </View>
-          {!twoPane && queueOpen && !!state?.id && (
-            <>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close queue" onPress={() => setQueueOpen(false)} style={s.nowQueueScrim} />
-              <View style={s.nowQueueSheet}>
-                <View style={s.nowQueueHead}>
-                  <Eyebrow style={s.flex}>Up next</Eyebrow>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Close queue" onPress={() => setQueueOpen(false)} style={s.viewerIconButtonDark}>
-                    <Icon name="chevron-down" color={c.ink} />
-                  </Pressable>
-                </View>
-                {list}
-              </View>
-            </>
+          {!twoPane && shownQueue && !!state?.id && (
+            <Sheet
+              title="Up next"
+              subtitle={rows.length ? count(rows.length, "track", "tracks") : undefined}
+              icon="playlist"
+              closing={!queueOpen}
+              onClose={() => setQueueOpen(false)}
+              onExited={releaseQueue}
+            >
+              {queueRows}
+            </Sheet>
           )}
         </SafeAreaView>
       </Animated.View>

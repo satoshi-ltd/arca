@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.45 — 2026-11-05
+
+- On the phone and the Fold, every step deeper (a sub-folder, an artist or album, a movie or show, the next setup step) slides in from the right and back slides out to the left, a new level opens at its top, and going back returns to its scroll position; switching tabs still just fades.
+- The phone's video player fades in and out like the photo viewer, and its controls and its Audio and Subtitles panels fade instead of blinking on a tap.
+- Now playing's Up next and the long-press actions in Search Arca open as the same sheet as everything else, and the mini player and the photo selection bar stay put under a sheet, rising in and falling out each time they appear.
+- The desktop and web video player fades in and out like the photo viewer instead of cutting.
+- Every list row hovers with the same tone, so History, Files, music and episode rows no longer turn darker on hover in dark mode, and dropdown options now show their hover in light mode.
+
+Needs: native build · desktop build
+
 ## 0.8.44 — 2026-11-05
 
 - On a Windows hub, deleting a movie or episode first stops the hub's own leftover conversions and subtitle extraction of that file, and if a probe or preview still holds it answers "This file is in use. Close it and try again." without recording the deletion, instead of recording it and then failing to move the file away on every sync.

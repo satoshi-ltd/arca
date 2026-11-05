@@ -1240,7 +1240,7 @@ main {
   outline-offset: -2px;
 }
 .history-row[role="button"]:hover {
-  background: var(--paper);
+  background: var(--hover);
 }
 .history-row strong,
 .browser-file-row strong {
@@ -2248,9 +2248,11 @@ html:has(.tray-body) {
 .tray-folders button + button {
   border-top: 1px solid var(--div);
 }
-.tray-folders button:hover,
+.tray-folders button:hover {
+  background: var(--hover);
+}
 .tray-menu button:hover {
-  background: var(--surface);
+  background: var(--track);
 }
 .tray-folders button svg {
   width: 13px;
@@ -3265,7 +3267,7 @@ summary {
 }
 .dropdown-menu [role="option"]:hover,
 .dropdown-menu [role="option"]:focus-visible {
-  background: var(--surface);
+  background: var(--track);
   outline: 1px solid var(--green);
   outline-offset: -1px;
   box-shadow: none;
@@ -3445,7 +3447,7 @@ summary {
   border-top: 1px solid var(--div);
 }
 .browser-file-row:hover {
-  background: var(--paper);
+  background: var(--hover);
 }
 .browser-file-row[aria-current="true"] {
   background: var(--tint);
@@ -4150,7 +4152,7 @@ dialog.photo-viewer {
   color: var(--ink);
 }
 .photo-viewer .photo-info button:hover {
-  background: var(--tint);
+  background: var(--hover);
 }
 .photo-viewer .photo-file {
   width: auto;
@@ -4899,9 +4901,11 @@ dialog.photo-viewer {
 .photo-viewer button:active:not(:disabled) {
   background: var(--mediaHover);
 }
-.photo-viewer .photo-info button:hover:not(:disabled),
+.photo-viewer .photo-info button:hover:not(:disabled) {
+  background: var(--hover);
+}
 .photo-viewer .photo-info button:active:not(:disabled) {
-  background: var(--tint);
+  background: var(--press);
 }
 @media (pointer: coarse) {
   .icon-button,
@@ -5047,7 +5051,7 @@ dialog.photo-viewer {
 }
 @media (hover: hover) {
   .music-row:hover {
-    background: var(--paper);
+    background: var(--hover);
   }
 }
 .music-row:active {
@@ -5253,7 +5257,7 @@ button.music-track-play:focus-visible {
 }
 @media (hover: hover) {
   .music-track:not(.music-track-head, .music-track-missing):hover {
-    background: var(--paper);
+    background: var(--hover);
   }
 }
 button.music-track-play:active {
@@ -5932,7 +5936,7 @@ dialog.palette:not([open]) {
   height: 16px;
 }
 .palette-open:hover {
-  background: var(--surface);
+  background: var(--hover);
 }
 .palette-open:active {
   background: var(--press);
@@ -6477,7 +6481,7 @@ label.toggle {
 }
 @media (hover: hover) {
   .video-episode:hover {
-    background: var(--paper);
+    background: var(--hover);
   }
 }
 .video-episode:has(:active) {
@@ -6571,6 +6575,9 @@ label.toggle {
 }
 .video-player[hidden] {
   display: none;
+}
+.video-player:not([hidden]) {
+  animation: overlay-enter var(--motion-enter) var(--motion-ease);
 }
 .video-element {
   position: absolute;

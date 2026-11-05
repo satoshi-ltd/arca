@@ -3,15 +3,32 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { Animated, Keyboard, Platform, StyleSheet, View } from "react-native";
 import { keyboardOverlap, focusScrollDelta } from "./keyboard.js";
+import { keepScroll, scrollOffset } from "./list-memory.js";
 
 export const FieldFocus = createContext(null);
 export const ScrollPosition = createContext(null);
+
+export function ScrollMemory({ id, restore }) {
+  const position = useContext(ScrollPosition);
+  const live = useRef(position);
+  live.current = position;
+  useLayoutEffect(() => {
+    let frame = null;
+    if (restore) frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => live.current?.scrollTo(scrollOffset(id)))));
+    return () => {
+      cancelAnimationFrame(frame);
+      keepScroll(id, live.current?.offset() ?? 0);
+    };
+  }, [id]);
+  return null;
+}
 
 export function useKeyboardVisible() {
   const [visible, setVisible] = useState(Keyboard.isVisible());

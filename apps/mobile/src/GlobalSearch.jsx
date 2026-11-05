@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button, Eyebrow, Icon, useDesign } from "./components";
+import { Button, Eyebrow, Icon, Sheet, useDesign } from "./components";
 import { FilePreview } from "./FilePreview";
 import { ErrorNotice } from "./Notice";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { formatDay } from "./music-library";
-import { useMotion } from "./motion";
+import { useMotion, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { SEARCH_LABELS, searchCanReveal, searchItems, searchSubtitle, searchTitle, searchVerb, searchViewAction } from "./search-local";
 
@@ -87,6 +87,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   const [results, setResults] = useState(null);
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(null);
+  const [shownHeld, releaseHeld] = useRetained(held);
   const [failure, setFailure] = useState("");
   const [moreFailure, setMoreFailure] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -163,6 +164,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
     }
     if (item.type === "page") return void more();
     setHeld(null);
+    releaseHeld();
     onOpen(item, query, mode);
   };
   const press = (item, index) => {
@@ -309,15 +311,13 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
       {searchCanReveal(shown) && <Button label="Show in folder" icon="folder-open" onPress={() => open(shown, "reveal")} />}
     </View>
   ) : null;
-  const sheet = held ? (
-    <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setHeld(null)} style={s.searchSheetBackdrop}>
-      <Pressable style={s.searchSheet}>
-        <Row item={held} subtitle={subtitle(held)} cover={cover} trailing={null} onPress={() => setHeld(null)} />
-        <Button label={searchVerb(held, !!timeLeft(held))} icon={held.type === "song" || held.type === "episode" ? "play" : "chevron"} onPress={() => open(held)} />
-        {!!searchViewAction(held) && <Button label={searchViewAction(held)} icon={held.type === "song" ? "album" : "podcast"} onPress={() => open(held, "view")} />}
-        {searchCanReveal(held) && <Button label="Show in folder" icon="folder-open" onPress={() => open(held, "reveal")} />}
-      </Pressable>
-    </Pressable>
+  const sheet = shownHeld ? (
+    <Sheet closing={!held} onClose={() => setHeld(null)} onExited={releaseHeld}>
+      <Row item={shownHeld} subtitle={subtitle(shownHeld)} cover={cover} trailing={null} onPress={() => setHeld(null)} />
+      <Button label={searchVerb(shownHeld, !!timeLeft(shownHeld))} icon={shownHeld.type === "song" || shownHeld.type === "episode" ? "play" : "chevron"} onPress={() => open(shownHeld)} />
+      {!!searchViewAction(shownHeld) && <Button label={searchViewAction(shownHeld)} icon={shownHeld.type === "song" ? "album" : "podcast"} onPress={() => open(shownHeld, "view")} />}
+      {searchCanReveal(shownHeld) && <Button label="Show in folder" icon="folder-open" onPress={() => open(shownHeld, "reveal")} />}
+    </Sheet>
   ) : null;
   return (
     <Modal visible={mounted} animationType="none" transparent onRequestClose={() => (held ? setHeld(null) : onClose())}>

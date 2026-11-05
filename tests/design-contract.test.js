@@ -564,7 +564,7 @@ test("every control answers a press, the viewer keeps its own fills and icon but
   assert.ok(active.includes(".menu-items button:active:not(:disabled)"));
   assert.match(tail, /\.primary:active:not\(:disabled\),\s+\.photo-thumb \.photo-open:active \{\s+opacity: 0\.85;/);
   assert.match(tail, /\.photo-viewer button:hover:not\(:disabled\),\s+\.photo-viewer button:active:not\(:disabled\) \{\s+background: var\(--mediaHover\);/, "viewer buttons keep their translucent fill");
-  assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\),\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--tint\);/, "the Info panel keeps its tint");
+  assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\) \{\s+background: var\(--hover\);\s+\}\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--press\);/, "the Info panel's buttons hover and press like ghost buttons");
   const coarse = tail.slice(tail.indexOf("@media (pointer: coarse) {"));
   assert.match(coarse, /@media \(pointer: coarse\) \{\s+\.icon-button,\s+\.ghost\.icon-button \{\s+width: var\(--touch-target-min\);/);
   assert.match(coarse, /@media \(pointer: coarse\) and \(min-width: 481px\) \{\s+#sync-controls button \{/, "the collapsed 64 px sidebar keeps its small controls");

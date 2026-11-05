@@ -30,7 +30,7 @@ test("Android back leaves library screens before the folder, and the mini player
   assert.match(back, /\[\s*sheet,\s*folder,\s*view,\s*fileActionsOpen,\s*musicView,\s*musicRoute,\s*shownMusic,?\s*\]/);
   assert.doesNotMatch(back, /musicSearch/, "the library has no search of its own for Back to close");
   assert.match(back, /musicRoute\.length > 1 &&\s+shownMusic\?\.library\?\.tracks\.size/, "an empty library leaves the folder at once");
-  assert.match(app, /musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]*?open=\{\(\) => setNowPlayingOpen\(true\)\}/);
+  assert.match(app, /musicFolder && \(\s+<MiniPlayer[\s\S]*?open=\{\(\) => setNowPlayingOpen\(true\)\}/);
   assert.ok(app.indexOf("<MiniPlayer") < app.indexOf("<Navigation\n", app.indexOf("<MiniPlayer")), "the mini player sits above the tab bar");
   assert.match(app, /<NowPlayingPage\s+visible=\{nowPlayingOpen\}/);
 });

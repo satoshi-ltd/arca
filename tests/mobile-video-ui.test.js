@@ -393,3 +393,16 @@ test("a title with a TMDB trailer offers Trailer on the phone and the Fold, open
   assert.match(app, /\{ key, library: cached, offline: false, live: false \}/, "the cached library shown before the hub answers offers no trailer");
   assert.equal((app.match(/\{ key, library: fresh\.library, offline: false, live: true \}/g) || []).length, 2, "only a fresh answer does");
 });
+
+test("the phone's player fades in and out like the photo viewer, fades its controls and slides its panels", () => {
+  assert.match(player, /const \[session, release\] = useRetained\(current\);/, "the player stays mounted while it leaves");
+  assert.match(player, /Animated\.timing\(appear, \{ toValue: 1, duration: ms\(motion\.enter\)/);
+  assert.match(player, /Animated\.timing\(appear, \{ toValue: 0, duration: ms\(motion\.exit\)[^\n]*finished && release\(\)/);
+  assert.match(player, /<Animated\.View style=\{\[s\.videoRoot, \{ opacity: appear \}\]\} pointerEvents=\{current \? "auto" : "none"\}>/, "inert while leaving");
+  assert.match(player, /useLayoutEffect\(\(\) => \{\s+if \(!leaving \|\| exited\.current\) return;[\s\S]*?player\.pause\(\);[\s\S]*?send\(\{ type: "exit", position \}\);/, "a closing player stops and saves its position at once, before the library refreshes");
+  assert.match(player, /if \(!exited\.current\) send\(\{ type: "exit", position \}\);/, "and never saves twice");
+  assert.match(player, /Animated\.timing\(chrome, \{ toValue: controls \? 1 : 0, duration: ms\(motion\.fast\)/);
+  assert.doesNotMatch(player, /\{controls && !failed && \(/, "controls are faded, never unmounted on a tap");
+  for (const area of ["videoTop", "videoCenter", "videoBottom"]) assert.match(player, new RegExp(`style=\\{\\[s\\.${area}, \\{ opacity: (failed \\? 1 : )?chrome \\}\\]\\}`));
+  assert.equal((player.match(/shownPanel === "(audio|subtitles)" && !failed && \(\n\s+<Animated\.View style=\{\[s\.videoPanel, \{ opacity: panelIn/g) || []).length, 2);
+});

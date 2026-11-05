@@ -1,8 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
+import { Animated, AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
 import { requireOptionalNativeModule, useEvent } from "expo";
 import { Busy, Button, Icon, useDesign } from "./components";
+import { useMotion, useRetained } from "./motion";
+import { motion } from "./design-tokens.js";
 import { episodeCode, playerTitles } from "./video-library.js";
 import { NETWORK_LEFT } from "./video-sync.js";
 import { CONTROLS_HIDE, clock, countdown, initialPlayer, playerStep, scrubAction, seekTarget } from "./video-player-state.js";
@@ -61,8 +63,9 @@ function Round({ icon, label, onPress, size = 24, big = false }) {
   );
 }
 
-function Playback({ session, source, next, art, onClose, onNext, save, watchNetwork, loadCues, reopen, initialAudio = null }) {
+function Playback({ session, source, next, art, onClose, onNext, save, watchNetwork, loadCues, reopen, initialAudio = null, leaving = false }) {
   const { s, c } = useDesign();
+  const { duration: ms, easing: ease } = useMotion();
   const player = useVideoPlayer(null);
   const [current, setCurrent] = useState(() => ({ ...source, at: source.compatible ? 0 : session.at }));
   const currentRef = useRef(current);
@@ -99,7 +102,21 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   const model = useRef(initialPlayer(Date.now(), session.at));
   const [, render] = useState(0);
   const [controls, setControls] = useState(true);
+  const chrome = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(chrome, { toValue: controls ? 1 : 0, duration: ms(motion.fast), easing: ease, useNativeDriver: true }).start();
+  }, [controls]);
   const [panel, setPanel] = useState(null);
+  const [shownPanel, releasePanel] = useRetained(panel);
+  const panelIn = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (panel) {
+      panelIn.setValue(0);
+      Animated.timing(panelIn, { toValue: 1, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
+    } else if (shownPanel)
+      Animated.timing(panelIn, { toValue: 0, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(({ finished }) => finished && releasePanel());
+  }, [panel]);
+  const exited = useRef(false);
   const [loadError, setLoadError] = useState(null);
   const [now, setNow] = useState(Date.now());
   const touched = useRef(Date.now());
@@ -231,9 +248,21 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
         position = null;
       }
       switching.current = false;
-      send({ type: "exit", position });
+      if (!exited.current) send({ type: "exit", position });
     };
   }, [player, current.uri]);
+  useLayoutEffect(() => {
+    if (!leaving || exited.current) return;
+    exited.current = true;
+    let position = null;
+    try {
+      position = switching.current || holding.current ? null : absoluteTime(current, player.currentTime);
+      player.pause();
+    } catch {
+      position = null;
+    }
+    send({ type: "exit", position });
+  }, [leaving]);
   useEffect(
     () =>
       watchNetwork?.(current, () => {
@@ -332,8 +361,13 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
           </View>
         </View>
       )}
-      {(controls || failed) && (
-        <View style={s.videoTop} pointerEvents="box-none">
+      {(
+        <Animated.View
+          style={[s.videoTop, { opacity: failed ? 1 : chrome }]}
+          pointerEvents={controls || failed ? "box-none" : "none"}
+          accessibilityElementsHidden={!(controls || failed)}
+          importantForAccessibility={controls || failed ? "auto" : "no-hide-descendants"}
+        >
           <Round icon="back" label="Close player" onPress={close} />
           <View style={[s.flex, s.stack]}>
             <Text numberOfLines={1} style={s.videoTitle}>
@@ -347,17 +381,27 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
           </View>
           {!failed && audios.length > 1 && <Round icon="audio-lines" label="Audio" onPress={() => { wake(); setPanel(panel === "audio" ? null : "audio"); }} />}
           {!failed && <Round icon="captions" label="Subtitles" onPress={() => { wake(); setPanel(panel === "subtitles" ? null : "subtitles"); }} />}
-        </View>
+        </Animated.View>
       )}
-      {controls && !failed && (
-        <View style={s.videoCenter} pointerEvents="box-none">
+      {!failed && (
+        <Animated.View
+          style={[s.videoCenter, { opacity: chrome }]}
+          pointerEvents={controls ? "box-none" : "none"}
+          accessibilityElementsHidden={!(controls)}
+          importantForAccessibility={controls ? "auto" : "no-hide-descendants"}
+        >
           <Round icon="rotate-ccw" label="Back 10 seconds" onPress={() => seekTo(seekTarget(position, duration, -10))} />
           <Round big size={36} icon={isPlaying ? "pause" : "play"} label={isPlaying ? "Pause" : "Play"} onPress={() => { wake(); isPlaying ? player.pause() : player.play(); }} />
           <Round icon="rotate-cw" label="Forward 30 seconds" onPress={() => seekTo(seekTarget(position, duration, 30))} />
-        </View>
+        </Animated.View>
       )}
-      {controls && !failed && (
-        <View style={s.videoBottom}>
+      {!failed && (
+        <Animated.View
+          style={[s.videoBottom, { opacity: chrome }]}
+          pointerEvents={controls ? "box-none" : "none"}
+          accessibilityElementsHidden={!(controls)}
+          importantForAccessibility={controls ? "auto" : "no-hide-descendants"}
+        >
           <Scrubber
             position={position}
             duration={duration}
@@ -367,15 +411,15 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
             <Text style={s.videoTime}>{clock(position)}</Text>
             <Text style={s.videoTime}>{`−${clock(Math.max(0, duration - position))}`}</Text>
           </View>
-        </View>
+        </Animated.View>
       )}
       {!!cue && !failed && (
         <View pointerEvents="none" style={[s.videoCueBox, controls && s.videoCueRaised]}>
           <Text style={[s.videoCue, cue.italic && s.videoCueItalic]}>{cue.text}</Text>
         </View>
       )}
-      {panel === "audio" && !failed && (
-        <View style={s.videoPanel}>
+      {shownPanel === "audio" && !failed && (
+        <Animated.View style={[s.videoPanel, { opacity: panelIn, transform: [{ translateX: panelIn.interpolate({ inputRange: [0, 1], outputRange: [motion.distance, 0] }) }] }]} pointerEvents={panel ? "auto" : "none"}>
           <Text style={s.videoPanelTitle}>Audio</Text>
           {audios.map((choice) => {
             const chosen = choice === audioNow;
@@ -395,10 +439,10 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
               </Pressable>
             );
           })}
-        </View>
+        </Animated.View>
       )}
-      {panel === "subtitles" && !failed && (
-        <View style={s.videoPanel}>
+      {shownPanel === "subtitles" && !failed && (
+        <Animated.View style={[s.videoPanel, { opacity: panelIn, transform: [{ translateX: panelIn.interpolate({ inputRange: [0, 1], outputRange: [motion.distance, 0] }) }] }]} pointerEvents={panel ? "auto" : "none"}>
           <Text style={s.videoPanelTitle}>Subtitles</Text>
           {options.map((choice) => {
             const chosen = choice.key === selectedKey;
@@ -419,7 +463,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
             );
           })}
           {!!cueError && <Text style={s.videoPanelNote}>{cueError}</Text>}
-        </View>
+        </Animated.View>
       )}
       {left != null && next && (
         <View style={s.videoUpNext}>
@@ -447,7 +491,17 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   );
 }
 
-export function VideoPlayer({ session, resolve, save, nextOf, art, onClose, onNext, watchNetwork, loadCues }) {
+export function VideoPlayer({ session: current, resolve, save, nextOf, art, onClose, onNext, watchNetwork, loadCues }) {
+  const [session, release] = useRetained(current);
+  const { duration: ms, easing: ease } = useMotion();
+  const appear = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (current) {
+      appear.setValue(0);
+      Animated.timing(appear, { toValue: 1, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
+    } else if (session)
+      Animated.timing(appear, { toValue: 0, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(({ finished }) => finished && release());
+  }, [!!current]);
   const opening = (value) => ({
     ...value,
     start: value.at || 0,
@@ -478,7 +532,7 @@ export function VideoPlayer({ session, resolve, save, nextOf, art, onClose, onNe
   return (
     <Modal visible={!!session} animationType="none" onRequestClose={onClose} supportedOrientations={["portrait", "landscape"]} statusBarTranslucent>
       <StatusBar hidden />
-      <View style={s.videoRoot}>
+      <Animated.View style={[s.videoRoot, { opacity: appear }]} pointerEvents={current ? "auto" : "none"}>
         <View style={portrait ? [s.videoRotated, { width: height, height: width, transform: [{ rotate: "90deg" }] }] : s.videoLandscape}>
           {session && source?.key === key ? (
             <Playback
@@ -494,6 +548,7 @@ export function VideoPlayer({ session, resolve, save, nextOf, art, onClose, onNe
               onClose={onClose}
               onNext={onNext}
               save={(position, duration) => save(session, position, duration)}
+              leaving={!current}
             />
           ) : (
             <View style={s.videoMessage}>
@@ -508,7 +563,7 @@ export function VideoPlayer({ session, resolve, save, nextOf, art, onClose, onNe
             </View>
           )}
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

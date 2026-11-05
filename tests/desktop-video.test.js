@@ -528,6 +528,37 @@ test("a show page plays the next episode, switches seasons and toggles watched e
   assert.equal(ui.text(".video-episode strong"), "1. Seven Thirty-Seven");
 });
 
+test("the player fades out over the exit duration before it is cleared, and reopening during the fade keeps it", async (t) => {
+  const ui = await boot(t);
+  await openMovie(ui);
+  const animations = [];
+  ui.w.Element.prototype.animate = function (frames, options) {
+    let resolve;
+    const animation = { element: this, frames, options, finished: new Promise((done) => (resolve = done)), finish: () => resolve(), cancel() {}, reverse() { this.reversed = true; } };
+    animations.push(animation);
+    return animation;
+  };
+  ui.w.document.documentElement.style.setProperty("--motion-exit", "140ms");
+  await openPlayer(ui, '.video-backdrop [data-action="video-resume"]');
+  const root = ui.$("#video-player");
+  ui.press("Escape");
+  await until(() => animations.some((animation) => animation.element === root));
+  const exit = animations.find((animation) => animation.element === root);
+  assert.equal(JSON.stringify(exit.frames), JSON.stringify([{ opacity: 1 }, { opacity: 0 }]));
+  assert.equal(exit.options.duration, 140);
+  assert.equal(root.hidden, false, "still on screen while it fades");
+  assert.equal(root.inert, true, "and inert");
+  exit.finish();
+  await until(() => root.hidden && root.innerHTML === "");
+  await openPlayer(ui, '.video-backdrop [data-action="video-resume"]');
+  ui.press("Escape");
+  await until(() => animations.filter((animation) => animation.element === root).length === 2);
+  await openPlayer(ui, '.video-backdrop [data-action="video-resume"]');
+  assert.equal(animations.at(-1).reversed, true, "reopening reverses the fade instead of hiding the new player");
+  assert.equal(root.hidden, false);
+  assert.equal(root.inert, false);
+});
+
 test("the player streams with subtitles, seeks, answers the keyboard, hides its controls and saves positions", async (t) => {
   const ui = await boot(t);
   await openMovie(ui);
@@ -894,7 +925,7 @@ test("an untagged sidecar is labelled Subtitles with its shortened file name", a
 
 test("an episode row highlights as one, the watched toggle included", () => {
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
-  assert.match(css, /@media \(hover: hover\) \{\s*\.video-episode:hover \{\s*background: var\(--paper\);/);
+  assert.match(css, /@media \(hover: hover\) \{\s*\.video-episode:hover \{\s*background: var\(--hover\);/);
   assert.match(css, /\.video-episode:has\(:active\) \{\s*background: var\(--press\);/);
   assert.match(css, /\.video-episode > \.icon-button:hover,\s*\.video-episode > \.icon-button:active \{\s*background: transparent;/);
   assert.doesNotMatch(css, /\.video-episode-play:hover/);
@@ -2114,4 +2145,9 @@ test("badges keep their label centred: a fixed tag height and the label in its o
 test("a danger item alone in a ⋯ menu draws no divider above it", () => {
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
   assert.match(css, /\.file-actions-menu \.menu-item-separated:first-child \{[^}]*border-top: 0;/);
+});
+
+test("the player fades in like the photo viewer", () => {
+  const css = source("style.css");
+  assert.match(css, /\.video-player:not\(\[hidden\]\) \{\s*animation: overlay-enter var\(--motion-enter\) var\(--motion-ease\);/);
 });

@@ -34,7 +34,7 @@ test("the notice dock sits above the measured tab bar, mini player and selection
   assert.match(notice, /export function NoticeStack\(\{ items, onDismiss, onAction, disabled, lift = 0 \}\)/);
   assert.match(notice, /bottom: insets\.bottom \+ lift \+ space\[4\],/);
   assert.match(notice, /height - insets\.top - insets\.bottom - lift - 2 \* space\[4\]/);
-  assert.match(app, /<View onLayout=\{\(\{ nativeEvent: \{ layout \} \}\) => setBottomBars\(layout\.height\)\}>\s+\{folder && screen === "Folders" && musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]+?<SelectionBar[\s\S]+?<Navigation[\s\S]+?<\/View>\s+<\/KeyboardPane>/);
+  assert.match(app, /<View onLayout=\{\(\{ nativeEvent: \{ layout \} \}\) => setBottomBars\(layout\.height\)\}>\s+\{folder && screen === "Folders" && musicFolder && \(\s+<MiniPlayer[\s\S]+?<SelectionBar[\s\S]+?<Navigation[\s\S]+?<\/View>\s+<\/KeyboardPane>/);
   assert.match(app, /<NoticeStack\s+items=\{noticeItems\}\s+lift=\{bottomBars\}/);
   assert.doesNotMatch(app, /items=\{noticeItems\.filter\(\(n\) => n\.kind === "info"\)\}\s+lift=/, "a sheet's own stack covers the bars under it");
 });
@@ -150,4 +150,16 @@ test("the Fold title page is the desktop hero with only the mark-all action for 
   assert.match(library, /upNext=\{ep\.id === target\?\.id\}/);
   assert.match(library, /\(compact \? upNext : ep\.position\) && s\.videoNow/);
   assert.match(read("StickyDetailSide.jsx"), /if \(!wide \|\| compact \|\| !position\)/);
+});
+
+test("Up next and the search actions open as the shared sheet, and the bottom bars stay under any sheet", () => {
+  const now = read("NowPlayingPage.jsx");
+  assert.match(now, /\{!twoPane && shownQueue && !!state\?\.id && \(\s+<Sheet\s+title="Up next"[\s\S]*?closing=\{!queueOpen\}[\s\S]*?onExited=\{releaseQueue\}/);
+  assert.doesNotMatch(now, /nowQueueSheet|nowQueueScrim/);
+  const search = read("GlobalSearch.jsx");
+  assert.match(search, /<Sheet closing=\{!held\} onClose=\{\(\) => setHeld\(null\)\} onExited=\{releaseHeld\}>/);
+  assert.doesNotMatch(search, /searchSheet/);
+  assert.match(search, /setHeld\(null\);\s+releaseHeld\(\);\s+onOpen\(item, query, mode\);/, "opening an item drops the action sheet at once, so it never closes together with Search");
+  assert.doesNotMatch(app, /&& !sheet && \(\s+<(MiniPlayer|SelectionBar)/, "a sheet never removes the bars behind it");
+  assert.match(app, /<SelectionBar[\s\S]*?leaving=\{!photoSelection\}\s+onLeft=\{releaseSelection\}/);
 });

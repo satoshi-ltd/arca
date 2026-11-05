@@ -1815,28 +1815,6 @@
   background: var(--m-surface);
   color: var(--m-mute);
 }
-.m-np-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 55%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  border: 1px solid var(--m-divider);
-  border-radius: var(--m-card-radius) var(--m-card-radius) 0 0;
-  background: var(--m-surface);
-  overflow: hidden;
-}
-.m-np-sheet-head {
-  display: flex;
-  align-items: center;
-  padding: 0 4px 0 16px;
-}
-.m-np-sheet > .m-group {
-  margin: 0 var(--space-4);
-}
 .m-np-main {
   flex: 1;
   min-width: 0;

@@ -65,7 +65,7 @@ test("music presses share the .98 scale, album tiles dim to 85 % and the playing
   for (const name of ["moon", "audio-lines", "podcast", "rotate-ccw", "rotate-cw"]) assert.ok(iconNames[name], name);
 });
 
-test("the mini player and resume card rise once per session, and covers fly into the header on the Fold", () => {
+test("the resume card rises once per session, the mini player each time playback starts and falls out when it stops, and covers fly into the header on the Fold", () => {
   const motionSource = read("motion.js");
   const rise = motionSource.slice(motionSource.indexOf("export function RiseOnce"));
   assert.match(rise, /const first = useRef\(!seen\.current && !reduce\)\.current;/, "reduced motion and later appearances are instant");
@@ -75,7 +75,12 @@ test("the mini player and resume card rise once per session, and covers fly into
   assert.match(motionSource, /export function ChangeFade\(\{ token, children, style, ms = motion\.enter \}\)/);
   const library = read("MusicLibrary.jsx");
   assert.match(library, /const miniSeen = \{ current: false \};/);
-  assert.match(library, /<RiseOnce seen=\{miniSeen\}>/);
+  assert.match(library, /<RiseOnce seen=\{miniSeen\} leaving=\{leaving\} onLeft=\{release\}>/);
+  assert.match(library, /if \(!live\?\.id\) miniSeen\.current = false;/, "the next playback rises again");
+  assert.match(rise, /if \(!leaving\) \{[\s\S]*?toValue: 1,[\s\S]*?duration: duration\(motion\.enter\)/, "a bar that comes back during its fall rises again");
+  assert.match(rise, /duration: duration\(motion\.exit\)[\s\S]*?finished && left\.current && onLeft\?\.\(\)/);
+  assert.match(rise, /pointerEvents=\{leaving \? "none" : "auto"\}/, "a falling bar takes no taps");
+  assert.match(read("components.jsx"), /<RiseOnce seen=\{seen\} leaving=\{leaving\} onLeft=\{onLeft\} style=\{s\.selectionBar\}>/, "the selection bar rises and falls every time");
   assert.match(library, /<RiseOnce seen=\{resumeSeen\}>/);
   assert.match(library, /const flight = useFlight\("collection", true\);/);
   assert.equal((library.match(/putFlight\("collection"/g) || []).length, 2, "show and album tiles hand the cover over");

@@ -1,4 +1,4 @@
-import React, { useContext, useLayoutEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { entryKey, keepPage, keepScroll, pageSize, scrollOffset } from "./list-memory.js";
 import { ScrollPosition } from "./KeyboardPane";
 import { putFlight } from "./flight.js";
@@ -46,7 +46,7 @@ import {
   trackContext,
 } from "./music-library.js";
 import { player, useMusicPlayer } from "./music-player";
-import { ChangeFade, RiseOnce, useFlight } from "./motion";
+import { ChangeFade, RiseOnce, useFlight, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { fraction, resumeCandidate, savedPosition, timeLeft } from "./audio-positions.js";
 import { sleepLabel } from "./sleep-timer.js";
@@ -1457,7 +1457,12 @@ const miniSeen = { current: false };
 export function MiniPlayer({ library, cover, open, command, sleep }) {
   const { s, c } = useDesign();
   const art = useRef(null);
-  const [state] = useMusicPlayer(true);
+  const [live] = useMusicPlayer(true);
+  const [state, release] = useRetained(live?.id ? live : null);
+  const leaving = !live?.id && !!state;
+  useEffect(() => {
+    if (!live?.id) miniSeen.current = false;
+  }, [live?.id]);
   const now = useNow(sleep?.mode === "duration");
   if (!state?.id) return null;
   const track = playingTrack(library, state);
@@ -1469,7 +1474,7 @@ export function MiniPlayer({ library, cover, open, command, sleep }) {
     ? [track.artist, total ? timeLeft((total - at) / 1000) : ""].filter(Boolean).join(" · ")
     : [track?.artist || state.artist, track?.album || state.album].filter(Boolean).join(" · ");
   return (
-    <RiseOnce seen={miniSeen}>
+    <RiseOnce seen={miniSeen} leaving={leaving} onLeft={release}>
       <PressScale
         accessibilityRole="button"
         accessibilityLabel={`Now playing ${track?.title || state.title || ""}`}

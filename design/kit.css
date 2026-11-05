@@ -298,6 +298,7 @@ body.kit {
   line-height: 1.55;
   color: var(--soft);
 }
+
 .kit-board {
   display: flex;
   flex-direction: column;
@@ -1109,4 +1110,15 @@ body.kit {
 }
 .m-video-dl > .kit-dl-ring.kit-dl-64 {
   background: conic-gradient(var(--m-accent) 0 64%, var(--m-line) 0);
+}
+.kit-draw .dropdown-menu.kit-menu-proposed {
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--r-surface);
+}
+.kit-menu-proposed [role="option"] {
+  border-radius: var(--r-control);
+}
+.kit-draw .dropdown-menu .kit-hover-track {
+  background: var(--track);
 }

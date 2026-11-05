@@ -557,6 +557,8 @@ export function VideoOffline({ hubName, openDevices }) {
   );
 }
 
+const librarySort = { current: "title" };
+
 export function VideoLibrary({
   library,
   offline,
@@ -579,7 +581,11 @@ export function VideoLibrary({
   scrollY = null,
 }) {
   const { s, wide } = useDesign();
-  const [sort, setSort] = useState("title");
+  const [sort, setSortState] = useState(() => librarySort.current);
+  const setSort = (value) => {
+    librarySort.current = value;
+    setSortState(value);
+  };
   const tab = route[0]?.kind;
   if (!library)
     return offline ? (

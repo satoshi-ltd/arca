@@ -346,7 +346,7 @@ export function ChangeFade({ token, children, style, ms = motion.enter }) {
   }, [token]);
   return <Animated.View style={[style, { opacity: progress }]}>{children}</Animated.View>;
 }
-export function RiseOnce({ seen, children, style }) {
+export function RiseOnce({ seen, children, style, leaving = false, onLeft }) {
   const { duration, easing, reduce } = useMotion();
   const first = useRef(!seen.current && !reduce).current;
   const progress = useRef(new Animated.Value(first ? 0 : 1)).current;
@@ -360,8 +360,30 @@ export function RiseOnce({ seen, children, style }) {
       useNativeDriver: true,
     }).start();
   }, []);
+  const left = useRef(false);
+  useEffect(() => {
+    if (!leaving) {
+      if (!left.current) return;
+      left.current = false;
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: duration(motion.enter),
+        easing,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    left.current = true;
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: duration(motion.exit),
+      easing,
+      useNativeDriver: true,
+    }).start(({ finished }) => finished && left.current && onLeft?.());
+  }, [leaving]);
   return (
     <Animated.View
+      pointerEvents={leaving ? "none" : "auto"}
       style={[
         style,
         {
