@@ -15,9 +15,6 @@ export const type = Object.freeze({
 export const palettes = {
   light: {
     noticeSurface: "#ffffff",
-    noticeInfoBg: "#2e6350",
-    noticeInfoFg: "#ffffff",
-    noticeInfoLink: "#ffffff",
     noticeLink: "#2e6350",
     paper: "#f4f6f1",
     surface: "#ffffff",
@@ -58,9 +55,6 @@ export const palettes = {
   },
   dark: {
     noticeSurface: "#1f2521",
-    noticeInfoBg: "#7fb893",
-    noticeInfoFg: "#0f1512",
-    noticeInfoLink: "#0f1512",
     noticeLink: "#7fb893",
     paper: "#0f1512",
     surface: "#161e19",
@@ -275,9 +269,9 @@ export const desktopReducedMotion = {
 
 export const desktopGeometry = {
   noticeWidth: 360,
-  noticeIcon: 20,
-  noticeLine: 21,
-  noticeClose: 32,
+  noticeIcon: 16,
+  noticeLine: 18,
+  noticeClose: 24,
   noticeDetailsHeight: 32,
   tagHeight: geometry.tagHeight,
   tagFont: geometry.tagFont,

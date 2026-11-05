@@ -217,7 +217,7 @@ test("a mounted notice is announced with its title and body", async () => {
   assert.equal(noticeAnnouncement({ title: "Conflict in docs", body: "Both files were kept." }), "Conflict in docs. Both files were kept.");
   assert.equal(noticeAnnouncement({ title: "Saved" }), "Saved");
   const notice = read("Notice.jsx");
-  assert.match(notice, /if \(!leaving\) announceNotice\(item\);\s+\}, \[item\.created, item\.title, item\.body\]\)/);
+  assert.match(notice, /if \(leaving\) return;\s+markShown\(shownKey\(item\)\);\s+if \(announced\.current\) announced\.current = false;\s+else announceNotice\(item\);\s+\}, \[item\.created, item\.title, item\.body\]\)/, "announced once, not again when a sheet moves it to another stack");
   assert.match(read("announce.js"), /Platform\.OS === "ios" && AccessibilityInfo\.announceForAccessibility\(noticeAnnouncement\(item\)\)/);
 });
 
@@ -374,11 +374,11 @@ test("Settings does not repeat itself: the name joins the This device row, the h
   assert.match(row, /\{children\}\s+<\/View>/);
 });
 
-test("phone notices have one dismiss control: the 44 dp cross, and an action row only for the notice's own action", () => {
+test("phone notices have one dismiss control: the 44 dp cross on cards, none on a pill unless a screen reader is on, and an action row only for the notice's own action", () => {
   const notice = read("Notice.jsx");
   assert.doesNotMatch(notice, /Dismiss<\/Text>/);
-  assert.match(notice, /\{!!item\.action && \(\s+<View style=\{s\.noticeActions\}>\s+<Pressable/);
-  assert.match(notice, /accessibilityLabel="Dismiss notification"[\s\S]*?style=\{s\.noticeClose\}\s+>/);
+  assert.match(notice, /\{!!item\.action && \(\s+<View style=\{\[s\.noticeActions, pill && s\.noticePillActions\]\}>\s+<Pressable/);
+  assert.match(notice, /\{\(!pill \|\| reader\) && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Dismiss notification"[\s\S]*?style=\{s\.noticeClose\}\s+>/);
   assert.match(read("theme.js"), /noticeClose: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,/);
   assert.match(notice, /onMoveShouldSetPanResponder: \(_, g\) =>\s+g\.dy > 12/, "the swipe is unchanged");
 });

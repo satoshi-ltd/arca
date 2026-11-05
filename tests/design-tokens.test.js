@@ -60,10 +60,11 @@ test("a notice's close button takes exactly one text line, so the card's inner s
   const close = css.match(/\n\.notice-close \{\s*flex: none;([^}]*)\}/)[1];
   const half = "calc((var(--notice-line) - var(--notice-close)) / 2)";
   assert.equal(close.match(/margin: ([^;]+);/)[1], `${half} calc(var(--space-2) * -1) ${half} 0`, "the same pull above and below, none on the text side");
-  assert.match(css, /\n\.notice-content p \{[^}]*font-size: var\(--text-row\);/, "notice text reads at the row size like its title");
+  assert.match(css, /\n\.notice-content strong \{[^}]*font-size: var\(--text-control\);[^}]*line-height: var\(--notice-line\);/, "a notice title reads at the control size");
+  assert.match(css, /\n\.notice-content p \{[^}]*font-size: var\(--text-body\);[^}]*line-height: var\(--notice-line\);/, "and its reason at the body size on the same line height");
   const theme = read("apps/mobile/src/theme.js");
-  assert.match(theme, /noticeClose: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,\s+marginHorizontal: -sp\[4\],\s+marginVertical: \(g\.touchRowLine - g\.touchHeight\) \/ 2,/);
-  assert.match(theme, /noticeTitle: \{\s+fontFamily: "InstrumentSans_600SemiBold",\s+fontSize: g\.touchRowFont,\s+lineHeight: g\.touchRowLine,/);
+  assert.match(theme, /noticeClose: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,\s+marginHorizontal: -sp\[3\],\s+marginVertical: \(g\.touchControlLine - g\.touchHeight\) \/ 2,/);
+  assert.match(theme, /noticeTitle: \{\s+fontFamily: "InstrumentSans_600SemiBold",\s+fontSize: g\.touchControlFont,\s+lineHeight: g\.touchControlLine,/);
 });
 
 test("a dialog's title line centres on its tile with or without a description, on desktop and phone alike", () => {

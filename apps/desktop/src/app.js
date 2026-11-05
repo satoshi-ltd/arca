@@ -68,6 +68,7 @@ import {
   errorNotice,
   conditionNotices,
   safeDetails,
+  noticePill,
   HUB_ONLY_REASON,
 } from "./notice-contract.js";
 import { fileIcon } from "./file-icons.js";
@@ -152,7 +153,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.45";
+const APP_VERSION = "0.8.46";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1482,7 +1483,8 @@ function noticeMarkup(item) {
   const action =
     item.action &&
     `<button class="notice-link" data-action="${escape(item.action)}" data-id="${escape(item.volume || "")}">${escape(item.actionLabel || "Review")}</button>`;
-  return `<article class="notice-card notice-${item.kind}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action ? `<div class="notice-actions">${action}</div>` : ""}</div><button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button></div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
+  const pill = noticePill(item);
+  return `<article class="notice-card notice-${item.kind}${pill ? " notice-pill" : ""}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action ? `<div class="notice-actions">${action}</div>` : ""}</div>${pill ? "" : `<button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button>`}</div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
 }
 function renderNotices() {
   const box = $("#notice"),

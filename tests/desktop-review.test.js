@@ -393,11 +393,12 @@ test("at 760 px the sleep menu keeps its column beside the controls and nothing 
   assert.match(css, /#music-player \.music-player-volume > :not\(\.sleep-slot\) \{\s*display: none;/);
 });
 
-test("notices have one dismiss control at 32 px and no Dismiss link", () => {
+test("notice cards have one dismiss control at 24 px, pills none, and no Dismiss link", () => {
   const app = source("app.js");
   assert.doesNotMatch(app, /notice-muted/);
   assert.match(app, /\$\{action \? `<div class="notice-actions">\$\{action\}<\/div>` : ""\}/);
-  assert.match(source("tokens.css"), /--notice-close: 32px;/);
+  assert.match(source("tokens.css"), /--notice-close: 24px;/);
+  assert.match(app, /\$\{pill \? "" : `<button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">/);
   assert.match(source("style.css"), /\.notice-close \{\s*flex: none;\s*width: var\(--notice-close\);\s*height: var\(--notice-close\);/);
 });
 

@@ -6,6 +6,8 @@ import {
   conditionNotices,
   errorNotice,
   noticeMetrics,
+  noticePill,
+  phoneNotices,
   safeDetails,
 } from "../apps/desktop/src/notice-contract.js";
 
@@ -126,9 +128,6 @@ test("notice geometry and colors are tokenized consistently across renderers", a
   const [light, dark] = css.split('[data-theme="dark"] {');
   for (const [key, token] of Object.entries({
     noticeSurface: "surface",
-    noticeInfoBg: "info-bg",
-    noticeInfoFg: "info-fg",
-    noticeInfoLink: "info-link",
     noticeLink: "link",
   }))
     for (const [theme, source] of [
@@ -305,20 +304,36 @@ test("an unnamed hub never reads 'Hub your hub' and hub-only failures never clai
   assert.equal(errorNotice("Hub unavailable. Try again when it is reachable.", { hubOnly: true }).offline, true);
 });
 
-test("info notices use the primary green and its ink in both themes, on desktop and mobile", async () => {
+test("info notices sit on the floating surface with a green check, on desktop and mobile", async () => {
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const css = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
-  const [light, dark] = css.split('[data-theme="dark"] {');
-  const parse = (source) => Object.fromEntries([...source.matchAll(/--([\w-]+):\s*(#[\da-f]+);/gi)].map((m) => [m[1], m[2]]));
-  const tokens = { light: parse(light), dark: { ...parse(light), ...parse(dark) } };
-  for (const theme of ["light", "dark"]) {
-    assert.equal(tokens[theme]["notice-info-bg"], tokens[theme].green, `${theme}: the info surface is the primary green`);
-    assert.equal(tokens[theme]["notice-info-fg"], tokens[theme].onGreen, `${theme}: its text is the on-green ink`);
-    assert.equal(tokens[theme]["notice-info-link"], tokens[theme].onGreen, `${theme}: and so is its link`);
-    assert.equal(palettes[theme].noticeInfoBg, tokens[theme]["notice-info-bg"], `${theme}: mobile surface`);
-    assert.equal(palettes[theme].noticeInfoFg, tokens[theme]["notice-info-fg"], `${theme}: mobile text`);
-    assert.equal(palettes[theme].noticeInfoLink, tokens[theme]["notice-info-link"], `${theme}: mobile link`);
-  }
+  const style = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /--notice-info-/, "no green fill token is left");
+  for (const theme of ["light", "dark"]) assert.equal(palettes[theme].noticeInfoBg, undefined);
+  assert.doesNotMatch(style, /--notice-info-/);
+  assert.match(style, /\n\.notice-card \{[^}]*border: 0;[^}]*background: var\(--notice-surface\);/);
+  assert.match(style, /\n\.notice-info \.notice-main > \.icon \{\s*color: var\(--green\);/);
+  assert.match(style, /\n\.notice-pill \{[^}]*border-radius: var\(--r-pill\);/);
+  const phone = fs.readFileSync(new URL("../apps/mobile/src/Notice.jsx", import.meta.url), "utf8");
+  assert.match(phone, /info\s+\? c\.accent/);
+  assert.doesNotMatch(phone, /noticeInfo/);
+});
+
+test("a result without a reason or details is a pill; the phone shows only the newest result", () => {
+  assert.equal(noticePill({ kind: "info", title: "Saved" }), true);
+  assert.equal(noticePill({ kind: "info", title: "Removed", action: "undo", actionLabel: "Undo" }), true);
+  assert.equal(noticePill({ kind: "info", title: "Saved", body: "Waiting to upload." }), false);
+  assert.equal(noticePill({ kind: "warning", title: "Conflict" }), false);
+  assert.equal(noticePill({ kind: "error", title: "Failed" }), false);
+  assert.equal(noticePill({ kind: "info", title: "x".repeat(noticeMetrics.pillTitle + 1) }), false, "a title that would wrap is a card");
+  const error = { id: "e", kind: "error" },
+    older = { id: "a", kind: "info" },
+    warning = { id: "w", kind: "warning" },
+    newer = { id: "b", kind: "info" };
+  assert.deepEqual(phoneNotices([older, error, warning, newer]).map((n) => n.id), ["e", "w", "b"]);
+  assert.deepEqual(phoneNotices([error]).map((n) => n.id), ["e"]);
+  const waiting = { id: "s", kind: "info", title: "Saved 2 files", body: "Waiting to upload.", action: "folder", actionLabel: "Open" };
+  assert.deepEqual(phoneNotices([waiting, older, newer]).map((n) => n.id), ["s", "b"], "a result that waits for the reader is never hidden by a passing one");
 });
 
 test("a native module rejection shows its own message and keeps the wrapper in the details", async () => {
@@ -341,22 +356,34 @@ test("a bare native rejection is not repeated in the details", async () => {
   assert.equal(notice.details, "");
 });
 
-test("an info notice with an action or a long body waits for the reader, and a held one keeps its timer off", () => {
+test("a pill leaves by itself, later when it has an action; a card with an action or a long body waits for the reader; a held one keeps its timer off", () => {
   const timers = new Map();
   let key = 0;
   const store = createNoticeStore({
-    schedule: (fn) => (timers.set(++key, fn), key),
+    schedule: (fn, ms) => (timers.set(++key, { fn, ms }), key),
     cancel: (id) => timers.delete(id),
   });
   store.push({ id: "plain", kind: "info", title: "Saved" });
   assert.equal(timers.size, 1);
-  store.push({ id: "action", kind: "info", title: "Saved 3 files", action: "open", actionLabel: "Open" });
+  assert.equal([...timers.values()][0].ms, noticeMetrics.infoTimeout);
+  store.push({ id: "undo", kind: "info", title: "Removed from Watch next", action: "undo", actionLabel: "Undo" });
+  assert.equal(timers.size, 2, "a pill with an action has no close, so it leaves by itself");
+  assert.equal([...timers.values()][1].ms, noticeMetrics.actionTimeout);
+  assert.ok(noticeMetrics.actionTimeout > noticeMetrics.infoTimeout, "with more time to reach its action");
+  store.remove("undo");
+  store.push({ id: "action", kind: "info", title: "Saved 3 files", body: "Waiting to upload.", action: "open", actionLabel: "Open" });
   store.push({ id: "long", kind: "info", title: "Saved", body: "x".repeat(noticeMetrics.lastingBody + 1) });
-  assert.equal(timers.size, 1, "neither the action nor the long notice arms a timer");
+  assert.equal(timers.size, 1, "neither the card with an action nor the long notice arms a timer");
   store.hold("plain");
   assert.equal(timers.size, 0, "hover or focus pauses the timer");
   store.release("plain");
   assert.equal(timers.size, 1);
+  store.push({ id: "held", kind: "info", title: "Restored a.txt", action: "show", actionLabel: "Show" });
+  store.hold("held");
+  const armed = timers.size;
+  store.release("held");
+  assert.equal(timers.size, armed + 1, "a held pill released when it is no longer drawn expires again");
+  store.remove("held");
   store.release("action");
   assert.equal(timers.size, 1, "a lasting notice never starts a timer on release");
   const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");

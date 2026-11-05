@@ -31,12 +31,31 @@ function makeStyles(wide, fontScale, textScale, compact = wide) {
 }
 
 test("the notice dock sits above the measured tab bar, mini player and selection bar", () => {
-  assert.match(notice, /export function NoticeStack\(\{ items, onDismiss, onAction, disabled, lift = 0 \}\)/);
+  assert.match(notice, /export function NoticeStack\(\{ items, onDismiss, onAction, onHold, onRelease, disabled, lift = 0 \}\)/);
   assert.match(notice, /bottom: insets\.bottom \+ lift \+ space\[4\],/);
   assert.match(notice, /height - insets\.top - insets\.bottom - lift - 2 \* space\[4\]/);
   assert.match(app, /<View onLayout=\{\(\{ nativeEvent: \{ layout \} \}\) => setBottomBars\(layout\.height\)\}>\s+\{folder && screen === "Folders" && musicFolder && \(\s+<MiniPlayer[\s\S]+?<SelectionBar[\s\S]+?<Navigation[\s\S]+?<\/View>\s+<\/KeyboardPane>/);
   assert.match(app, /<NoticeStack\s+items=\{noticeItems\}\s+lift=\{bottomBars\}/);
   assert.doesNotMatch(app, /items=\{noticeItems\.filter\(\(n\) => n\.kind === "info"\)\}\s+lift=/, "a sheet's own stack covers the bars under it");
+});
+
+test("a notice is drawn by one stack at a time and does not replay its entrance when a sheet moves it", () => {
+  assert.match(app, /\{!shownSheet && \(\s+<NoticeStack\s+items=\{noticeItems\}/, "the main stack waits until the sheet, closing included, is gone");
+  assert.doesNotMatch(app, /\(!sheet \|\| detail\) && \(\s+<NoticeStack/, "never alongside a sheet that is still leaving");
+  assert.match(app, /<Sheet\s+closing=\{!sheet \|\| detail\}\s+onExited=\{releaseSheet\}\s+overlay=\{\s+<NoticeStack/);
+  assert.match(notice, /const seen = useRef\(shown\.has\(shownKey\(item\)\)\)\.current;\s+const progress = useRef\(new Animated\.Value\(seen && !leaving \? 1 : 0\)\)\.current;/, "a notice already on screen mounts in place");
+  assert.match(notice, /const shownKey = \(item\) => \(item\.created == null \? null : `\$\{item\.id\}:\$\{item\.created\}`\);/, "a pushed-again notice is new and enters");
+  assert.match(notice, /useEffect\(\(\) => \(\) => leaving && shown\.delete\(shownKey\(item\)\), \[leaving\]\);/);
+});
+
+test("with a screen reader on a pill keeps a close and holds its timer only while it is drawn", () => {
+  assert.match(notice, /screenReaderOn\(\)\.then\(\(on\) => live && setReader\(on\)\);/);
+  assert.match(notice, /if \(!reader \|\| !pill \|\| !item\.action \|\| leaving \|\| !onHold\) return;\s+onHold\(item\.id\);\s+return \(\) => onRelease\?\.\(item\.id\);/, "a pill a newer result replaces is released, so it still expires");
+  assert.match(notice, /\{\(!pill \|\| reader\) && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Dismiss notification"/);
+  assert.doesNotMatch(notice, /accessibilityActions/);
+  assert.equal(app.match(/onHold=\{\(id\) => notices\.hold\(id\)\}\s+onRelease=\{\(id\) => notices\.release\(id\)\}/g).length, 2, "both stacks hold and release through the shared store");
+  assert.match(read("announce.js"), /export const screenReaderOn = \(\) => AccessibilityInfo\.isScreenReaderEnabled\(\)\.catch\(\(\) => false\);/);
+  assert.match(read("theme.js"), /noticePillMain: \{\s+alignItems: "center",\s+minHeight: g\.touchHeight,\s+paddingVertical: sp\[2\],/);
 });
 
 test("Fold rail labels use the pill size, ignore the app text size and cap the system scale", () => {

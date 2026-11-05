@@ -60,9 +60,6 @@ const scale = () => [
 
 const colorNames = [
   ["notice-surface", "noticeSurface"],
-  ["notice-info-bg", "noticeInfoBg"],
-  ["notice-info-fg", "noticeInfoFg"],
-  ["notice-info-link", "noticeInfoLink"],
   ["notice-link", "noticeLink"],
   ["toast-bg", "toastBg"],
   ["toast-fg", "toastFg"],

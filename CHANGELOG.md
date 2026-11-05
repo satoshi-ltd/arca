@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.46 — 2026-11-05
+
+- Notices are smaller and quieter: a result such as “Device name saved.” or “Removed from Watch next · Undo” is a one-line pill on the floating surface with a green check instead of a full green card, and leaves by itself (after eight seconds when it has an action; on the phone, with a screen reader on, it keeps a close button and waits). Longer results stay cards.
+- Warnings and errors keep their reason, action, Details and close in a tighter card with a smaller icon and text.
+- On the phone and the Fold only the newest result shows, centred above the tabs, replacing the one before instead of piling up.
+- On the phone a notice no longer appears twice when a sheet closes, and one already on screen no longer replays its entrance when a sheet opens or closes.
+
+Needs: native build · desktop build
+
 ## 0.8.45 — 2026-11-05
 
 - On the phone and the Fold, every step deeper (a sub-folder, an artist or album, a movie or show, the next setup step) slides in from the right and back slides out to the left, a new level opens at its top, and going back returns to its scroll position; switching tabs still just fades.

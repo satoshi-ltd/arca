@@ -1,14 +1,29 @@
 // Platform-neutral notice data. Renderers own interaction and OS presentation.
 export const noticeMetrics = Object.freeze({
   width: 360,
-  icon: 20,
-  line: 21,
+  icon: 16,
+  line: 18,
   detailsHeight: 32,
   distance: 8,
   infoTimeout: 4000,
+  actionTimeout: 8000,
   lastingBody: 90,
+  pillTitle: 40,
   maxVisible: 3,
 });
+export const noticePill = (item) =>
+  item.kind === "info" &&
+  !item.body &&
+  !item.details &&
+  String(item.title || "").length <= noticeMetrics.pillTitle;
+export const lastingNotice = (n) =>
+  !noticePill(n) &&
+  (Boolean(n.action) || String(n.body || "").length > noticeMetrics.lastingBody);
+export function phoneNotices(items) {
+  const passing = (n) => n.kind === "info" && !lastingNotice(n);
+  const result = items.findLast(passing);
+  return items.filter((n) => !passing(n) || n === result);
+}
 export const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
 export function safeDetails(value) {
   return String(value || "")
@@ -252,11 +267,14 @@ export function createNoticeStore({
   const emit = () => {
     for (const listener of listeners) listener();
   };
-  const lasting = (n) =>
-    Boolean(n.action) || String(n.body || "").length > noticeMetrics.lastingBody;
+  const lasting = lastingNotice;
   function arm(id) {
     cancel(timers.get(id));
-    const timer = schedule(() => remove(id, false), noticeMetrics.infoTimeout);
+    const item = entries.find((n) => n.id === id);
+    const timer = schedule(
+      () => remove(id, false),
+      item?.action ? noticeMetrics.actionTimeout : noticeMetrics.infoTimeout,
+    );
     timer?.unref?.();
     timers.set(id, timer);
   }

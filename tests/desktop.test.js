@@ -367,12 +367,9 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       false,
     );
     assert.equal(w.document.querySelector("#cancel-dialog").disabled, false);
-    assert.equal(
-      w.document
-        .querySelector('#notice [data-action="dismiss"]')
-        .getAttribute("aria-label"),
-      "Dismiss notification",
-    );
+    const restored = w.document.querySelector("#notice .notice-card");
+    assert.ok(restored.classList.contains("notice-pill"), "a one-line result is a pill");
+    assert.equal(restored.querySelector('[data-action="dismiss"]'), null, "a pill leaves by itself or with its action");
     assert.equal(fs.readFileSync(file, "utf8"), "old");
     w.document.querySelector('[data-view="settings"]').click();
     await until(
@@ -4599,6 +4596,9 @@ test("notices use a stable stack, expose Copy while collapsed, and preserve Deta
   w.queue.push({ id: "warning", kind: "warning", title: "Conflict" });
   w.queue.push({ id: "info2", title: "Restored" });
   assert.equal(w.document.querySelectorAll("#notice .notice-card").length, 3);
+  assert.equal(w.document.querySelectorAll("#notice .notice-pill").length, 2, "one-line results are pills on desktop, all stacked");
+  assert.equal(w.document.querySelector('[data-notice-id="warning"]').classList.contains("notice-pill"), false);
+  assert.ok(w.document.querySelector('[data-notice-id="warning"] .notice-close'), "a warning keeps its close");
 });
 
 test("navigation paints before slow reads, retains updating feedback and ignores responses from older tabs", async (t) => {

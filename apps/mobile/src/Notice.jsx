@@ -11,25 +11,35 @@ import { Text } from "./Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDesign, Icon } from "./components";
 import { native } from "./private-network";
-import { announceNotice } from "./announce.js";
+import { announceNotice, screenReaderOn } from "./announce.js";
 import { useLeaving, useMotion } from "./motion";
 import { motion, space } from "./design-tokens.js";
 import {
   noticeMetrics,
+  noticePill,
+  phoneNotices,
   safeDetails,
   errorNotice,
 } from "../../desktop/src/notice-contract.js";
+const shown = new Set();
+const shownKey = (item) => (item.created == null ? null : `${item.id}:${item.created}`);
+function markShown(key) {
+  if (!key) return;
+  shown.add(key);
+  if (shown.size > 64) shown.delete(shown.values().next().value);
+}
 const iconNames = {
   "circle-check": "check-circle",
   "circle-alert": "alert",
   "triangle-alert": "conflict",
 };
-export function Notice({ item, onDismiss, onAction, disabled, leaving = false, onLeft }) {
+export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled, leaving = false, onLeft }) {
   const { s, c } = useDesign();
   const { duration, easing } = useMotion();
   const [expanded, setExpanded] = useState(false),
     [copied, setCopied] = useState("");
-  const progress = useRef(new Animated.Value(0)).current;
+  const seen = useRef(shown.has(shownKey(item))).current;
+  const progress = useRef(new Animated.Value(seen && !leaving ? 1 : 0)).current;
   const drag = useRef(new Animated.Value(0)).current;
   const lift = useRef(
     Animated.add(
@@ -45,9 +55,14 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
       useNativeDriver: true,
     }).start(({ finished }) => finished && leaving && onLeft?.());
   }, [leaving]);
+  const announced = useRef(seen);
   useEffect(() => {
-    if (!leaving) announceNotice(item);
+    if (leaving) return;
+    markShown(shownKey(item));
+    if (announced.current) announced.current = false;
+    else announceNotice(item);
   }, [item.created, item.title, item.body]);
+  useEffect(() => () => leaving && shown.delete(shownKey(item)), [leaving]);
   const swap = useRef(new Animated.Value(1)).current;
   const shownAt = useRef(item.created);
   useEffect(() => {
@@ -74,60 +89,77 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
     }),
   ).current;
   const info = item.kind === "info";
+  const pill = noticePill(item);
+  const [reader, setReader] = useState(false);
+  useEffect(() => {
+    if (!pill) return;
+    let live = true;
+    screenReaderOn().then((on) => live && setReader(on));
+    return () => {
+      live = false;
+    };
+  }, [pill]);
+  useEffect(() => {
+    if (!reader || !pill || !item.action || leaving || !onHold) return;
+    onHold(item.id);
+    return () => onRelease?.(item.id);
+  }, [reader, pill, item.action, item.created, leaving]);
   return (
     <Animated.View
       style={[
         s.noticeCard,
-        info && s.noticeInfo,
+        pill && s.noticePill,
         { opacity: progress, transform: [{ translateY: lift }] },
       ]}
       pointerEvents={leaving ? "none" : "auto"}
       accessibilityLiveRegion={info ? "polite" : "assertive"}
     >
-      <Animated.View style={[s.noticeMain, { opacity: swap }]} {...swipe.panHandlers}>
+      <Animated.View style={[s.noticeMain, pill && s.noticePillMain, { opacity: swap }]} {...swipe.panHandlers}>
         <Icon
           name={iconNames[item.icon] || item.icon || "check-circle"}
           size={noticeMetrics.icon}
           color={
             info
-              ? c.noticeInfoLink
+              ? c.accent
               : item.kind === "warning"
                 ? c.warning
                 : c.danger
           }
         />
-        <View style={s.flex}>
-          <Text style={[s.noticeTitle, info && s.noticeInfoText]}>
+        <View style={pill ? s.noticePillContent : s.flex}>
+          <Text style={[s.noticeTitle, pill && s.noticePillTitle]}>
             {item.title}
           </Text>
           {!!item.body && (
-            <Text style={[s.noticeText, info && s.noticeInfoText]}>
+            <Text style={s.noticeText}>
               {item.body}
             </Text>
           )}
           {!!item.action && (
-            <View style={s.noticeActions}>
+            <View style={[s.noticeActions, pill && s.noticePillActions]}>
               <Pressable
                 accessibilityRole="button"
                 disabled={disabled}
                 onPress={() => onAction(item)}
                 style={s.noticeLinkTarget}
               >
-                <Text style={[s.noticeLink, info && s.noticeInfoLink]}>
+                <Text style={s.noticeLink}>
                   {item.actionLabel}
                 </Text>
               </Pressable>
             </View>
           )}
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss notification"
-          onPress={onDismiss}
-          style={s.noticeClose}
-        >
-          <Icon name="close" size={16} color={info ? c.noticeInfoFg : c.mute} />
-        </Pressable>
+        {(!pill || reader) && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss notification"
+            onPress={onDismiss}
+            style={s.noticeClose}
+          >
+            <Icon name="close" size={noticeMetrics.icon} color={c.mute} />
+          </Pressable>
+        )}
       </Animated.View>
       {!!item.details && (
         <View style={s.noticeDetails}>
@@ -170,11 +202,11 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
   );
 }
 const noticeKey = (item) => item.id;
-export function NoticeStack({ items, onDismiss, onAction, disabled, lift = 0 }) {
+export function NoticeStack({ items, onDismiss, onAction, onHold, onRelease, disabled, lift = 0 }) {
   const { s } = useDesign(),
     insets = useSafeAreaInsets(),
     { height } = useWindowDimensions();
-  const [rows, left] = useLeaving(items, noticeKey);
+  const [rows, left] = useLeaving(phoneNotices(items), noticeKey);
   if (!rows.length) return null;
   return (
     <View
@@ -202,6 +234,8 @@ export function NoticeStack({ items, onDismiss, onAction, disabled, lift = 0 }) 
             onLeft={() => left(key)}
             onDismiss={() => !leaving && onDismiss(item.id)}
             onAction={onAction}
+            onHold={onHold}
+            onRelease={onRelease}
           />
         ))}
       </ScrollView>

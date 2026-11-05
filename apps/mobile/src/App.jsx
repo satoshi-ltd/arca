@@ -4386,11 +4386,13 @@ export default function App() {
               }
             />
           )}
-          {(!sheet || detail) && (
+          {!shownSheet && (
             <NoticeStack
               items={noticeItems}
               lift={bottomBars}
               onDismiss={(id) => notices.remove(id)}
+              onHold={(id) => notices.hold(id)}
+              onRelease={(id) => notices.release(id)}
               onAction={noticeAction}
               disabled={actionLocked}
             />
@@ -4514,6 +4516,8 @@ export default function App() {
                 <NoticeStack
                   items={noticeItems.filter((n) => n.kind === "info")}
                   onDismiss={(id) => notices.remove(id)}
+                  onHold={(id) => notices.hold(id)}
+                  onRelease={(id) => notices.release(id)}
                   onAction={noticeAction}
                   disabled={actionLocked}
                 />

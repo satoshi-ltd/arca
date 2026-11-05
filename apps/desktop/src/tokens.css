@@ -49,9 +49,9 @@
   --text-display: 28px;
   --text-display-line: 34px;
   --notice-width: 360px;
-  --notice-icon: 20px;
-  --notice-line: 21px;
-  --notice-close: 32px;
+  --notice-icon: 16px;
+  --notice-line: 18px;
+  --notice-close: 24px;
   --notice-details-height: 32px;
   --tag-height: 20px;
   --tag-font: 10px;
@@ -126,9 +126,6 @@
   --layer-notice: 100;
   --layer-progress: 110;
   --notice-surface: #ffffff;
-  --notice-info-bg: #2e6350;
-  --notice-info-fg: #ffffff;
-  --notice-info-link: #ffffff;
   --notice-link: #2e6350;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
@@ -188,9 +185,6 @@
 }
 [data-theme="dark"] {
   --notice-surface: #1f2521;
-  --notice-info-bg: #7fb893;
-  --notice-info-fg: #0f1512;
-  --notice-info-link: #0f1512;
   --notice-link: #7fb893;
   --paper: #0f1512;
   --surface: #161e19;

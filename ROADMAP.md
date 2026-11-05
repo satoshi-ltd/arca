@@ -63,15 +63,6 @@ _None._
 
 ## Needs maintainer
 
-### Device checks
-
-- **VERIFY-FOLDER-SCOPE** — The phone links albums and restores against a guarded hub
-  `verify · maintainer · normal`
-  accept: with the hub on v0.8.43 or later and a phone build from v0.8.43, Link album… on a folder chosen moments before, and Restore in History, succeed at once; removing a Watch next card in a streamed Movies & TV library works on the phone and the desktop.
-- **VERIFY-OPEN-LAUNCHERS** — Programs are revealed, never opened, on installed desktops
-  `verify · maintainer · normal`
-  accept: on macOS and Windows desktop builds from v0.8.39 or later, a synced `.command`/`.app`-style file and a `.bat`/`.exe` show no Open file and are revealed in Finder or Explorer, and a conflict's Open reveals them too.
-
 ### Waiting for evidence
 
 - **MOB-SHARE-SAVE** — Sending a file to Arca on the phone sometimes does not save it

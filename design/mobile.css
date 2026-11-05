@@ -2974,3 +2974,6 @@
   background: var(--m-warning-bg);
   color: var(--m-warning);
 }
+.m-notice-stack .notice-pill {
+  align-self: center;
+}
