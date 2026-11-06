@@ -1,3 +1,4 @@
+import { reportedPlatform } from "./platform.js";
 import { assertGalleryUpload } from "./gallery-actions.js";
 import { warmHistory } from "./history-cache.js";
 import { renamedPath } from "../core/file-rename.js";
@@ -182,7 +183,7 @@ export class Engine {
     const s = this.store;
     return {
       protocol: 1,
-      platform: process.platform,
+      platform: reportedPlatform(),
       nodeVersion: process.versions.node,
       statePath: s.home,
       port: this.listeningPort || this.config.port,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.47 — 2026-11-06
+
+- A Linux distribution can name itself in the device list: a daemon started with `ARCA_PLATFORM=arcaOS` shows “arcaOS” under its name instead of “Linux”. macOS and Windows always show their own platform.
+
 ## 0.8.46 — 2026-11-05
 
 - Notices are smaller and quieter: a result such as “Device name saved.” or “Removed from Watch next · Undo” is a one-line pill on the floating surface with a green check instead of a full green card, and leaves by itself (after eight seconds when it has an action; on the phone, with a screen reader on, it keeps a close button and waits). Longer results stay cards.

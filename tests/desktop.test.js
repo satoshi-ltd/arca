@@ -2625,6 +2625,26 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Running|Offline|100\.84\.10\.2/);
 });
 
+test("a device without a report takes its platform from its Arca hello before Tailscale's OS, so a distribution's own name shows", async (t) => {
+  const { named, segments } = await devicesPage(t, {
+    status: () => ({
+      role: "hub",
+      name: "casa",
+      platform: "linux",
+      phase: "idle",
+      volumes: [{ id: "a", name: "a", selected: 1, bytes: 4, files: 1 }],
+      devices: [{ id: "thinkpad", name: "thinkpad", role: "replica", last_seen: new Date().toISOString(), last_address: "100.70.3.9", backup_enabled: null, revoked: 0 }],
+    }),
+    machines: [{ isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 4, reportedAt: new Date().toISOString() }],
+    ready: (text) => text.includes("thinkpad") && text.includes("100.99.29.84"),
+    discovery: {
+      tailscale: { state: "connected", self: { addresses: ["100.99.29.84"] } },
+      peers: [{ id: "p1", name: "thinkpad", addresses: ["100.70.3.9"], online: true, os: "linux", arca: { id: "x", role: "replica", state: "linked", platform: "arcaOS" } }],
+    },
+  });
+  assert.equal(segments(named("thinkpad"))[0], "arcaOS");
+});
+
 test("a player draws its TV glyph, app, own version, the folders it streams and the Player chip, with Remove device as its only action", async (t) => {
   const clock = Date.parse("2026-10-11T09:40:00.000Z");
   const now = new Date(clock - 10000).toISOString();

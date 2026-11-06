@@ -1,5 +1,6 @@
 import test from "node:test";
 import { verifiedTailnetURL } from "../packages/daemon/network.js";
+import { reportedPlatform } from "../packages/daemon/platform.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
@@ -228,7 +229,7 @@ test("discovery is admin-only; tailnet API stays authenticated and closes on dis
     assert.equal(metadata.client.kind, "desktop");
     assert.equal(metadata.adminToken, undefined);
     assert.equal(metadata.volumes, undefined);
-    assert.equal(metadata.platform, process.platform);
+    assert.equal(metadata.platform, reportedPlatform());
     assert.equal(
       (await fetch(`http://127.0.0.1:${daemon.port}/v1/status`)).status,
       401,

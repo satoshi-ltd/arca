@@ -153,7 +153,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.46";
+const APP_VERSION = "0.8.47";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -9335,7 +9335,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         ? escape(address)
         : "";
   const platform = (p) =>
-    p ? escape(platformLabel(p.os || p.arca.platform)) : "";
+    p ? escape(platformLabel(p.arca?.platform || p.os)) : "";
   const summary = roster?.offline
     ? '<p class="hint">Offline · showing saved device information · last known</p>'
     : "";
@@ -9377,10 +9377,10 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     machineRows += deviceRow({
       name: p?.name || hubName(),
       role: "hub",
-      platform: hub?.platform || p?.os || "",
+      platform: hub?.platform || p?.arca?.platform || p?.os || "",
       tone: hubError ? "wa" : "",
       line: deviceLine({
-        platform: hub?.platform || p?.os || p?.arca.platform,
+        platform: hub?.platform || p?.arca?.platform || p?.os,
         extra: [p ? "Tailscale" : "", new URL(status.hub).host],
       }),
       cells: deviceCells({
@@ -9427,7 +9427,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           (Boolean(d.last_address) && p.addresses.includes(d.last_address)) ||
           (Boolean(report?.machineId) && p.arca.id === report.machineId),
       );
-      const platform = report?.platform || p?.os || p?.arca.platform || "";
+      const platform = report?.platform || p?.arca?.platform || p?.os || "";
       records += deviceRow({
         name: report?.name || d.name,
         role: d.role,

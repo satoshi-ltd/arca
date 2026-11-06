@@ -1,3 +1,4 @@
+import { reportedPlatform } from "./platform.js";
 import http from "node:http";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -5,7 +6,7 @@ import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
 export const release = {
-  version: "0.8.46",
+  version: "0.8.47",
 };
 export function lanAddress(address) {
   if (isIP(address || "") !== 4) return false;
@@ -97,7 +98,7 @@ export class Network {
       name: c.name,
       role: c.role,
       ready: c.role !== "hub" || this.engine.store.volumes().length > 0,
-      platform: process.platform,
+      platform: reportedPlatform(),
       deployment: fs.existsSync("/.dockerenv") ? "docker" : "native",
       apiPort: this.port || c.port,
       client:

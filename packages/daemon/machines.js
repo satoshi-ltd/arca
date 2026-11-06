@@ -1,3 +1,4 @@
+import { reportedPlatform } from "./platform.js";
 import os from "node:os";
 import { fail } from "./storage.js";
 import { release } from "./network.js";
@@ -34,7 +35,7 @@ export function machineReport(engine) {
   return {
     machineId: status.id,
     name: status.name,
-    platform: process.platform,
+    platform: reportedPlatform(),
     version: release.version,
     arch: process.arch,
     kernelRelease: os.release(),
