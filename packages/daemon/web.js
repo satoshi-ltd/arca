@@ -322,6 +322,7 @@ export class Web {
       "/video-library.js": "video-library.js",
       "/favorite-order.js": "favorite-order.js",
       "/gallery-timeline-layout.js": "gallery-timeline-layout.js",
+      "/photo-zoom.js": "photo-zoom.js",
       "/style.css": "style.css",
       "/tokens.css": "tokens.css",
       "/vendor/lucide.js": "vendor/lucide.js",

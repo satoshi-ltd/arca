@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.50 — 2026-11-10
+
+- The desktop and web photo viewer zooms like the phone's: pinch on the trackpad to zoom around the pointer up to 4×, double-click the photo to zoom in and again to see it whole, and drag or scroll with two fingers to move around a zoomed photo.
+
+Needs: desktop build · hub redeploy
+
 ## 0.8.49 — 2026-11-10
 
 - A podcast episode whose title repeats its show's name drops it, so The Wild Project lists “#390 - Mònica Bernabé | …” instead of “The Wild Project #390 - …”, on the desktop, the web and the phone. A title that only begins with the same words, such as “Monos estocásticos en directo” in Monos, stays whole.

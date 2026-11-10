@@ -49,6 +49,9 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
     await videoLibrary.text(),
     fs.readFileSync(new URL("../apps/desktop/src/video-library.js", import.meta.url), "utf8"),
   );
+  const photoZoom = await fetch(url + "/photo-zoom.js");
+  assert.equal(photoZoom.status, 200);
+  assert.equal(await photoZoom.text(), fs.readFileSync(new URL("../apps/desktop/src/photo-zoom.js", import.meta.url), "utf8"));
   const favoriteOrder = await fetch(url + "/favorite-order.js");
   assert.equal(favoriteOrder.status, 200, "the web app can load every module app.js imports");
   assert.equal(

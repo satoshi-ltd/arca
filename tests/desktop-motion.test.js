@@ -10,6 +10,7 @@ const app = source("app.js");
 const html = source("index.html").replace("</head>", `<style>${tokens}</style></head>`);
 const script = [
   source("gallery-timeline-layout.js").replace(/export /g, ""),
+  source("photo-zoom.js").replace(/export /g, ""),
   source("file-icons.js").replace(/export /g, ""),
   source("music-library.js").replace(/export /g, ""),
   source("favorite-order.js").replace(/export /g, ""),
@@ -464,6 +465,34 @@ async function confirmDelete(ui) {
   await until(() => ui.$("#background-dialog") && ui.$("#dialog").open && ui.$("#submit-dialog")?.textContent === "Delete");
   ui.$("#dialog-form").requestSubmit();
 }
+
+test("double-clicking the photo in the viewer zooms it and a second double click shows it whole, and the next photo opens unzoomed", async (t) => {
+  const ui = await viewerGallery(t, [photo("a.jpg", "20"), photo("b.jpg", "19")]);
+  await openViewer(ui, 0);
+  await until(() => ui.$("#dialog .photo-viewer-image img"));
+  const frame = ui.$("#dialog .photo-viewer-image");
+  const win = ui.w;
+  ui.$("#dialog .photo-viewer-image img").dispatchEvent(new win.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  assert.ok(frame.classList.contains("zoomed"));
+  assert.equal(frame.style.getPropertyValue("--photo-zoom"), "2.5");
+  ui.$("#dialog .photo-viewer-image img").dispatchEvent(new win.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  assert.equal(frame.style.getPropertyValue("--photo-zoom"), "1");
+  ui.$("#dialog .photo-viewer-image img").dispatchEvent(new win.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  ui.$(".photo-next").click();
+  await until(ui.settled(() => ui.$("#dialog .photo-viewer-head h2")?.textContent === "b.jpg"));
+  await until(() => ui.$("#dialog .photo-viewer-image img"));
+  const last = ui.$("#dialog .photo-viewer-image");
+  last.querySelector("img").dispatchEvent(new win.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  assert.equal(last.style.getPropertyValue("--photo-zoom"), "2.5");
+  ui.$("#cancel-dialog").click();
+  assert.equal(last.style.getPropertyValue("--photo-zoom"), "1", "closing unzooms first so the whole photo shrinks back into its tile");
+  await until(ui.settled(() => !ui.$("#dialog").open));
+  await openViewer(ui, 0);
+  ui.$(".photo-next").click();
+  await until(ui.settled(() => ui.$("#dialog .photo-viewer-head h2")?.textContent === "b.jpg"));
+  assert.ok(!ui.$("#dialog .photo-viewer-image").classList.contains("zoomed"));
+  assert.match(fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8"), /\.photo-viewer-image img \{[^}]*transform: translate\(var\(--photo-x, 0px\), var\(--photo-y, 0px\)\) scale\(var\(--photo-zoom, 1\)\);/);
+});
 
 test("the viewer captions the photo with its name, capture date and place, and the name alone when it has none", async (t) => {
   const info = (args) =>

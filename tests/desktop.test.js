@@ -23,6 +23,8 @@ const script =
     "utf8",
   ).replace(/export /g, "") +
   "\n" +
+  fs.readFileSync(new URL("../apps/desktop/src/photo-zoom.js", import.meta.url), "utf8").replace(/export /g, "") +
+  "\n" +
   fileIconScript +
   "\n" +
   fs
@@ -9410,6 +9412,11 @@ test("an empty strip of the open photo viewer drags the native window, never its
   assert.equal(press(at("video")), 0, "video controls never start a drag");
   assert.equal(press(at(".photo-viewer-image img")), 0, "the photo itself never starts a drag");
   assert.equal(press(at(".photo-info-body p")), 0, "the Info panel never starts a drag");
+  at(".photo-viewer-image").classList.add("zoomed");
+  assert.equal(press(at(".photo-viewer-image")), 1, "the black around a zoomed photo still drags");
+  const before = drags;
+  at(".photo-viewer-image").dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientY: 400, detail: 2 }));
+  assert.equal(drags, before, "the second press of a double click on a zoomed photo's black is left to the zoom, so it can show the photo whole");
 });
 
 test("an event that arrives while a status read is running still gets its own read right after", async (t) => {

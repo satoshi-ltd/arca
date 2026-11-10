@@ -1,3 +1,4 @@
+import { attachPhotoZoom } from "./photo-zoom.js";
 import {
   galleryDay,
   galleryMoment,
@@ -153,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.49";
+const APP_VERSION = "0.8.50";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1446,6 +1447,8 @@ if (native) {
     const dialog = $("#dialog");
     const viewer = dialog.open && dialog.classList.contains("photo-viewer");
     if (dialog.open && !viewer) return;
+    if (viewer && event.detail > 1 && dialog.querySelector(".photo-viewer-image.zoomed"))
+      return;
     if (
       target.closest(
         'button, a, input, select, textarea, label, summary, [role="button"], [contenteditable="true"]',
@@ -2705,6 +2708,7 @@ function flip(element, from, { uniform = false } = {}) {
 function viewerExit() {
   const dialog = $("#dialog");
   if (!dialog?.classList.contains("photo-viewer")) return null;
+  galleryView?.zoom?.reset();
   const image = $(".photo-viewer-image");
   const tile = [...document.querySelectorAll(".photo-thumb[data-photo]")].find(
     (node) => Number(node.dataset.photo) === galleryView?.selected,
@@ -5140,6 +5144,7 @@ async function openGalleryPhoto(index) {
     : $("#cancel-dialog")
   ).focus();
   const target = $(".photo-viewer-image");
+  state.zoom = item.kind === "image" ? attachPhotoZoom(target) : null;
   if (item.kind === "image") {
     const available =
       state.previews?.get(item.hash)?.image ||

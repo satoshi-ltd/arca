@@ -4084,6 +4084,19 @@ dialog.photo-viewer {
   max-width: 100%;
   max-height: 100dvh;
   object-fit: contain;
+  transform: translate(var(--photo-x, 0px), var(--photo-y, 0px)) scale(var(--photo-zoom, 1));
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.photo-viewer-image.zoomed {
+  overflow: hidden;
+  touch-action: none;
+}
+.photo-viewer-image.zoomed img {
+  cursor: grab;
+}
+.photo-viewer-image.panning img {
+  cursor: grabbing;
 }
 .photo-viewer-image .photo-preview-placeholder {
   width: 100%;

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
 export const release = {
-  version: "0.8.49",
+  version: "0.8.50",
 };
 export function lanAddress(address) {
   if (isIP(address || "") !== 4) return false;

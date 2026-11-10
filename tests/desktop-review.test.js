@@ -7,6 +7,7 @@ const source = (name) => fs.readFileSync(new URL(`../apps/desktop/src/${name}`, 
 const html = source("index.html");
 const script = [
   source("gallery-timeline-layout.js").replace(/export /g, ""),
+  source("photo-zoom.js").replace(/export /g, ""),
   source("file-icons.js").replace(/export /g, ""),
   source("music-library.js").replace(/export /g, ""),
   source("favorite-order.js").replace(/export /g, ""),
