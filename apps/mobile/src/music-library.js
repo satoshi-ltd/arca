@@ -31,8 +31,20 @@ export function episodeDate(path) {
 export function episodeTitle(item, show) {
   const tagged = typeof item?.title === "string" ? item.title.trim() : "";
   const folder = item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")).split("/").pop() : "";
-  const fold = (value) => String(value || "").trim().toLowerCase();
-  if (tagged && fold(tagged) !== fold(show) && fold(tagged) !== fold(folder)) return tagged;
+  const fold = (value) => String(value || "").trim().normalize("NFC").toLowerCase();
+  if (tagged && fold(tagged) !== fold(show) && fold(tagged) !== fold(folder)) {
+    for (const name of [show, folder].map((value) => String(value || "").trim().normalize("NFC"))) {
+      const title = tagged.normalize("NFC");
+      if (name.length < 3 || fold(title.slice(0, name.length)) !== fold(name)) continue;
+      const after = title.slice(name.length);
+      const separated = /^\s*[-–—:|·]\s/.test(after);
+      if (!separated && !/^(?:\s*#\d|\s+\d+(?=\s*[-–—:|·]|$))/.test(after)) continue;
+      const rest = after.replace(/^[\s\-–—:|·]+/, "");
+      if (!separated && /\d$/.test(name) && /^\d/.test(rest)) continue;
+      if (/[\p{L}\p{N}]/u.test(rest)) return rest;
+    }
+    return tagged;
+  }
   const name = item.path.slice(item.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
   return name.replace(/^\d{4}-\d{2}-\d{2}\s+/, "") || name;
 }

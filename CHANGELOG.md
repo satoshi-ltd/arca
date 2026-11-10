@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.49 — 2026-11-10
+
+- A podcast episode whose title repeats its show's name drops it, so The Wild Project lists “#390 - Mònica Bernabé | …” instead of “The Wild Project #390 - …”, on the desktop, the web and the phone. A title that only begins with the same words, such as “Monos estocásticos en directo” in Monos, stays whole.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.8.48 — 2026-11-10
 
 - Sharing files to Arca from another Android app no longer stops with “Cannot read property 'layout' of null”: a sheet keeps its measured height before Android recycles the layout event.
