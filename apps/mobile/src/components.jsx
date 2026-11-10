@@ -1000,9 +1000,10 @@ export function Sheet({
           />
           <AnimatedSafeArea
             style={[s.modalPanel, centered && s.confirmPanel, panel]}
-            onLayout={(event) =>
-              setHeight((known) => known ?? event.nativeEvent.layout.height)
-            }
+            onLayout={(event) => {
+              const measured = event.nativeEvent.layout.height;
+              setHeight((known) => known ?? measured);
+            }}
           >
             {!dialog && (
               <View {...grabber.panHandlers} style={s.sheetGrabber}>

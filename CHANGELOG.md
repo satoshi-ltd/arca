@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.48 — 2026-11-10
+
+- Sharing files to Arca from another Android app no longer stops with “Cannot read property 'layout' of null”: a sheet keeps its measured height before Android recycles the layout event.
+
+Needs: native build
+
 ## 0.8.47 — 2026-11-06
 
 - A Linux distribution can name itself in the device list: a daemon started with `ARCA_PLATFORM=arcaOS` shows “arcaOS” under its name instead of “Linux”. macOS and Windows always show their own platform.
