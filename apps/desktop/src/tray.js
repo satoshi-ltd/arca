@@ -31,7 +31,10 @@ const coverWaits = new Map();
 const coverRequests = new Set();
 let state = null,
   music = null,
-  running = false;
+  running = false,
+  stopped = false,
+  failure = "",
+  painted = null;
 function coverFor(key, folder) {
   if (!key) return "";
   if (covers.has(key)) {
@@ -158,13 +161,47 @@ function patchMusic() {
 async function refresh() {
   try {
     state = await api("/v1/status");
-    draw();
+    stopped = false;
   } catch {
     state = null;
-    document.querySelector("#tray-content").innerHTML =
-      `<div class="tray-heading"><strong>Service stopped</strong></div><div class="tray-menu"><button data-action="start">${icon("power")}Start service</button><button data-action="open">${icon("app-window-mac")}Open Arca${shortcut("O")}</button><button data-action="quit">${icon("power")}Quit Arca${shortcut("Q")}</button></div><p id="tray-error" role="alert"></p>`;
-    window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+    stopped = true;
   }
+  draw();
+}
+const errorLine = () => `<p id="tray-error" role="alert">${escape(failure)}</p>`;
+const stoppedMarkup = () =>
+  `<div class="tray-heading"><strong>Service stopped</strong></div><div class="tray-menu"><button data-action="start">${icon("power")}Start service</button><button data-action="open">${icon("app-window-mac")}Open Arca${shortcut("O")}</button><button data-action="quit">${icon("power")}Quit Arca${shortcut("Q")}</button></div>${errorLine()}`;
+const CONTROL_KEYS = ["action", "folder", "music"];
+const controlKey = (el) =>
+  [el.closest(".tray-foot, .tray-folders, .tray-more-menu, .tray-heading")?.className ?? "", ...CONTROL_KEYS.map((key) => el.dataset[key] ?? "")].join("\n");
+function focusedControl(content) {
+  const focused = document.activeElement;
+  if (!document.hasFocus() || !focused || focused === content || !content.contains(focused)) return null;
+  const control = focused.closest("button");
+  if (!control) return { index: -1 };
+  const key = controlKey(control);
+  const same = [...content.querySelectorAll("button")].filter((el) => controlKey(el) === key);
+  return { key, index: same.indexOf(control) };
+}
+function refocus(content, previous) {
+  const buttons = [...content.querySelectorAll("button:not([disabled])")];
+  const same = buttons.filter((el) => controlKey(el) === previous.key);
+  const target =
+    same[previous.index] || same[0] || content.querySelector('[data-action="sync"]') || buttons[0];
+  target?.focus();
+}
+function paint(html) {
+  if (html === painted) return;
+  const content = document.querySelector("#tray-content");
+  const previous = focusedControl(content);
+  painted = html;
+  content.innerHTML = html;
+  window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+  if (previous) refocus(content, previous);
+}
+function fail(error) {
+  failure = String(error);
+  draw();
 }
 function folderRow(row) {
   const target = row.folder ? `data-folder="${escape(row.folder)}"` : `data-action="${row.action}"`;
@@ -178,7 +215,7 @@ function updateRow() {
     : "";
 }
 function draw() {
-  if (!state) return;
+  if (!state) return stopped && paint(stoppedMarkup());
   const rows = attentionRows(state);
   const head = summary(state, rows);
   const shown = rows.slice(0, ROWS_SHOWN);
@@ -192,9 +229,9 @@ function draw() {
   const menu = more
     ? `<div class="tray-menu tray-more-menu">${paused ? `<button data-action="resume">${icon("play")}Resume sync</button>` : `<button data-action="pause">${icon("pause")}Pause for 1 hour</button><button data-action="pause-tomorrow">${icon("moon")}Pause until tomorrow</button>`}<hr><button data-action="quit">${icon("power")}Quit Arca (sync continues)${shortcut("Q")}</button></div>`
     : "";
-  document.querySelector("#tray-content").innerHTML =
-    `<div class="tray-heading${head.ink ? ` tray-${head.ink}` : ""}"><img class="tray-brand-icon" src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(head.title)}</strong><p>${escape(head.line)}</p>${progress}</div>${head.resume ? `<button class="primary small-button" data-action="resume">Resume</button>` : ""}${state.role === "hub" ? '<span class="tray-role">Hub</span>' : ""}</div>${updateRow()}${folders}${musicBox()}<div class="tray-menu tray-foot"><button data-action="sync">${icon("refresh-cw")}Sync now${shortcut("R")}</button><button data-action="open">${icon("app-window-mac")}Open Arca</button><button class="ghost icon-button tray-more" data-action="more" aria-label="More" aria-expanded="${more}">${icon("ellipsis")}</button></div>${menu}<p id="tray-error" role="alert"></p>`;
-  window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+  paint(
+    `<div class="tray-heading${head.ink ? ` tray-${head.ink}` : ""}"><img class="tray-brand-icon" src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(head.title)}</strong><p>${escape(head.line)}</p>${progress}</div>${head.resume ? `<button class="primary small-button" data-action="resume">Resume</button>` : ""}${state.role === "hub" ? '<span class="tray-role">Hub</span>' : ""}</div>${updateRow()}${folders}${musicBox()}<div class="tray-menu tray-foot"><button data-action="sync">${icon("refresh-cw")}Sync now${shortcut("R")}</button><button data-action="open">${icon("app-window-mac")}Open Arca</button><button class="ghost icon-button tray-more" data-action="more" aria-label="More" aria-expanded="${more}">${icon("ellipsis")}</button></div>${menu}${errorLine()}`,
+  );
 }
 const motionToken = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const motionMs = (name) => parseFloat(motionToken(name)) || 0;
@@ -203,6 +240,7 @@ function setMore(next) {
   more = next;
   const easing = motionToken("--motion-ease") || "ease-out";
   if (!next && menu && typeof menu.animate === "function" && motionMs("--motion-exit-fast")) {
+    painted = null;
     menu.inert = true;
     document.querySelector('[data-action="more"]')?.setAttribute("aria-expanded", "false");
     return menu
@@ -239,6 +277,7 @@ document.addEventListener("click", async (e) => {
   const el = e.target.closest("button");
   if (!el || running) return;
   running = true;
+  failure = "";
   try {
     if (el.dataset.music) {
       await events?.emit("music-command", { command: el.dataset.music });
@@ -248,8 +287,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.action) await run(el.dataset.action);
     if (el.dataset.action !== "more") await refresh();
   } catch (error) {
-    const el = document.querySelector("#tray-error");
-    if (el) el.textContent = String(error);
+    fail(error);
   } finally {
     running = false;
   }
@@ -304,7 +342,10 @@ void checkUpdate();
 // Native visibility, not focus: the popover can open without becoming key, and the native loop keeps the icon current while it is closed.
 const popover = window.__TAURI__.window?.getCurrentWindow();
 setInterval(async () => {
-  if (popover && !(await popover.isVisible().catch(() => true))) return;
+  if (popover && !(await popover.isVisible().catch(() => true))) {
+    if (failure) fail("");
+    return;
+  }
   if (!running) refresh();
 }, 2000);
 const checkUpdateIfOlder = (limit) => {
@@ -322,7 +363,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     if (more) setMore(false);
-    else invoke("hide_tray").catch(() => {});
+    else {
+      if (failure) fail("");
+      invoke("hide_tray").catch(() => {});
+    }
     return;
   }
   if (!event.metaKey && !event.ctrlKey) return;
@@ -330,12 +374,10 @@ document.addEventListener("keydown", (event) => {
   if (!action || running) return;
   event.preventDefault();
   running = true;
+  failure = "";
   run(action)
     .then(() => action !== "quit" && refresh())
-    .catch((error) => {
-      const el = document.querySelector("#tray-error");
-      if (el) el.textContent = String(error);
-    })
+    .catch(fail)
     .finally(() => {
       running = false;
     });

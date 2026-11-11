@@ -50,9 +50,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **MOB-REDUCE-MOTION** — Reduce Motion stops screens, sheets, rows and notices from animating in
   `bug · agent · normal`
   `useReduceMotion` starts at false in every instance and learns the setting from a promise, so animations started on mount run at full length. Accept: one module-level store primed before the first screen and read synchronously; a hook mounted after it resolved returns true on its first render.
-- **UX-TRAY-STABLE** — The tray keeps its error and its keyboard focus
-  `bug · agent · normal`
-  The tray redraws its whole content every 2 s with no change check, which erases a failed action's error within two seconds (SPEC: "a failure keeps it open with the error") and destroys the focused button. Accept: an unchanged refresh rewrites nothing, a changed one restores focus by action, and a rejected Sync now keeps its error across a later refresh, in `tests/tray.test.js`.
 
 ## In progress
 

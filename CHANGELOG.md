@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.16 — 2026-11-11
+
+- The tray popover no longer redraws itself every two seconds when nothing changed, so a failed Sync now, pause or Start service keeps its error on screen while the popover stays open, and keyboard focus stays on the control you were on.
+
+Needs: desktop build
+
 ## 0.9.15 — 2026-11-11
 
 - A movie, episode or track download on the phone left Waiting because the hub was slow to answer now tries again on its own a minute later and as soon as you return to the app, instead of waiting for the network to change or the app to restart.

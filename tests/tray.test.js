@@ -9,7 +9,7 @@ const settle = async () => {
 };
 const clock = (value) => new Date(value).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-async function tray(t, status, { api = null, update = { available: false }, cover = () => ({}) } = {}) {
+async function tray(t, status, { api = null, update = { available: false }, cover = () => ({}), commands = {} } = {}) {
   const dom = new JSDOM('<div id="tray-content"></div>', { runScripts: "outside-only", url: "http://tauri.localhost" });
   const w = dom.window;
   t.after(() => w.close());
@@ -25,6 +25,7 @@ async function tray(t, status, { api = null, update = { available: false }, cove
     core: {
       invoke: async (command, args) => {
         ui.calls.push({ command, args });
+        if (commands[command]) return commands[command](args);
         if (command === "check_update") return update;
         if (command !== "api") return;
         if (args.route.startsWith("/v1/music/cover?")) {
@@ -547,4 +548,189 @@ test("the tray asks for status every two seconds only while its popover is on sc
   await every();
   await settle();
   assert.equal(status(), loaded + 4, "an unknown visibility polls");
+});
+
+test("an unchanged refresh rewrites nothing, and a changed one finds the focused control again by its action", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "idle", lastSync: LAST, volumes: [folder("docs")] });
+  let icons = 0;
+  ui.w.lucide.createIcons = () => icons++;
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  const heading = ui.$(".tray-heading");
+  const sync = ui.$('[data-action="sync"]');
+  sync.focus();
+  ui.status = { role: "replica", phase: "idle", lastSync: "2026-09-30T14:02:40.000Z", volumes: [folder("docs", { bytes: 4096 })] };
+  await every();
+  await settle();
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  await settle();
+  assert.equal(ui.$(".tray-heading"), heading, "a status whose rendering is identical keeps every node");
+  assert.equal(ui.$('[data-action="sync"]'), sync);
+  assert.equal(ui.w.document.activeElement, sync);
+  assert.equal(icons, 0, "no icon is created again");
+  ui.status = { role: "replica", phase: "syncing", volumes: [folder("docs", { sync: { state: "syncing" } }), folder("notes", { sync: { state: "pending" } })] };
+  await every();
+  await settle();
+  assert.notEqual(ui.$(".tray-heading"), heading, "a change is drawn");
+  assert.equal(icons, 1);
+  assert.ok(ui.$('.tray-folders [data-folder="docs"]'));
+  assert.notEqual(ui.$('[data-action="sync"]'), sync);
+  assert.equal(ui.w.document.activeElement, ui.$('[data-action="sync"]'), "focus follows Sync now into the new content");
+  ui.$('[data-folder="docs"]').focus();
+  ui.status = { role: "replica", phase: "syncing", volumes: [folder("notes", { sync: { state: "syncing" } }), folder("docs", { sync: { state: "syncing" } })] };
+  await every();
+  await settle();
+  assert.equal(ui.w.document.activeElement, ui.$('[data-folder="docs"]'), "a repeated row is found by its folder, not its place");
+  ui.status = { role: "replica", phase: "idle", lastSync: LAST, volumes: [folder("docs"), folder("notes")] };
+  await every();
+  await settle();
+  assert.equal(ui.$(".tray-folders"), null);
+  assert.equal(ui.w.document.activeElement, ui.$('[data-action="sync"]'), "a row that disappears hands focus to Sync now");
+});
+
+test("a refresh never moves focus into the popover when no control in it had focus", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "idle", volumes: [] });
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  ui.status = { role: "replica", phase: "syncing", volumes: [folder("docs", { sync: { state: "syncing" } })] };
+  await every();
+  await settle();
+  assert.ok(ui.$('.tray-folders [data-folder="docs"]'));
+  assert.equal(ui.w.document.activeElement, ui.w.document.body);
+});
+
+test("the ⋯ menu stays open, with focus on its control, across a changed refresh", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "idle", volumes: [] });
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  ui.$('[data-action="more"]').click();
+  await settle();
+  ui.$('[data-action="pause-tomorrow"]').focus();
+  ui.status = { role: "replica", phase: "syncing", volumes: [folder("docs", { sync: { state: "syncing" } })] };
+  await every();
+  await settle();
+  assert.deepEqual(ui.$$(".tray-more-menu button").map((el) => el.dataset.action), ["pause", "pause-tomorrow", "quit"]);
+  assert.equal(ui.$('[data-action="more"]').getAttribute("aria-expanded"), "true");
+  assert.equal(ui.w.document.activeElement, ui.$('[data-action="pause-tomorrow"]'));
+});
+
+test("a rejected Sync now keeps its error across refreshes until the next action or the popover closes", async (t) => {
+  let failure = new Error("The daemon is unavailable. Use Start service.");
+  const ui = await tray(t, { role: "replica", phase: "idle", lastSync: LAST, volumes: [] }, {
+    api: ({ route }) => {
+      if (failure && route === "/v1/sync") throw failure;
+    },
+  });
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  ui.$('[data-action="sync"]').click();
+  await settle();
+  assert.match(ui.$("#tray-error").textContent, /daemon is unavailable/);
+  ui.status = { role: "replica", phase: "syncing", volumes: [folder("docs", { sync: { state: "syncing" } })] };
+  for (let tick = 0; tick < 3; tick++) await every();
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  await settle();
+  assert.ok(ui.$('.tray-folders [data-folder="docs"]'), "the refreshes did draw the new state");
+  assert.match(ui.$("#tray-error").textContent, /daemon is unavailable/, "the error outlives later refreshes");
+  failure = null;
+  ui.$('[data-action="sync"]').click();
+  await settle();
+  assert.equal(ui.$("#tray-error").textContent, "", "acting again clears it");
+  assert.ok(ui.commands().includes("hide_tray"));
+  failure = new Error("Sync failed");
+  ui.$('[data-action="sync"]').click();
+  await settle();
+  assert.equal(ui.$("#tray-error").textContent, "Error: Sync failed");
+  ui.shown = async () => false;
+  await every();
+  await settle();
+  ui.shown = async () => true;
+  await every();
+  await settle();
+  assert.equal(ui.$("#tray-error").textContent, "", "a popover that closed reopens without the old error");
+  ui.$('[data-action="sync"]').click();
+  await settle();
+  assert.equal(ui.$("#tray-error").textContent, "Error: Sync failed");
+  ui.w.document.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+  assert.equal(ui.$("#tray-error").textContent, "", "Escape closes the popover and its error with it");
+});
+
+test("a failed Start service keeps its error on Service stopped across refreshes", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "idle", volumes: [] }, {
+    api: () => {
+      throw "The daemon is unavailable. Use Start service.";
+    },
+    commands: {
+      start_daemon: () => {
+        throw new Error("Could not start the service");
+      },
+    },
+  });
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  assert.equal(ui.$(".tray-heading strong").textContent, "Service stopped");
+  ui.$('[data-action="start"]').click();
+  await settle();
+  const heading = ui.$(".tray-heading");
+  await every();
+  await settle();
+  assert.equal(ui.$(".tray-heading"), heading);
+  assert.equal(ui.$("#tray-error").textContent, "Error: Could not start the service");
+});
+
+test("reopening ⋯ while it fades out shows a live menu again", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "idle", volumes: [] });
+  const style = ui.w.document.createElement("style");
+  style.textContent = read("tokens.css");
+  ui.w.document.head.append(style);
+  const animations = [];
+  ui.w.Element.prototype.animate = function (frames, options) {
+    let resolve;
+    const animation = { element: this, frames, options, finished: new Promise((done) => (resolve = done)), finish: () => resolve() };
+    animations.push(animation);
+    return animation;
+  };
+  ui.$('[data-action="more"]').click();
+  await settle();
+  const closing = ui.$(".tray-more-menu");
+  ui.w.document.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape" }));
+  await settle();
+  const fade = animations.at(-1);
+  assert.equal(fade.element, closing);
+  ui.$('[data-action="more"]').click();
+  await settle();
+  fade.finish();
+  await settle();
+  const menu = ui.$(".tray-more-menu");
+  assert.ok(menu);
+  assert.notEqual(menu, closing, "the faded menu is replaced");
+  assert.ok(!menu.inert);
+  assert.equal(ui.$('[data-action="more"]').getAttribute("aria-expanded"), "true");
+});
+
+test("focus stays on the footer's Open Arca when an attention row adds another Open Arca above it", async (t) => {
+  const row = (id) => folder(id, { sync: { state: "error", error: "Disk full" } });
+  const status = { role: "replica", phase: "idle", lastSync: LAST, volumes: [1, 2, 3, 4].map((n) => row(`f${n}`)) };
+  const ui = await tray(t, status);
+  ui.w.document.hasFocus = () => true;
+  ui.$('.tray-foot [data-action="open"]').focus();
+  ui.status = { ...status, volumes: [1, 2, 3, 4, 5].map((n) => row(`f${n}`)) };
+  await ui.w.refreshTray();
+  await settle();
+  assert.ok(ui.$$('[data-action="open"]').length >= 2, "a second Open Arca appeared");
+  assert.equal(ui.w.document.activeElement, ui.$('.tray-foot [data-action="open"]'));
+});
+
+test("a refresh while the popover window is not focused moves no focus", async (t) => {
+  const status = { role: "replica", phase: "idle", lastSync: LAST, volumes: [] };
+  const ui = await tray(t, status);
+  ui.w.document.hasFocus = () => true;
+  ui.$('[data-action="sync"]').focus();
+  ui.w.document.hasFocus = () => false;
+  const focus = ui.w.HTMLElement.prototype.focus;
+  let moved = 0;
+  ui.w.HTMLElement.prototype.focus = function () {
+    moved++;
+    return focus.call(this);
+  };
+  ui.status = { ...status, phase: "syncing", volumes: [folder("a", { sync: { state: "syncing" } })] };
+  await ui.w.refreshTray();
+  await settle();
+  assert.equal(moved, 0);
 });
