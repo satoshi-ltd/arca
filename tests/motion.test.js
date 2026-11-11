@@ -72,7 +72,7 @@ test("every phone and Fold animation takes its duration from the motion tokens a
     assert.doesNotMatch(text, /animationType="(fade|slide)"/, `${name} leaves Modal timing to the platform`);
     if (name === "components.jsx") {
       const busy = text.slice(text.indexOf("export function Busy("), text.indexOf("export function Icon("));
-      assert.match(busy, /AccessibilityInfo\.isReduceMotionEnabled\(\)\.then\(update\)/, "the busy dots, the one loop with its own rhythm, stop under reduced motion");
+      assert.match(busy, /update\(reduceMotion\.get\(\)\);\s+const unsubscribe = reduceMotion\.subscribe\(\(\) => update\(reduceMotion\.get\(\)\)\);/, "the busy dots, the one loop with its own rhythm, stop under reduced motion");
     }
     const scan = name === "components.jsx"
       ? text.slice(0, text.indexOf("export function Busy(")) + text.slice(text.indexOf("export function Icon("))

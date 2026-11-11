@@ -61,7 +61,7 @@ import { clockTime, dayLabel } from "./history-days.js";
 import { Eyebrow, Section, SelectionBar } from "./components";
 import { ConfirmDialog } from "./components";
 import * as confirmCopy from "./confirm-copy.js";
-import { Rise, useLeaving, useListMotion, useMotion, useRetained } from "./motion";
+import { Rise, reduceMotion, useLeaving, useListMotion, useMotion, useReduceMotionReady, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
@@ -244,6 +244,7 @@ import { cachedGalleryItems } from "./hub-gallery.js";
 import { savedPosition, timeLeft as leftLabel } from "./audio-positions.js";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
+reduceMotion.prime();
 const relative = (value) => {
   const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000);
   return seconds < 60
@@ -296,6 +297,7 @@ export default function App() {
     () => styles(c, wide, compact, fontScale, textScale(prefs.textSize)),
     [c, wide, compact, fontScale, prefs.textSize],
   );
+  const motionReady = useReduceMotionReady();
   const [fonts, fontError] = useFonts({
     InstrumentSans_400Regular,
     InstrumentSans_600SemiBold,
@@ -2728,7 +2730,9 @@ export default function App() {
     [locals],
   );
   const opening =
-    (!fonts && !fontError) || (!engine.current && busy && !showError);
+    (!fonts && !fontError) ||
+    !motionReady ||
+    (!engine.current && busy && !showError);
   useEffect(() => {
     if (!opening) SplashScreen.hideAsync().catch(() => {});
   }, [opening]);

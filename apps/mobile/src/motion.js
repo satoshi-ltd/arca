@@ -4,29 +4,20 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { AccessibilityInfo, Animated, Easing } from "react-native";
 import { geometry, motion, motionDurations } from "./design-tokens.js";
 import { createLeaving, createListMotion } from "./list-motion.js";
 import { flightTransform, hasFlight, takeFlight } from "./flight.js";
+import { createReduceMotion } from "./reduce-motion.js";
 
+export const reduceMotion = createReduceMotion(AccessibilityInfo);
 export function useReduceMotion() {
-  const [reduce, setReduce] = useState(false);
-  useEffect(() => {
-    let active = true;
-    AccessibilityInfo.isReduceMotionEnabled().then(
-      (value) => active && setReduce(value),
-    );
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setReduce,
-    );
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
-  return reduce;
+  return useSyncExternalStore(reduceMotion.subscribe, reduceMotion.get);
+}
+export function useReduceMotionReady() {
+  return useSyncExternalStore(reduceMotion.subscribe, reduceMotion.ready);
 }
 export function useBreathe(on) {
   const reduce = useReduceMotion();

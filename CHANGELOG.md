@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.18 — 2026-11-11
+
+- With Reduce Motion on, screens, sheets, rows and notices on the phone appear at once from the moment the app opens, instead of animating in at full length while the app was still reading the setting.
+
+Needs: native build
+
 ## 0.9.17 — 2026-11-11
 
 - Stopping sync of a folder on the phone in the middle of a download no longer leaves the partly downloaded file taking up space until Erase, and a cycle removes any partial download nothing is resuming.

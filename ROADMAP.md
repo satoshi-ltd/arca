@@ -44,9 +44,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **DAEMON-SHUTDOWN** — SIGTERM ends the daemon within a bounded time
   `bug · agent · normal`
   `stop` awaits `close()` with no deadline, and `server.close` waits for open connections (a paused film, a long download) before the engine's tail; Compose sets no `stop_grace_period`, so Docker kills the process after 10 s, and the desktop updater gives up after 30 s. The journal makes the kill safe, but the graceful path is skipped. Accept: with a never-ending blob or media response and a stubbed long scan open, close exits within a fixed bound with the index openable and no pending row lost; Compose sets a matching `stop_grace_period`.
-- **MOB-REDUCE-MOTION** — Reduce Motion stops screens, sheets, rows and notices from animating in
-  `bug · agent · normal`
-  `useReduceMotion` starts at false in every instance and learns the setting from a promise, so animations started on mount run at full length. Accept: one module-level store primed before the first screen and read synchronously; a hook mounted after it resolved returns true on its first render.
 
 ## In progress
 

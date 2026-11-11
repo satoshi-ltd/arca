@@ -2,7 +2,7 @@ import { brandMark, palettes } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion, radius } from "./design-tokens.js";
 import { railLabelFontCap } from "./text-size.js";
-import { ChangeFade, Pop, RiseOnce, RollText, useBreathe, useFlight, useMotion } from "./motion";
+import { ChangeFade, Pop, RiseOnce, RollText, reduceMotion, useBreathe, useFlight, useMotion } from "./motion";
 import {
   brandDraw,
   brandDrawLength,
@@ -25,7 +25,6 @@ import React, {
 } from "react";
 import {
   Animated,
-  AccessibilityInfo,
   Image,
   PanResponder,
   StyleSheet,
@@ -125,15 +124,12 @@ export function Busy({ color, style, size, accessibilityLabel = "Loading" }) {
       );
       loops.forEach((loop) => loop.start());
     };
-    AccessibilityInfo.isReduceMotionEnabled().then(update);
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      update,
-    );
+    update(reduceMotion.get());
+    const unsubscribe = reduceMotion.subscribe(() => update(reduceMotion.get()));
     return () => {
       active = false;
       loops.forEach((loop) => loop.stop());
-      subscription.remove();
+      unsubscribe();
     };
   }, [dots]);
   return (
