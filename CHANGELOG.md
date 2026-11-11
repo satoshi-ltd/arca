@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.14 — 2026-11-11
+
+- The release pipeline no longer gives a repository write token to the jobs that install dependencies and build: desktop builds hand their installers to a small job that uploads them to the release, the Docker build runs read-only, and no checkout leaves a token in the git configuration.
+- A failed upload more than a day after its builds is retried with Re-run all jobs, because the hand-off artifacts expire after a day.
+
 ## 0.9.13 — 2026-11-11
 
 - The desktop updater refuses a payload unless its signature was made for the version the update manifest announces, so an older signed build can no longer be offered under a newer number; the release also stops before publishing the manifest when a signature does not carry its version.

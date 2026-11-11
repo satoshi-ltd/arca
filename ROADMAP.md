@@ -32,9 +32,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-PROPOSE-RETRY** — A hub that cannot write its own copy acknowledges the accepted edit once
   `bug · agent · normal`
   When materializing fails after the commit, `propose` answers an error; the replica retries, and each retry stores another identical revision, wakes every device and resets the parking count. Accept: repeating a replica's sync while the hub write keeps failing leaves one revision for that content, answers the replica with the accepted row, reports the issue on the hub's own folder and parks the row after three hub attempts.
-- **SEC-CI-TOKEN** — A dependency's build script never holds a write-scoped repository token
-  `chore · agent · normal`
-  The `desktop` job has `contents: write`, checks out with persisted credentials and then runs `npm ci` and the cargo build; the `docker` job has `contents: write` and writes nothing. Accept: every checkout sets `persist-credentials: false`, build jobs run with `contents: read` and hand artifacts to a small upload job, and a test over the workflow files asserts both.
 - **SEC-ACTIONS-PIN** — Release workflows run only pinned code
   `chore · agent · normal`
   accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".

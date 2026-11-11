@@ -32,6 +32,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
@@ -55,6 +57,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
@@ -79,6 +83,8 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
@@ -123,7 +129,7 @@ jobs:
             core.setOutput('build', String(build));
   desktop:
     permissions:
-      contents: write
+      contents: read
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
     strategy:
@@ -143,6 +149,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
@@ -237,20 +245,41 @@ jobs:
         env:
           PLATFORM: ${{ matrix.name }}
         run: node scripts/collect-release.js
-      - name: Upload verified installers to draft release
+      - name: Hand verified installers to the upload job
         if: needs.prepare.outputs.publish == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          path: release-assets
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+          compression-level: 0
       - name: Remove signing keychain
         if: always() && runner.os == 'macOS' && inputs.sign_macos
         run: |
           security delete-keychain "$RUNNER_TEMP/arca-signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/arca.p12"
-  publish:
+  upload:
     if: needs.prepare.outputs.publish == 'true'
     needs: [prepare, desktop]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-assets
+          merge-multiple: true
+      - name: Upload verified installers to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+  publish:
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, upload]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -282,6 +311,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
