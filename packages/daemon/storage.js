@@ -397,7 +397,7 @@ export class Store {
       CREATE TRIGGER IF NOT EXISTS local_generation_delete AFTER DELETE ON local_files BEGIN
         INSERT INTO file_generations(volume,generation) VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
-      CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,failures INTEGER NOT NULL DEFAULT 0,side TEXT,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,failures INTEGER NOT NULL DEFAULT 0,side TEXT,path_key TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
       CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS transitions(id TEXT PRIMARY KEY);
@@ -552,6 +552,26 @@ export class Store {
         .some((column) => column.name === "side")
     )
       this.db.exec("ALTER TABLE pending ADD COLUMN side TEXT");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (
+        !this.db
+          .prepare("PRAGMA table_info(pending)")
+          .all()
+          .some((column) => column.name === "path_key")
+      )
+        this.db.exec("ALTER TABLE pending ADD COLUMN path_key TEXT");
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS pending_volume_path_key ON pending(volume,path_key); CREATE INDEX IF NOT EXISTS pending_unkeyed ON pending(volume) WHERE path_key IS NULL",
+      );
+      const key = this.db.prepare("UPDATE pending SET path_key=? WHERE volume=? AND path=?");
+      for (const row of this.db.prepare("SELECT volume,path FROM pending WHERE path_key IS NULL").all())
+        key.run(row.path.toLowerCase(), row.volume, row.path);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
     );
@@ -1491,9 +1511,9 @@ export class Store {
   queue(row, expected) {
     this.db
       .prepare(
-        "INSERT INTO pending(volume,path,row,expected) VALUES(?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET row=excluded.row,expected=excluded.expected,failures=CASE WHEN json_extract(pending.row,'$.rev') IS json_extract(excluded.row,'$.rev') THEN pending.failures ELSE 0 END",
+        "INSERT INTO pending(volume,path,row,expected,path_key) VALUES(?,?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET row=excluded.row,expected=excluded.expected,failures=CASE WHEN json_extract(pending.row,'$.rev') IS json_extract(excluded.row,'$.rev') THEN pending.failures ELSE 0 END",
       )
-      .run(row.volume, row.path, JSON.stringify(row), expected ?? null);
+      .run(row.volume, row.path, JSON.stringify(row), expected ?? null, row.path.toLowerCase());
   }
   markDirty(volume, name) {
     this.db
@@ -1854,6 +1874,8 @@ export class Store {
       const current = this.current(p.row.volume, p.row.path);
       if (current && current.rev > p.row.rev) {
         try {
+          // An accepted edit the hub never wrote must not vanish under a newer head that did not start from it.
+          this.keepSuperseded(p.row, current);
           this.restoreDisplaced(
             p.row,
             this.filePath(this.volume(p.row.volume), p.row.path),
@@ -2073,11 +2095,51 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw e;
     }
-    if (write) {
-      for (const ancestor of ancestors) this.materialize(ancestor, null);
-      this.materialize(row, expected);
-    }
+    if (write)
+      try {
+        for (const ancestor of ancestors) this.materialize(ancestor, null);
+        this.materialize(row, expected);
+      } catch (error) {
+        throw Object.assign(error, { accepted: row });
+      }
     return row;
+  }
+  unwritten(volume, name) {
+    return (
+      this.db
+        .prepare(
+          "SELECT r.volume,r.path,r.hash,r.size,r.deleted,r.author,r.created,r.directory,r.rev FROM pending p JOIN revisions r ON r.rev=json_extract(p.row,'$.rev') LEFT JOIN files f ON f.volume=p.volume AND f.path=p.path WHERE p.volume=? AND p.path_key=? AND COALESCE(json_extract(p.row,'$.reselected'),0)=0 AND r.rev>COALESCE(f.rev,0) ORDER BY r.rev DESC LIMIT 1",
+        )
+        .get(volume, name.toLowerCase()) ?? null
+    );
+  }
+  keepSuperseded(row, head) {
+    if (
+      this.config.role !== "hub" ||
+      !row.hash ||
+      row.deleted ||
+      row.directory ||
+      row.reselected ||
+      row.pendingFrom ||
+      row.hash === head.hash
+    )
+      return;
+    const receipt = this.db
+      .prepare("SELECT id,device FROM accepted_proposals WHERE revision=? AND volume=?")
+      .get(row.rev, row.volume);
+    const name = receipt
+      ? `${row.path}.conflict-${receipt.device.slice(0, 8)}-${receipt.id.slice(0, 8)}-${head.rev}`
+      : `${row.path}.conflict-${(row.author || this.config.id).slice(0, 8)}-${row.rev}`;
+    if (
+      this.current(row.volume, name)?.hash === row.hash ||
+      this.unwritten(row.volume, name)?.hash === row.hash
+    )
+      return;
+    try {
+      this.commit(row.volume, name, { hash: row.hash, size: row.size }, row.author || this.config.id, true);
+    } catch (error) {
+      if (!error.accepted) throw error;
+    }
   }
   liveDescendant(volume, name) {
     return Boolean(

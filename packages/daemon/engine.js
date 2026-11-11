@@ -123,6 +123,7 @@ export class Engine {
     this.folderBackoff = new FolderBackoff();
     this.activity = 0;
     this.folderStates = new Map();
+    this.unwrittenIssues = new Map();
     this.progress = null;
     this.phase =
       this.config.role !== "hub" && !this.config.hub ? "unlinked" : "idle";
@@ -332,6 +333,7 @@ export class Engine {
           Authorization: `Bearer ${hub.token}`,
           "X-Arca-Directories": "1",
           "X-Arca-Path-Transitions": "1",
+          "X-Arca-Unpublished": "1",
           ...options.headers,
         },
         signal: AbortSignal.any([
@@ -558,7 +560,23 @@ export class Engine {
     fs.renameSync(tmp, file);
     syncDirectory(this.store.objects);
   }
-  async propose(body, device) {
+  async propose(body, device, { unpublished = false } = {}) {
+    const result = await this.proposal(body, device);
+    const row = result.row;
+    const waiting =
+      !result.conflict &&
+      !!row &&
+      row.rev > (this.store.current(body.volume, row.path)?.rev ?? 0);
+    const { unpublished: _, ...answer } = result;
+    if (!waiting) return answer;
+    if (!unpublished)
+      fail(
+        `The hub accepted this change but cannot write it to its own folder yet: ${row.path}`,
+        409,
+      );
+    return { ...answer, unpublished: true };
+  }
+  async proposal(body, device) {
     const s = this.store;
     const {
       volume,
@@ -622,6 +640,7 @@ export class Engine {
       .prepare("SELECT response FROM proposals WHERE id=?")
       .get(op);
     const old = s.pathHead(volume, name);
+    const head = s.unwritten(volume, name) ?? old;
     if (cached) {
       const saved = JSON.parse(cached.response);
       if (saved.revision === revision()) return saved.result;
@@ -636,48 +655,88 @@ export class Engine {
           "INSERT OR IGNORE INTO accepted_proposals(id,volume,device,base) VALUES(?,?,?,?)",
         )
         .run(op, volume, device.id, base);
+    let refused = null;
+    const accept = (entry, ...rest) => {
+      remember();
+      try {
+        return s.commit(volume, name, entry, device.id, true, ...rest);
+      } catch (error) {
+        if (!error.accepted) throw error;
+        refused = `${name}: ${error.message}`;
+        return error.accepted;
+      }
+    };
+    const unwrittenAt = (target) =>
+      fail(
+        `The hub accepted this change but cannot write it to its own folder yet: ${target}`,
+        409,
+      );
+    // A failed write at another path still records its revision, so a repeat is answered from it instead of committing another.
+    const elsewhere = (target, entry, ...rest) => {
+      try {
+        return s.commit(volume, target, entry, device.id, true, ...rest);
+      } catch (error) {
+        if (error.accepted)
+          s.db
+            .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
+            .run(error.accepted.rev, op);
+        throw error;
+      }
+    };
+    const landed = replayed?.revision
+      ? s.db
+          .prepare("SELECT volume,path,hash,size,deleted,directory,rev FROM revisions WHERE rev=? AND volume=?")
+          .get(replayed.revision, volume)
+      : null;
+    const relocated =
+      hash && landed && landed.path !== name && landed.hash === hash && !landed.deleted
+        ? landed
+        : null;
     // An applied request cannot take the lost-reply mutation shortcut.
     const stale =
-      (old?.rev ?? 0) !== base &&
+      (head?.rev ?? 0) !== base &&
       !(
         !replayed &&
         !directory &&
         name !== IGNORE_FILE &&
-        this.ownProposalAtBase(volume, name, old, base, device)
+        this.ownProposalAtBase(volume, name, head, base, device)
       );
     let result;
     const moved = stale && hash && !replayed && name !== IGNORE_FILE
-      ? this.renameTarget(volume, name, old, base, { hash, size })
+      ? this.renameTarget(volume, name, head, base, { hash, size })
       : null;
     // Replaying an acknowledged write must not conflict with its own later
     // write on the same base. Return the original ACK so replicas can pull the
     // newer head using the content they actually proposed as their baseline.
     const superseded = hash && !directory && name !== IGNORE_FILE &&
-      replayed?.revision > base && replayed.revision < old?.rev &&
+      replayed?.revision > base && replayed.revision < head?.rev &&
       replayed.volume === volume && replayed.device === device.id && replayed.base === base &&
-      this.ownProposalAtBase(volume, name, old, base, device);
-    if (superseded)
+      this.ownProposalAtBase(volume, name, head, base, device);
+    if (relocated && s.unwritten(volume, relocated.path)?.hash === hash)
+      unwrittenAt(relocated.path);
+    const arrived = relocated && s.current(volume, relocated.path);
+    if (arrived && !arrived.deleted && arrived.hash === hash)
+      result = { row: arrived, conflict: false };
+    else if (superseded)
       result = {
         row: { volume, path: name, hash, size, rev: replayed.revision, deleted: 0, directory: 0 },
         conflict: false,
       };
-    else if (old?.path === name && entryKey(old) === entryKey(item))
-      result = { row: old || null, conflict: false };
-    else if (!item && old?.directory && !old.deleted && s.liveDescendant(volume, name))
+    else if (head?.path === name && entryKey(head) === entryKey(item))
+      result = { row: head || null, conflict: false };
+    else if (!item && head?.directory && !head.deleted && s.liveDescendant(volume, name))
       result = {
         row: old,
         conflict: true,
         reason: "Directory has newer contents; they were kept",
       };
-    else if (stale && (directory || old?.directory)) {
-      if (old?.deleted && item) {
-        remember();
-        result = {
-          row: s.commit(volume, name, item, device.id, true),
-          conflict: false,
-        };
-      } else if (old?.directory && !item)
-        result = { row: old, conflict: !old.deleted };
+    else if (stale && (directory || head?.directory)) {
+      if (head?.deleted && item)
+        result = { row: accept(item, old?.hash), conflict: false };
+      else if (head?.directory && !item)
+        result = head.deleted
+          ? { row: head, conflict: false }
+          : { row: old, conflict: true };
       else
         fail(
           "Path type changed on the hub; reconcile the local path before retrying",
@@ -686,25 +745,18 @@ export class Engine {
     } else if (moved) {
       remember();
       result = {
-        row: s.commit(
-          volume,
+        row: elsewhere(
           moved.path,
           moved.item,
-          device.id,
-          true,
           moved.expected,
           null,
           moved.renameFrom,
         ),
         conflict: false,
       };
-    } else if (stale && hash && old?.deleted && !replayed && name !== IGNORE_FILE) {
-      remember();
-      result = {
-        row: s.commit(volume, name, item, device.id, true),
-        conflict: false,
-      };
-    } else if (stale) {
+    } else if (stale && hash && head?.deleted && !replayed && name !== IGNORE_FILE)
+      result = { row: accept(item, old?.hash), conflict: false };
+    else if (stale) {
       if (name === IGNORE_FILE)
         fail(
           "Sync paused: .arcaignore differs between this device and the hub. Use the same rules on both before retrying.",
@@ -717,12 +769,14 @@ export class Engine {
           reason: "Remote edit preserved; stale deletion rejected",
         };
       else {
-        const conflictName = `${name}.conflict-${device.id.slice(0, 8)}-${op.slice(0, 8)}-${old?.rev || 0}`;
+        const conflictName = `${name}.conflict-${device.id.slice(0, 8)}-${op.slice(0, 8)}-${head?.rev || 0}`;
         const existing = s.current(volume, conflictName);
         const row =
           existing?.hash === hash
             ? existing
-            : s.commit(volume, conflictName, { hash, size }, device.id, true);
+            : s.unwritten(volume, conflictName)?.hash === hash
+              ? unwrittenAt(conflictName)
+              : s.commit(volume, conflictName, { hash, size }, device.id, true);
         // A conflict is no longer a verified complete native asset group.
         const member = s.db
           .prepare(
@@ -743,29 +797,30 @@ export class Engine {
         }
         result = { row: old || null, conflict: true, conflictPath: row.path };
       }
-    } else {
-      remember();
+    } else
       result = {
-        row: s.commit(
-          volume,
-          name,
+        row: accept(
           item,
-          device.id,
-          true,
           old?.hash,
           null,
           old?.path !== name ? old?.path : null,
         ),
         conflict: false,
       };
-    }
     if (!result.conflict) {
       remember();
-      if (result.row && result.row.rev !== old?.rev)
+      if (result.row && result.row.rev !== head?.rev)
         s.db
           .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
           .run(result.row.rev, op);
     }
+    if (refused)
+      this.reportUnwritten(s.volume(volume), [
+        ...(this.unwrittenIssues.get(volume) ?? []).filter(
+          (issue) => !issue.startsWith(`${name}: `),
+        ),
+        refused,
+      ]);
     s.db.prepare("INSERT OR REPLACE INTO proposals(id,response) VALUES(?,?)").run(
       op,
       JSON.stringify({
@@ -1149,6 +1204,13 @@ export class Engine {
               isolate(name, error);
               blocked.set(name.toLowerCase(), name);
             };
+            const awaited = new Map();
+            // Indexing a row the hub has not published would make its older published row look like a hub that went back.
+            const acknowledge = (result, name, key) => {
+              if (result?.unpublished)
+                awaited.set(name.toLowerCase(), { name, rev: result.row.rev });
+              else this.recordAccepted(result, v.id, name, key);
+            };
             try {
               s.recover(v.id);
             } catch (error) {
@@ -1233,14 +1295,13 @@ export class Engine {
                 !diskNames.has(row.path.toLowerCase())
               ) {
                 try {
-                  this.recordAccepted(
+                  acknowledge(
                     await this.json("/v1/propose", {
                       volume: v.id,
                       path: row.path,
                       base: row.rev,
                       hash: null,
                     }),
-                    v.id,
                     row.path,
                     null,
                   );
@@ -1318,7 +1379,7 @@ export class Engine {
                     : null;
                 if (modified) s.rememberFileDate(item.hash, modified);
                 try {
-                  this.recordAccepted(
+                  acknowledge(
                     await this.json("/v1/propose", {
                       volume: v.id,
                       path: name,
@@ -1326,7 +1387,6 @@ export class Engine {
                       ...item,
                       ...(modified && { modified }),
                     }),
-                    v.id,
                     name,
                     entryKey(item),
                   );
@@ -1448,6 +1508,8 @@ export class Engine {
                   }
                 for (const row of page.files) {
                   this.checkSyncInterrupted();
+                  if (row.rev < awaited.get(row.path.toLowerCase())?.rev)
+                    continue;
                   if (
                     useChanges &&
                     row.path === IGNORE_FILE &&
@@ -1551,6 +1613,11 @@ export class Engine {
             this.work.complete(v, plan);
             if (hubHistory) this.work.epoch(v.id, hubHistory.epoch);
             if (plan.acknowledge) s.clearLocal(v.id, plan.paths);
+            if (awaited.size)
+              await this.reconcileLocal(
+                v.id,
+                [...awaited.values()].map((held) => held.name),
+              );
             for (const name of blocked.values()) this.work.mark(v.id, name);
             this.work.policy(v.id, policy);
             if (!issues.length)
@@ -2339,7 +2406,8 @@ export class Engine {
             covers(plan.paths, row.path) &&
             !disk.has(row.path) &&
             !diskNames.has(row.path.toLowerCase()) &&
-            !excluded(row.path, !!row.directory)
+            !excluded(row.path, !!row.directory) &&
+            s.unwritten(v.id, row.path)?.deleted !== 0
           )
             s.commit(v.id, row.path, null, this.config.id);
         }
@@ -2375,18 +2443,14 @@ export class Engine {
           s.db
             .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
             .run(time, v.id);
-        this.folderStates.set(
-          v.id,
-          issues.length
-            ? {
-                state: "error",
-                error: `Could not write ${issues.length === 1 ? "1 file" : `${issues.length} files`} to this folder: ${issues.slice(0, 3).join("; ")}`,
-                lastCompleted: v.last_sync,
-              }
-            : { state: "synced", lastCompleted: time },
-        );
-        if (issues.length) this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
-        else if (!paths) this.folderBackoff.succeeded(v.id);
+        if (issues.length) {
+          this.reportUnwritten(v, issues);
+          this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
+        } else {
+          this.unwrittenIssues.delete(v.id);
+          this.folderStates.set(v.id, { state: "synced", lastCompleted: time });
+          if (!paths) this.folderBackoff.succeeded(v.id);
+        }
       } catch (e) {
         if (e.syncInterrupted) {
           this.folderStates.set(v.id, {
@@ -2409,6 +2473,14 @@ export class Engine {
         status: 409,
         folderOnly: !deviceWide,
       });
+  }
+  reportUnwritten(v, issues) {
+    this.unwrittenIssues.set(v.id, issues);
+    this.folderStates.set(v.id, {
+      state: "error",
+      error: `Could not write ${issues.length === 1 ? "1 file" : `${issues.length} files`} to this folder: ${issues.slice(0, 3).join("; ")}`,
+      lastCompleted: v.last_sync,
+    });
   }
   renameShare(id, name) {
     validPath(name);

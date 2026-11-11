@@ -1959,7 +1959,9 @@ export async function start(home, options = {}) {
                   !Number.isFinite(Date.parse(b.captured)))
               )
                 fail("Invalid capture date");
-              const result = await engine.propose(b, device);
+              const result = await engine.propose(b, device, {
+                unpublished: req.headers["x-arca-unpublished"] === "1",
+              });
               if (b.hash && b.captured)
                 s.db
                   .prepare(

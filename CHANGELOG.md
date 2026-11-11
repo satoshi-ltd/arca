@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.22 — 2026-11-11
+
+- When the hub cannot write a file into its own folder, an edit from a device is still accepted once: repeated syncs no longer pile up identical versions or wake every device, the hub names the file on its folder, and a save made on the hub meanwhile keeps the device's edit as a conflict copy.
+- Desktop, server replicas and phones from this version tell the hub they understand such an answer; older ones keep getting a refusal for that one file, as before, and never lose it.
+
+Needs: desktop build · native build · hub redeploy · server replica redeploy
+
 ## 0.9.21 — 2026-11-11
 
 - A folder that keeps failing (a symlink, a reserved name, a case collision) now waits on its own before retrying, on the hub and on computers, so edits in your other folders still sync within seconds instead of waiting up to five minutes behind it. Sync now retries every folder at once.

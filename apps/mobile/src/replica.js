@@ -1028,6 +1028,11 @@ export class Replica {
           throw error;
         });
       const result = await this.client.api("/v1/propose", op);
+      // Indexing a row the hub has not written would let a hub-side save replace this edit without a conflict copy; the next scan proposes it again.
+      if (result.unpublished) {
+        await this.store.dequeue(this.scope, folder.id, op.path);
+        continue;
+      }
       // The acknowledged source hash is the baseline for safe materialization.
       if (result.row)
         await this.store.put(this.scope, {

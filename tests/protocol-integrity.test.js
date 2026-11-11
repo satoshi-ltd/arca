@@ -28,6 +28,7 @@ async function setup(t, options = { timer: false }) {
           Authorization: `Bearer ${credential}`,
           "X-Arca-Directories": "1",
           "X-Arca-Path-Transitions": "1",
+          "X-Arca-Unpublished": "1",
           "Content-Type": "application/json",
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
@@ -1432,4 +1433,415 @@ test("erase still stops on a failure that is not a refused permission", async (t
   await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), { status: 500 });
   assert.ok(r.engine.config.destroyPending, "the erase stays retryable");
   assert.ok(fs.existsSync(folder));
+});
+
+const refuseHubWrites = (hub, refused) => {
+  const s = hub.engine.store,
+    materializeRow = s.materializeRow.bind(s);
+  s.materializeRow = (row, expected) => {
+    if (refused(row))
+      throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+    return materializeRow(row, expected);
+  };
+  return () => {
+    s.materializeRow = materializeRow;
+  };
+};
+const staged = (hub, volume, name, base, text) => {
+  const hash = digest(text);
+  fs.writeFileSync(hub.engine.store.blob(hash), text);
+  return { volume: volume.id, path: name, base, hash, size: Buffer.byteLength(text) };
+};
+const revisionsOf = (hub, volume, hash) =>
+  hub.engine.store.db
+    .prepare("SELECT COUNT(*) AS n FROM revisions WHERE volume=? AND hash=?")
+    .get(volume.id, hash).n;
+const writeFailures = (hub, volume, name) =>
+  hub.engine.store.db
+    .prepare("SELECT failures FROM pending WHERE volume=? AND path=?")
+    .get(volume.id, name)?.failures;
+const published = async (hub, volume) =>
+  (await hub.api(`/v1/changes?volume=${volume.id}&after=0`)).through;
+
+test("a hub that cannot write its own copy stores an accepted edit once and answers every repeat with it", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const phone = await connect("unwritable-hub");
+  await phone.sync();
+  const s = hub.engine.store;
+  const base = s.current(volume.id, "note.txt").rev;
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  const edit = staged(hub, volume, "note.txt", base, "edited away from the hub");
+  const first = await hub.api("/v1/propose", edit, phone.invite.token);
+  assert.equal(first.conflict, false);
+  assert.equal(first.unpublished, true);
+  assert.equal(first.row.hash, edit.hash);
+  assert.ok(first.row.rev > base);
+  assert.equal(writeFailures(hub, volume, "note.txt"), 1);
+  assert.match(
+    hub.engine.folderStates.get(volume.id).error,
+    /^Could not write 1 file to this folder: note\.txt: EPERM/,
+  );
+  assert.ok((await published(hub, volume)) < first.row.rev);
+  s.db.exec("DELETE FROM proposals");
+  for (const attempt of [2, 3]) {
+    assert.deepEqual(await hub.api("/v1/propose", edit, phone.invite.token), first);
+    assert.equal(writeFailures(hub, volume, "note.txt"), attempt, "a repeat never restarts the count");
+  }
+  assert.equal(revisionsOf(hub, volume, edit.hash), 1);
+  assert.equal(s.db.prepare("SELECT MAX(rev) AS n FROM revisions").get().n, first.row.rev);
+  assert.match(hub.engine.folderStates.get(volume.id).error, /note\.txt: EPERM/);
+  assert.ok((await published(hub, volume)) >= first.row.rev, "three failed writes park the row");
+  assert.equal(read(hub, volume, "note.txt"), "original");
+  release();
+  await hub.sync();
+  assert.equal(read(hub, volume, "note.txt"), "edited away from the hub");
+  assert.equal(hub.engine.folderStates.get(volume.id).state, "synced");
+  const settled = await hub.api("/v1/propose", edit, phone.invite.token);
+  assert.equal(settled.unpublished, undefined);
+  assert.equal(settled.row.hash, edit.hash);
+  assert.deepEqual(conflicts(hub, volume), []);
+});
+
+test("an edit the hub accepted but cannot write is the head for later proposals", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const phone = await connect("phone-ahead"),
+    other = await connect("other-behind");
+  await phone.sync();
+  await other.sync();
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  const first = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "note.txt", base, "first edit"),
+    phone.invite.token,
+  );
+  const rival = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "note.txt", base, "edited on the old base"),
+    other.invite.token,
+  );
+  assert.equal(rival.conflict, true, "the accepted edit is never replaced from an older base");
+  assert.equal(rival.row.rev, base, "a conflict still answers the published row");
+  assert.equal(read(hub, volume, rival.conflictPath), "edited on the old base");
+  const second = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "note.txt", first.row.rev, "second edit"),
+    phone.invite.token,
+  );
+  assert.equal(second.conflict, false);
+  assert.equal(second.unpublished, true);
+  assert.ok(second.row.rev > first.row.rev);
+  const reverted = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "note.txt", second.row.rev, "original"),
+    phone.invite.token,
+  );
+  assert.equal(reverted.conflict, false);
+  assert.ok(reverted.row.rev > second.row.rev, "going back to the published content is a new revision over the accepted one");
+  const last = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "note.txt", reverted.row.rev, "third edit"),
+    phone.invite.token,
+  );
+  release();
+  await hub.sync();
+  assert.equal(read(hub, volume, "note.txt"), "third edit");
+  assert.equal(hub.engine.store.current(volume.id, "note.txt").hash, last.row.hash);
+  assert.deepEqual(conflicts(hub, volume), [rival.conflictPath]);
+});
+
+test("a conflict copy the hub cannot write is stored once and answered only when its folder holds it", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("mac-stale"),
+    win = await connect("win-current");
+  await mac.sync();
+  await win.sync();
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  write(win, volume, "note.txt", "win edit");
+  await win.sync();
+  const release = refuseHubWrites(hub, (row) => row.path.includes(".conflict-"));
+  const stale = staged(hub, volume, "note.txt", base, "mac edit");
+  await assert.rejects(hub.api("/v1/propose", stale, mac.invite.token), { status: 500 });
+  for (let attempt = 0; attempt < 2; attempt++)
+    await assert.rejects(hub.api("/v1/propose", stale, mac.invite.token), {
+      status: 409,
+      message: /cannot write it to its own folder yet: note\.txt\.conflict-/,
+    });
+  assert.equal(revisionsOf(hub, volume, stale.hash), 1);
+  assert.deepEqual(conflicts(hub, volume), []);
+  release();
+  const answered = await hub.api("/v1/propose", stale, mac.invite.token);
+  assert.equal(answered.conflict, true);
+  assert.equal(read(hub, volume, answered.conflictPath), "mac edit");
+  assert.equal(read(hub, volume, "note.txt"), "win edit");
+});
+
+test("a replica keeps an edit the hub accepted but cannot write, reports nothing and never proposes a second revision", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("mac-held"),
+    win = await connect("win-waiting");
+  await mac.sync();
+  await win.sync();
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  write(mac, volume, "note.txt", "edited on the replica");
+  const hash = digest("edited on the replica");
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await mac.sync();
+    assert.equal(mac.engine.folderStates.get(volume.id).state, "synced");
+    assert.equal(read(mac, volume, "note.txt"), "edited on the replica", "the hub's older row never replaces the accepted edit");
+    assert.equal(mac.engine.store.current(volume.id, "note.txt").rev, base, "an unpublished row is not indexed");
+    assert.equal(mac.engine.store.viewCurrent(volume.id, "note.txt").hash, hash, "the local view keeps showing the edit");
+  }
+  assert.equal(revisionsOf(hub, volume, hash), 1);
+  assert.ok(writeFailures(hub, volume, "note.txt") >= 3);
+  assert.match(hub.engine.folderStates.get(volume.id).error, /note\.txt: EPERM/);
+  await win.sync();
+  assert.equal(read(win, volume, "note.txt"), "original");
+  write(mac, volume, "note.txt", "edited again on the replica");
+  await mac.sync();
+  assert.equal(mac.engine.folderStates.get(volume.id).state, "synced");
+  assert.equal(revisionsOf(hub, volume, digest("edited again on the replica")), 1, "its next edit continues from the accepted one");
+  release();
+  await hub.sync();
+  await mac.sync();
+  await win.sync();
+  for (const n of [hub, mac, win]) {
+    assert.equal(read(n, volume, "note.txt"), "edited again on the replica");
+    assert.deepEqual(conflicts(n, volume), []);
+  }
+  assert.equal(mac.engine.store.current(volume.id, "note.txt").hash, digest("edited again on the replica"));
+  assert.equal(mac.engine.folderStates.get(volume.id).state, "synced");
+});
+
+test("a replica's deletion the hub accepted but cannot apply is stored once and the file does not come back", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("mac-deleted");
+  await mac.sync();
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt" && row.deleted);
+  fs.unlinkSync(localPath(mac, volume, "note.txt"));
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await mac.sync();
+    assert.equal(mac.engine.folderStates.get(volume.id).state, "synced");
+    assert.equal(fs.existsSync(localPath(mac, volume, "note.txt")), false);
+    assert.equal(mac.engine.store.viewCurrent(volume.id, "note.txt").deleted, 1);
+  }
+  assert.equal(
+    hub.engine.store.db
+      .prepare("SELECT COUNT(*) AS n FROM revisions WHERE volume=? AND path='note.txt' AND deleted=1")
+      .get(volume.id).n,
+    1,
+  );
+  assert.match(hub.engine.folderStates.get(volume.id).error, /note\.txt: EPERM/);
+  assert.equal(read(hub, volume, "note.txt"), "original");
+  release();
+  await hub.sync();
+  assert.equal(fs.existsSync(localPath(hub, volume, "note.txt")), false);
+  await mac.sync();
+  assert.equal(mac.engine.store.current(volume.id, "note.txt").deleted, 1);
+  assert.equal(fs.existsSync(localPath(mac, volume, "note.txt")), false);
+});
+
+const noteFiles = (n, volume) => {
+  const dir = n.engine.store.volume(volume.id).path;
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.startsWith("note.txt"))
+    .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
+    .sort();
+};
+
+test("a hub-side save over an edit the hub accepted but never wrote keeps that edit as a conflict copy", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("desk-overtaken");
+  await mac.sync();
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  write(mac, volume, "note.txt", "desk edit");
+  await mac.sync();
+  write(hub, volume, "note.txt", "saved on the hub");
+  await hub.sync();
+  release();
+  await hub.sync();
+  assert.deepEqual(noteFiles(hub, volume), ["desk edit", "saved on the hub"], "the hub keeps the edit before any replica repeats it");
+  await mac.sync();
+  await mac.sync();
+  assert.equal(read(hub, volume, "note.txt"), "saved on the hub");
+  assert.deepEqual(noteFiles(hub, volume), ["desk edit", "saved on the hub"]);
+  assert.deepEqual(noteFiles(mac, volume), ["desk edit", "saved on the hub"]);
+  assert.equal(read(mac, volume, "note.txt"), "saved on the hub");
+});
+
+test("a file deleted on the hub's disk never deletes an edit the hub accepted but could not write", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("desk-kept");
+  await mac.sync();
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  write(mac, volume, "note.txt", "desk edit");
+  await mac.sync();
+  fs.unlinkSync(localPath(hub, volume, "note.txt"));
+  await hub.sync();
+  assert.equal(hub.engine.store.current(volume.id, "note.txt").deleted, 0, "an edit wins over a deletion");
+  release();
+  await hub.sync();
+  assert.equal(read(hub, volume, "note.txt"), "desk edit");
+});
+
+test("a client that does not understand unpublished answers keeps the old refusal and its file", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const mac = await connect("older-client");
+  await mac.sync();
+  const request = mac.engine.request.bind(mac.engine);
+  mac.engine.request = (route, options = {}) =>
+    request(route, { ...options, headers: { ...options.headers, "X-Arca-Unpublished": "0" } });
+  const trashed = [];
+  mac.engine.moveToTrash = async (files) => {
+    trashed.push(...files);
+  };
+  const release = refuseHubWrites(hub, (row) => row.path === "note.txt");
+  write(mac, volume, "note.txt", "edited");
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await assert.rejects(mac.sync(), /note\.txt/);
+    assert.equal(read(mac, volume, "note.txt"), "edited");
+  }
+  assert.equal(revisionsOf(hub, volume, digest("edited")), 1);
+  assert.equal(mac.engine.store.current(volume.id, "note.txt").hash, digest("original"));
+  release();
+  await hub.sync();
+  await mac.sync();
+  assert.deepEqual(trashed, []);
+  assert.equal(read(mac, volume, "note.txt"), "edited");
+  assert.equal(read(hub, volume, "note.txt"), "edited");
+  assert.deepEqual(conflicts(hub, volume), []);
+});
+
+test("an edit that followed a rename is stored once while the hub cannot write it", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "old.txt", "base");
+  await hub.sync();
+  const a = await connect("renamer"),
+    b = await connect("editor");
+  await a.sync();
+  await b.sync();
+  fs.renameSync(localPath(a, volume, "old.txt"), localPath(a, volume, "new.txt"));
+  write(b, volume, "old.txt", "bob edit");
+  await a.sync();
+  const release = refuseHubWrites(hub, (row) => row.hash === digest("bob edit"));
+  for (let cycle = 0; cycle < 3; cycle++) await assert.rejects(b.sync(), /new\.txt|old\.txt/);
+  assert.equal(revisionsOf(hub, volume, digest("bob edit")), 1);
+  release();
+  await hub.sync();
+  await b.sync();
+  await a.sync();
+  await b.sync();
+  for (const n of [hub, a, b]) {
+    assert.equal(read(n, volume, "new.txt"), "bob edit");
+    assert.deepEqual(conflicts(n, volume), []);
+  }
+});
+
+test("an accepted edit the hub cannot write is the head for a case variant of its path", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const phone = await connect("phone-lower"),
+    other = await connect("other-upper");
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  const release = refuseHubWrites(hub, (row) => row.path.toLowerCase() === "note.txt");
+  const first = await hub.api("/v1/propose", staged(hub, volume, "note.txt", base, "first edit"), phone.invite.token);
+  assert.equal(first.unpublished, true);
+  const variant = await hub.api(
+    "/v1/propose",
+    staged(hub, volume, "Note.txt", base, "renamed and edited"),
+    other.invite.token,
+  );
+  assert.equal(variant.conflict, true);
+  release();
+  await hub.sync();
+  assert.equal(read(hub, volume, "note.txt"), "first edit");
+  assert.equal(read(hub, volume, variant.conflictPath), "renamed and edited");
+});
+
+test("the hub's folder lists every file it could not write, and a written edit is no longer unpublished", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "a");
+  write(hub, volume, "b.txt", "b");
+  write(hub, volume, "c.txt", "c");
+  await hub.sync();
+  const phone = await connect("two-locked");
+  const s = hub.engine.store;
+  let locked = true;
+  const release = refuseHubWrites(hub, (row) => locked && ["a.txt", "b.txt"].includes(row.path));
+  const rev = (name) => s.current(volume.id, name).rev;
+  await hub.api("/v1/propose", staged(hub, volume, "a.txt", rev("a.txt"), "a2"), phone.invite.token);
+  await hub.api("/v1/propose", staged(hub, volume, "b.txt", rev("b.txt"), "b2"), phone.invite.token);
+  assert.match(hub.engine.folderStates.get(volume.id).error, /^Could not write 2 files to this folder: .*a\.txt: EPERM.*b\.txt: EPERM/);
+  release();
+  locked = false;
+  const edit = staged(hub, volume, "c.txt", rev("c.txt"), "c2");
+  const refuseOnce = refuseHubWrites(hub, (row) => row.path === "c.txt" && !edit.done && (edit.done = true));
+  const waiting = await hub.api("/v1/propose", edit, phone.invite.token);
+  assert.equal(waiting.unpublished, true);
+  refuseOnce();
+  s.recover(volume.id);
+  assert.equal(read(hub, volume, "c.txt"), "c2");
+  const again = await hub.api("/v1/propose", edit, phone.invite.token);
+  assert.equal(again.unpublished, undefined, "a cached answer is not unpublished once the hub wrote it");
+  assert.equal(again.row.rev, waiting.row.rev);
+});
+
+test("looking up an accepted unwritten row searches the journal by folded path, never the whole folder", async (t) => {
+  const { hub, volume } = await setup(t);
+  const s = hub.engine.store;
+  const prepare = s.db.prepare.bind(s.db);
+  const seen = [];
+  s.db.prepare = (sql) => {
+    if (/FROM pending p/.test(sql)) seen.push(sql);
+    return prepare(sql);
+  };
+  s.unwritten(volume.id, "Note.txt");
+  s.db.prepare = prepare;
+  assert.equal(seen.length, 1);
+  const plan = prepare(`EXPLAIN QUERY PLAN ${seen[0]}`)
+    .all(volume.id, "note.txt")
+    .map((row) => row.detail);
+  assert.ok(
+    plan.some((step) => /^SEARCH p USING INDEX pending_volume_path_key \(volume=\? AND path_key=\?\)/.test(step)),
+    plan.join(" | "),
+  );
+  assert.ok(!plan.some((step) => /^SCAN (p|pending)\b/.test(step)), plan.join(" | "));
+});
+
+test("journal rows without a folded path, from an interrupted upgrade or an older daemon, are keyed on the next open", async (t) => {
+  const { hub, volume } = await setup(t);
+  const s = hub.engine.store;
+  const hash = digest("waiting");
+  const rev = Number(
+    s.db
+      .prepare("INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,0)")
+      .run(volume.id, "Waiting.txt", hash, 7, "older", new Date().toISOString()).lastInsertRowid,
+  );
+  s.db
+    .prepare("INSERT INTO pending(volume,path,row,expected,path_key) VALUES(?,?,?,NULL,NULL)")
+    .run(volume.id, "Waiting.txt", JSON.stringify({ volume: volume.id, path: "Waiting.txt", hash, size: 7, deleted: 0, rev }));
+  assert.equal(s.unwritten(volume.id, "waiting.txt"), null);
+  const reopened = new Store(s.home);
+  t.after(() => reopened.close());
+  assert.equal(reopened.unwritten(volume.id, "waiting.txt")?.rev, rev);
+  assert.equal(reopened.db.prepare("SELECT COUNT(*) AS n FROM pending WHERE path_key IS NULL").get().n, 0);
 });

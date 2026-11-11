@@ -483,7 +483,8 @@ test("R1 a hub row that keeps failing stops pinning the change feed and is repub
     return materializeRow(row, expected);
   };
   write(a, "stuck.txt", "v2 from a");
-  await assert.rejects(a.sync(), /stuck\.txt/);
+  await a.sync();
+  assert.equal(read(a, "stuck.txt"), "v2 from a");
   const parkedRev = JSON.parse(
     s.db.prepare("SELECT row FROM pending WHERE path='stuck.txt'").get().row,
   ).rev;
@@ -614,7 +615,7 @@ test("R1 a folder that ends a cycle with isolated issues keeps its last complete
   lock(hub, "locked.txt");
   lock(a, "incoming.txt");
   write(a, "locked.txt", "v2 from a");
-  await assert.rejects(a.sync(), /locked\.txt/);
+  await a.sync();
   const hubBefore = hub.engine.store.volume(volume.id).last_sync;
   assert.ok(hubBefore);
   await pause();
@@ -734,7 +735,7 @@ test("R1 a hub cycle that ends with an isolated issue keeps the hub's last sync"
     return materializeRow(row, expected);
   };
   write(a, "locked.txt", "v2 from a");
-  await assert.rejects(a.sync(), /locked\.txt/);
+  await a.sync();
   await hub.sync();
   const before = hub.engine.status().lastSync;
   await new Promise((resolve) => setTimeout(resolve, 5));

@@ -290,6 +290,81 @@ test("mobile preserves concurrent hub/local edits and replays an interrupted rep
   );
 });
 
+test("mobile keeps an edit the hub accepted but cannot write and never sends a second revision", async (t) => {
+  const f = await fixture(t),
+    { replica, volume, files, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "note.txt"), "original");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const s = daemon.engine.store,
+    materializeRow = s.materializeRow.bind(s);
+  let locked = true;
+  s.materializeRow = (row, expected) => {
+    if (locked && row.path === "note.txt")
+      throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+    return materializeRow(row, expected);
+  };
+  const local = files.work(replica.scope, volume.id, "note.txt");
+  fs.writeFileSync(local, "mobile edit");
+  const hash = crypto.createHash("sha256").update("mobile edit").digest("hex");
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await sync(f);
+    assert.equal(fs.readFileSync(local, "utf8"), "mobile edit");
+  }
+  assert.equal(
+    s.db.prepare("SELECT COUNT(*) AS n FROM revisions WHERE volume=? AND hash=?").get(volume.id, hash).n,
+    1,
+  );
+  assert.match(daemon.engine.folderStates.get(volume.id).error, /note\.txt: EPERM/);
+  locked = false;
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.equal(fs.readFileSync(path.join(volume.path, "note.txt"), "utf8"), "mobile edit");
+  assert.equal(fs.readFileSync(local, "utf8"), "mobile edit");
+  assert.deepEqual(fs.readdirSync(volume.path).filter((n) => n.includes(".conflict-")), []);
+});
+
+test("mobile keeps an edit the hub accepted but never wrote when the hub's own copy is saved meanwhile", async (t) => {
+  const f = await fixture(t),
+    { replica, volume, files, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "note.txt"), "original");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const s = daemon.engine.store,
+    materializeRow = s.materializeRow.bind(s);
+  let locked = true;
+  s.materializeRow = (row, expected) => {
+    if (locked && row.path === "note.txt")
+      throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+    return materializeRow(row, expected);
+  };
+  const local = files.work(replica.scope, volume.id, "note.txt");
+  const published = s.current(volume.id, "note.txt").rev;
+  fs.writeFileSync(local, "phone edit");
+  await sync(f);
+  assert.equal(
+    (await f.store.current(replica.scope, volume.id, "note.txt")).rev,
+    published,
+    "the phone never indexes a row the hub has not written",
+  );
+  fs.writeFileSync(path.join(volume.path, "note.txt"), "saved on the hub");
+  await daemon.engine.cycle();
+  locked = false;
+  await daemon.engine.cycle();
+  await sync(f);
+  await sync(f);
+  const contents = (dir) =>
+    fs.readdirSync(dir).filter((name) => name.startsWith("note.txt")).map((name) => fs.readFileSync(path.join(dir, name), "utf8")).sort();
+  assert.equal(fs.readFileSync(path.join(volume.path, "note.txt"), "utf8"), "saved on the hub");
+  assert.deepEqual(contents(volume.path), ["phone edit", "saved on the hub"]);
+  assert.equal(fs.readFileSync(local, "utf8"), "saved on the hub");
+  assert.ok(contents(path.dirname(local)).includes("phone edit"), "the phone's edit survives as a conflict copy");
+});
+
 test("mobile resumes a partial download, rejects corruption, and applies storage limits before selection", async (t) => {
   const f = await fixture(t),
     { replica, volume, files, daemon } = f;
