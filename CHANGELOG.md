@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.13 — 2026-11-11
+
+- The desktop updater refuses a payload unless its signature was made for the version the update manifest announces, so an older signed build can no longer be offered under a newer number; the release also stops before publishing the manifest when a signature does not carry its version.
+- The Tauri CLI that builds and signs the desktop app moves from 2.11 to 2.12, the first that records the version in the signature. Run `npm ci` before the next desktop build.
+
+Needs: desktop build
+
 ## 0.9.12 — 2026-11-11
 
 - A linked device can no longer put markup into the hub's Devices page through its backup report: the hub refuses a backup acknowledgement whose revision is not a whole number, whether backup is on or off, and Devices always prints that revision as a number.

@@ -32,9 +32,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-PROPOSE-RETRY** — A hub that cannot write its own copy acknowledges the accepted edit once
   `bug · agent · normal`
   When materializing fails after the commit, `propose` answers an error; the replica retries, and each retry stores another identical revision, wakes every device and resets the parking count. Accept: repeating a replica's sync while the hub write keeps failing leaves one revision for that content, answers the replica with the accepted row, reports the issue on the hub's own folder and parks the row after three hub attempts.
-- **SEC-UPDATER-DOWNGRADE** — The desktop updater never installs an older signed build under a newer number
-  `bug · agent · normal`
-  `tauri.conf.json` leaves the updater's `requireSignedVersion` off and `latest.json` is an unsigned asset, so anyone who can write the release can pair an inflated version with an old build's URL and signature. Accept: `requireSignedVersion` is on, and `updater-manifest.js` refuses a signature whose trusted comment lacks this version, with a fixture test. Check first that current signatures carry a version; if they do not, the release re-signs before enabling it.
 - **SEC-CI-TOKEN** — A dependency's build script never holds a write-scoped repository token
   `chore · agent · normal`
   The `desktop` job has `contents: write`, checks out with persisted credentials and then runs `npm ci` and the cargo build; the `docker` job has `contents: write` and writes nothing. Accept: every checkout sets `persist-credentials: false`, build jobs run with `contents: read` and hand artifacts to a small upload job, and a test over the workflow files asserts both.
@@ -112,6 +109,9 @@ Each carries a recommendation; a yes or no is enough.
 - **DEC-LAST-CHANGE-SCOPE** — Is a folder's Last change the newest event or the newest saved version?
   `decision · maintainer · low`
   The cell shows the first activity row that is not a deletion, a conflict copy or a directory, so after deleting a file it still shows the previous saved file and its author. Recommendation: count deletions (a new activity filter on the hub, gated for older hubs, and a "Deleted <name>" rendering on desktop and phone) and keep conflict copies out; the cheap alternative is renaming the label to "Last saved version".
+- **VERIFY-UPDATER-SIGNED-VERSION** — The first desktop build made with Tauri CLI 2.12 signs for its version
+  `verify · maintainer · high`
+  Since 0.9.13 the app requires the version in the update signature and the release refuses to publish a manifest without it; that the CLI writes it was checked in its macOS binary and in its source, never on a real signature, because signing needs the private key. Before the first release from this line: after `npm ci` and a signed desktop build, decode one `.sig` (`base64 -d`, then the `trusted comment:` line) and confirm it ends in `version:x.y.z` for the built version; confirm the build itself still succeeds on macOS, Windows and Linux with the 2.12 CLI, and that Open folder and Reveal still work from the Linux AppImage, which no longer bundles its own xdg-open; then confirm an installed 0.9.12 or earlier app updates to it. If a signature has no version, the `updater` job fails and `desktop-latest` keeps the previous manifest: nobody is offered a broken update.
 
 ### Native work waiting for a build
 

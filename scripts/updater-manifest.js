@@ -9,6 +9,30 @@ export const UPDATER_TARGETS = {
   "linux-x86_64-deb": (version) => `arca-${version}-linux-x64.deb`,
   "linux-x86_64": (version) => `arca-${version}-linux-x64.AppImage`,
 };
+function trustedComment(signature) {
+  const lines = Buffer.from(signature, "base64").toString("utf8").split(/\r?\n/);
+  const prefix = "trusted comment: ";
+  return lines.length >= 4 &&
+    Buffer.from(lines[1], "base64").length === 74 &&
+    lines[2].startsWith(prefix) &&
+    Buffer.from(lines[3], "base64").length === 64
+    ? lines[2].slice(prefix.length)
+    : null;
+}
+function assertSignedFor(signature, version, file) {
+  const comment = trustedComment(signature);
+  if (comment === null) throw new Error(`Malformed updater signature: ${file}`);
+  const field = comment.split("\t").find((part) => part.startsWith("version:"));
+  if (!field)
+    throw new Error(
+      `Updater signature carries no version, sign with a Tauri CLI that records it: ${file}`,
+    );
+  const signed = field.slice("version:".length);
+  if (signed.replace(/^v+/, "") !== version.replace(/^v+/, ""))
+    throw new Error(
+      `Updater signature is for version ${signed}, not ${version}: ${file}`,
+    );
+}
 export function updaterManifest({
   version,
   repository,
@@ -26,6 +50,7 @@ export function updaterManifest({
     const name = asset(version);
     const signature = (read(`${name}.sig`) || "").trim();
     if (!signature) throw new Error(`Missing updater signature: ${name}.sig`);
+    assertSignedFor(signature, version, `${name}.sig`);
     platforms[target] = {
       signature,
       url: `https://github.com/${repository}/releases/download/${tag}/${name}`,

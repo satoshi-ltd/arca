@@ -1,6 +1,6 @@
 {
   "name": "arca",
-  "version": "0.9.12",
+  "version": "0.9.13",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@noble/hashes": "2.0.1",
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "^2.12.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "29.1.1",
     "prettier": "^3.9.6",

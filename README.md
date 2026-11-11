@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.9.12 · Phase 1 release.**
+**v0.9.13 · Phase 1 release.**
 
 ## How it works
 
