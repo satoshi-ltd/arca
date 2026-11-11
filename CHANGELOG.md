@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.9 — 2026-11-11
+
+- The phone stays responsive while it syncs many small files: transfer progress refreshes the screen at most once a second instead of once per finished file, and the folder list no longer recounts every file each time a setting is saved.
+
+Needs: native build
+
 ## 0.9.8 — 2026-11-11
 
 - In large folders the hub and desktop or server replicas do far less work for each changed file: accepting an upload or noticing a local change reads only the affected paths from the index instead of going through the whole folder several times, which matters most while a phone backs up a big photo library.

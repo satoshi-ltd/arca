@@ -146,11 +146,18 @@ export class Replica {
   reportProgress(progress) {
     this.progress = progress;
     this.lastChangeAt = Date.now();
-    if (
-      progress.bytesDone < progress.bytesTotal &&
-      Date.now() - this.progressAt < PROGRESS_MS
-    )
+    const wait = this.progressAt + PROGRESS_MS - Date.now();
+    if (wait > 0) {
+      this.progressLater ||= setTimeout(() => {
+        this.progressLater = null;
+        this.progressAt = Date.now();
+        this.changed();
+      }, Math.min(wait, PROGRESS_MS));
+      this.progressLater.unref?.();
       return;
+    }
+    clearTimeout(this.progressLater);
+    this.progressLater = null;
     this.progressAt = Date.now();
     this.changed();
   }

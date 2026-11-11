@@ -1,6 +1,8 @@
 import { parseGallery } from "./validation.js";
 
 const DOWNLOAD_TABLES = { video: "video_downloads", audio: "audio_downloads" };
+// Only these tables feed folders(); every execAsync counts too, because a ROLLBACK undoes rows a reader may have cached.
+export const TOTALS_WRITE = /\b(?:INTO|UPDATE|FROM)\s+(?:files|folders|gallery_sources)\b/i;
 
 export class ReplicaStore {
   constructor(db) {
@@ -12,11 +14,12 @@ export class ReplicaStore {
         if (key !== "runAsync" && key !== "execAsync")
           return typeof value === "function" ? value.bind(target) : value;
         return async (...args) => {
-          store.writes++;
+          const totals = key === "execAsync" || TOTALS_WRITE.test(String(args[0]));
+          if (totals) store.writes++;
           try {
             return await value.apply(target, args);
           } finally {
-            store.writes++;
+            if (totals) store.writes++;
           }
         };
       },

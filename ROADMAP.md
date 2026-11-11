@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **PERF-MOB-SYNC-REFRESH** — A sync of many small files refreshes the screen once a second
-  `feature · agent · high`
-  The progress throttle skips ticks where `bytesDone === bytesTotal`, so every small file fires `changed()`, a bridge call and a full snapshot read, up to ten a second; and `folders()` caches on a counter that every write bumps, settings and view caches included, so the aggregate over every file row runs on nearly every one of those refreshes. Accept: completion ticks are throttled and the last tick of a run is always shown (50 completions in one second cause at most two `changed()` calls); the folders cache is invalidated only by methods that touch files, folders or gallery sources, with a test listing every mutating method.
 - **PERF-STATUS-TOTALS** — `/v1/status` does not scan the index, and hidden windows do not poll
   `feature · agent · high`
   Per-folder totals and `historyRevisions` are scans on each call; the hidden tray polls every 2 s and a hidden main window every 5 s, about 42 calls a minute while idle; `/v1/catalog`, `/v1/remote`, every replica's machine report and two backup paths call `status()` as well. Accept: totals memoized on `file_generations.generation` and a revision counter, callers that need only `.backup` stop computing totals, the tray and a hidden main window do not poll; a test shows a second unchanged `status()` runs no counting query and that a commit and retention update the counts.

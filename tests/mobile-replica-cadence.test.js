@@ -5,8 +5,8 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
-import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
+import { Replica, CHUNK, PROGRESS_MS } from "../apps/mobile/src/replica.js";
+import { ReplicaStore, TOTALS_WRITE } from "../apps/mobile/src/replica-store.js";
 import { createClient } from "../apps/mobile/src/client.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
@@ -833,4 +833,122 @@ test("a folder whose index holds only its .arcaignore still stops when its direc
   assert.match(f.replica.error, /Local folder is unavailable/);
   assert.equal(fs.existsSync(root), false);
   assert.equal(fs.readFileSync(path.join(f.volume.path, ".arcaignore"), "utf8"), "*.tmp\n");
+});
+
+test("fifty files finishing within a second refresh the screen twice at most, and the last one is always shown", async (t) => {
+  const f = await phone(t);
+  let changes = 0;
+  f.replica.changed = () => changes++;
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  f.replica.progressAt = 0;
+  for (let n = 1; n <= 50; n++)
+    f.replica.reportProgress({ direction: "download", path: `file-${n}.txt`, bytesDone: 10, bytesTotal: 10 });
+  assert.equal(changes, 1, "the first tick shows at once");
+  assert.equal(f.replica.progress.path, "file-50.txt");
+  t.mock.timers.tick(PROGRESS_MS - 1);
+  assert.equal(changes, 1, "nothing more inside the second");
+  t.mock.timers.tick(1);
+  assert.equal(changes, 2, "one more refresh brings the last tick");
+  f.replica.reportProgress({ direction: "download", path: "next.txt", bytesDone: 1, bytesTotal: 10 });
+  assert.equal(changes, 2, "a tick inside the next second waits too");
+  t.mock.timers.tick(PROGRESS_MS);
+  assert.equal(changes, 3);
+  assert.equal(f.replica.progress.path, "next.txt");
+  t.mock.timers.setTime(Date.now() - 3600000);
+  f.replica.reportProgress({ direction: "download", path: "after-clock-change.txt", bytesDone: 1, bytesTotal: 10 });
+  t.mock.timers.tick(PROGRESS_MS);
+  assert.equal(changes, 4, "a clock set back delays a refresh by a second at most");
+});
+
+const TOTALS_WRITERS = {
+  select: (f, scope) => f.store.select(scope, { id: f.volume.id, name: "Podcasts renamed" }),
+  issue: (f, scope) => f.store.issue(scope, f.volume.id, "Something changed"),
+  resetCursor: (f, scope) => f.store.resetCursor(scope, f.volume.id),
+  complete: (f, scope) => f.store.complete(scope, f.volume.id, 7),
+  put: (f, scope) => f.store.put(scope, { volume: f.volume.id, path: "new.txt", hash: "a".repeat(64), size: 7, rev: 99, deleted: false }),
+  applied: (f, scope) => f.store.applied(scope, { volume: f.volume.id, path: "applied.txt", hash: "b".repeat(64), size: 3, rev: 100, deleted: false }),
+  setGallery: (f, scope) => f.store.setGallery(scope, f.volume.id, { mode: "source", enabled: false, albums: [] }),
+  forgetExcluded: (f, scope) => f.store.forgetExcluded(scope, f.volume.id, (name) => name === "new.txt"),
+  clearInterrupted: (f, scope) => f.store.clearInterrupted(scope),
+  forgetFolder: (f, scope) => f.store.forgetFolder(scope, f.volume.id),
+  reset: (f) => f.store.reset(),
+};
+
+async function touchCounter(f) {
+  await f.store.db.execAsync(
+    "CREATE TEMP TABLE touched(n INTEGER NOT NULL); INSERT INTO touched VALUES(0);" +
+      ["files", "folders", "gallery_sources"]
+        .flatMap((table) => ["INSERT", "UPDATE", "DELETE"].map((event) => `CREATE TEMP TRIGGER touched_${table}_${event} AFTER ${event} ON ${table} BEGIN UPDATE touched SET n=n+1; END;`))
+        .join(""),
+  );
+  return async () => (await f.store.db.getFirstAsync("SELECT n FROM touched")).n;
+}
+
+test("folder totals survive writes that cannot change them and are recomputed after every method that can", async (t) => {
+  const f = await phone(t);
+  await f.select();
+  const scope = f.replica.scope;
+  const touched = await touchCounter(f);
+  const totals = () => f.queries.filter((sql) => sql.includes(FOLDERS_SQL)).length;
+  await f.store.folders(scope);
+  f.queries.length = 0;
+  await f.store.set("some-setting", { any: "value" });
+  await f.store.set(f.replica.inventoryKey(f.volume.id), Date.now());
+  await f.store.cacheHash("file:///x", { hash: "c".repeat(64), size: 1, mtime: 1 });
+  await f.store.folders(scope);
+  assert.equal(totals(), 0, "settings and file checks do not recompute the totals");
+  let wrote = 0;
+  for (const [name, write] of Object.entries(TOTALS_WRITERS)) {
+    const before = await touched();
+    const queries = totals();
+    await write(f, scope);
+    if ((await touched()) === before) continue;
+    wrote++;
+    await f.store.folders(scope);
+    await f.store.folders(scope);
+    assert.equal(totals(), queries + 1, `${name} recomputes the totals once`);
+  }
+  assert.ok(wrote >= 9, `${wrote} methods changed files, folders or album sources`);
+});
+
+test("every store method that writes files, folders or album sources is in the list the totals test runs", () => {
+  const source = fs.readFileSync(new URL("../apps/mobile/src/replica-store.js", import.meta.url), "utf8");
+  const methods = [...source.matchAll(/^  (?:async )?([a-zA-Z_]+)\([^)]*\) \{/gm)];
+  const writers = methods
+    .filter((match, index) => {
+      const body = source.slice(match.index, methods[index + 1]?.index ?? source.length);
+      return /\b(?:INTO|UPDATE(?: OR \w+)?|DELETE FROM)\s+(?:files|folders|gallery_sources|\$\{table\})\b/.test(body);
+    })
+    .map((match) => match[1])
+    .filter((name) => !["init", "forgetStreamedLibrary"].includes(name));
+  assert.ok(writers.length >= 8, `${writers.length} direct writers found`);
+  for (const name of writers) assert.ok(name in TOTALS_WRITERS, `${name} writes those tables: add it to TOTALS_WRITERS`);
+});
+
+test("a Stop syncing that fails halfway leaves the folder's totals as they were, not as they looked mid-way", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
+  await f.select();
+  await f.replica.sync(true);
+  const scope = f.replica.scope;
+  const before = (await f.store.folders(scope))[0].files;
+  assert.equal(before, 1);
+  const real = f.store.db;
+  let seenMidway = null;
+  f.store.db = new Proxy(real, {
+    get(target, key) {
+      if (key !== "runAsync") return target[key];
+      return async (sql, ...values) => {
+        if (/DELETE FROM scan_cache/.test(sql)) {
+          seenMidway = (await f.store.folders(scope))[0]?.files ?? "gone";
+          throw new Error("database or disk is full");
+        }
+        return target.runAsync(sql, ...values);
+      };
+    },
+  });
+  await assert.rejects(f.store.forgetFolder(scope, f.volume.id), /disk is full/);
+  f.store.db = real;
+  assert.notEqual(seenMidway, null, "the failure happened inside the transaction");
+  assert.equal((await f.store.folders(scope))[0].files, 1, "the rollback is what the screen shows");
 });
