@@ -1122,3 +1122,8 @@ body.kit {
 .kit-draw .dropdown-menu .kit-hover-track {
   background: var(--track);
 }
+.kit-board-pair .m-device.m-video-landscape {
+  width: 820px;
+  max-width: 100%;
+  height: 392px;
+}
