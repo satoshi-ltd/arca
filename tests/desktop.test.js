@@ -7910,6 +7910,38 @@ test("a month emptied by a deletion stops watching its heading sentinel", async 
   assert.ok(!unobserved.includes(w.document.querySelector('.photo-day[data-day="2026-09"] > .photo-day-edge')));
 });
 
+test("deleting from a gallery on a computer says what goes and what is not touched, and counts videos as videos", async (t) => {
+  const items = [
+    wallItem("a.jpg", "2026-09-27T10:00:00"),
+    wallItem("b.jpg", "2026-09-26T10:00:00"),
+    { ...wallItem("c.mp4", "2026-09-25T10:00:00"), kind: "video" },
+    { ...wallItem("d.mp4", "2026-09-24T10:00:00"), kind: "video" },
+  ];
+  const { w } = await mountWall(t, {
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 4, videos: 2 }], undated: noUndated }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    answer: (route, args) =>
+      route === "/v1/gallery/delete" ? { paths: [args.body.path], rows: [{ path: args.body.path, rev: 1 }] } : undefined,
+  });
+  const page = w.document;
+  await until(() => page.querySelectorAll(".photo-thumb").length === 4);
+  const select = (name) => page.querySelector(`.photo-open[aria-label="Open ${name}"]`).closest(".photo-thumb").querySelector(".photo-select").click();
+  const asked = () => [page.querySelector("#dialog .modal-title h2").textContent, page.querySelector("#dialog .modal-title p").textContent];
+  const confirm = () => page.querySelector("#dialog-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  const body =
+    "Deletes from this shared folder on every device that syncs it; a Live Photo goes with its video. Nothing is removed from a phone’s own photo library. What you delete can be restored from History while this folder’s version retention keeps it.";
+  select("c.mp4");
+  page.querySelector(".photo-selection-delete").click();
+  assert.deepEqual(asked(), ["Delete this video?", body]);
+  confirm();
+  await until(() => /1 video deleted\./.test(page.querySelector("#notice").textContent) && page.querySelectorAll(".photo-thumb").length === 3);
+  for (const name of ["a.jpg", "b.jpg", "d.mp4"]) select(name);
+  page.querySelector(".photo-selection-delete").click();
+  assert.deepEqual(asked(), ["Delete 2 photos and 1 video?", body]);
+  confirm();
+  await until(() => /2 photos and 1 video deleted\./.test(page.querySelector("#notice").textContent));
+});
+
 const tilePx = (element, name) => parseFloat(element.style.getPropertyValue(name));
 const frames = () => new Promise((resolve) => setTimeout(resolve, 80));
 const noUndated = { count: 0, videos: 0, rev: 0 };

@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **UX-DESK-DELETE-COPY** — Deleting photos on a computer no longer promises that originals stay in Photos
-  `bug · agent · high`
-  The desktop and web confirmation reuses the phone's sentence ("Originals stay in Photos"), which is false where the synced folder holds the originals, and says "photos" for videos, as does the result notice. Accept: the desktop confirmation states that the files leave every synced copy and how recovery depends on retention, counts videos as videos, and the kit pages draw the new text; a DOM test pins it.
 - **MOB-VIDEO-A11Y** — A screen-reader user can pause, seek or close a film without racing a three-second timer
   `bug · agent · high`
   The player hides its controls after 3 s of playback and removes them from the accessibility tree; moving accessibility focus never wakes them, and the tap area has no role. Notices already hold their timers for screen readers. Accept: a pure rule in `video-player-state.js` (hide only when playing, idle and no screen reader) with a test, and the tap area is a button.
@@ -368,12 +365,18 @@ Defects against SPEC §9 first, then ideas that add or change a control and need
 - **UX-NOTICE-REDACTION** — Redacting credentials in a notice does not mangle host names
   `bug · agent · low`
   `safeDetails` treats `code:`, `token:`, `secret:` and `password:` as credential fields, so an address whose host ends in one of those words (`http://vscode:8080`) is shown as `[redacted]`. Accept: redaction applies to key and value pairs, not to a host and port, with a notice-contract test.
+- **UX-DESK-VIDEO-WORDS** — A video in a gallery is called a video
+  `bug · agent · low`
+  In the desktop and web viewer a video's buttons read Delete photo, Download photo, Photo information, Previous photo and Next photo, and the hub's refusals say “Photo changed. Refresh the gallery before deleting.” for a video. Accept: the viewer's labels and those two messages name the kind of the item, with DOM and daemon tests.
+- **UX-DELETE-RETENTION-OFF** — Deleting says when nothing will be recoverable
+  `feature · agent · low`
+  Idea. The gallery and file deletion confirmations say History can restore the item while retention keeps it, even when the folder's version history is Off and the version goes at the next hourly maintenance. Accept: with history Off the confirmation says the deletion cannot be undone; the wording is part of the approval.
 - **UX-DESK-COPY** — Dialog titles and Restore follow the copy rules
   `bug · agent · low`
   "Create a shared folder on hub <name>" and "Path on <name>" use the hub's configured name; "Stop syncing on this hub?" does not name the folder; Connect stacks three hints under one field; Restore's title and prose say "rev" and "sha" and the full path. Accept: the three titles follow SPEC's rules, one hint per field, Restore reads `Restore “name”?` with no `rev` or `sha` in prose (the mono row value stays), and the kit pages match.
 - **DOC-SPEC-DRIFT** — SPEC says what the code and the kit already do
   `chore · agent · low`
-  Stale sentences found by the audit: the tray's Now playing row (§4 against §9 and the code), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing and the one-time photo picks. Accept: each sentence matches the shipped behaviour; no code changes.
+  Stale sentences found by the audit: the tray's Now playing row (§4 against §9 and the code), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. Accept: each sentence matches the shipped behaviour; no code changes.
 - **KIT-HYGIENE** — The kit's tray reuses the production rule
   `chore · agent · low`
   `.kit-tray` re-declares `#tray-content` and `#tray-error` with literal sizes that have drifted from production (a 6 px gap against `--space-2`). Accept: the kit reuses the production rules; `npm run design -- --check` and the design tests pass.

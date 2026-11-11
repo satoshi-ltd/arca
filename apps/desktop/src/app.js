@@ -154,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.5";
+const APP_VERSION = "0.9.6";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -4762,6 +4762,14 @@ function galleryCanDelete() {
       status.volumes.find((v) => v.id === galleryView?.volume)?.selected)
   );
 }
+function mediaCount(items, alone = "") {
+  const videos = items.filter((item) => item.kind === "video").length;
+  const photos = items.length - videos;
+  if (alone && items.length === 1) return `${alone} ${videos ? "video" : "photo"}`;
+  return [photos && countLabel(photos, "photo"), videos && countLabel(videos, "video")]
+    .filter(Boolean)
+    .join(" and ");
+}
 function deleteGalleryPhotos(items) {
   if (!items.length || !galleryCanDelete()) return;
   if (hubOffline()) return void hubOnlyBlocked();
@@ -4776,8 +4784,8 @@ function deleteGalleryPhotos(items) {
   let completed = 0;
   modal(
     modalHeader(
-      `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
-      "Deletes from the shared Photos library for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s version retention.",
+      `Delete ${mediaCount(items, "this")}?`,
+      "Deletes from this shared folder on every device that syncs it; a Live Photo goes with its video. Nothing is removed from a phone’s own photo library. What you delete can be restored from History while this folder’s version retention keeps it.",
       "trash-2",
     ),
     async () => {
@@ -4810,7 +4818,7 @@ function deleteGalleryPhotos(items) {
           `${completed} of ${items.length} deleted. ${error.message}`,
         );
       }
-      notice(`${completed} ${completed === 1 ? "photo" : "photos"} deleted.`);
+      notice(`${mediaCount(items)} deleted.`);
       if (inViewer)
         return async () => {
           const target = (state.adjacent || []).findLast(

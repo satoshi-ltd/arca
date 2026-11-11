@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.6 — 2026-11-11
+
+- Deleting photos from a gallery on the desktop or the web no longer says “Originals stay in Photos”, which is only true for photos uploaded from a phone. It now says the files leave the shared folder on every device that syncs it, that nothing is removed from a phone's own photo library and that History can restore them while retention keeps them, and it counts videos as videos (“Delete 2 photos and 1 video?”).
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.5 — 2026-11-11
 
 - Connecting a computer to a hub with a mistyped address, or while the hub is off, now says “Could not reach a hub at <address>. Check the address and that the hub is running.” instead of “Internal error”, and an address that belongs to some other server says the same instead of blaming the pairing code.
