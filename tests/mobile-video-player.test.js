@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   clock,
+  controlsLeave,
   countdown,
   initialPlayer,
   playerStep,
@@ -106,4 +107,31 @@ test("the player starts from the saved point, so a direct-play failure falls bac
   const player = fs.readFileSync(new URL("../apps/mobile/src/VideoPlayer.jsx", import.meta.url), "utf8");
   assert.match(player, /const model = useRef\(initialPlayer\(Date\.now\(\), session\.at\)\);/);
   assert.match(player, /restarter\.current\.now\(\{ start: model\.current\.position, audio: chosenAudio\.current \}\)/);
+});
+
+test("the controls leave after three idle seconds of playback, and never while a screen reader is on", () => {
+  assert.equal(controlsLeave({ playing: true, idle: 3001, screenReader: false }), true);
+  assert.equal(controlsLeave({ playing: true, idle: 3000, screenReader: false }), false);
+  assert.equal(controlsLeave({ playing: false, idle: 60000, screenReader: false }), false);
+  assert.equal(controlsLeave({ playing: true, idle: 60000, screenReader: true }), false);
+  const screen = fs.readFileSync(new URL("../apps/mobile/src/VideoPlayer.jsx", import.meta.url), "utf8");
+  assert.match(
+    screen,
+    /if \(controlsLeave\(\{ playing: player\.playing, idle: Date\.now\(\) - touched\.current, screenReader: reader\.current \}\)\) setControls\(false\);/,
+    "the player hides its controls only through the rule",
+  );
+  assert.doesNotMatch(screen, /CONTROLS_HIDE/);
+  assert.match(
+    screen,
+    /if \(!live\) return;\s+reader\.current = !!on;\s+touched\.current = Date\.now\(\);\s+if \(on\) setControls\(true\);/,
+    "turning a screen reader on brings the controls back, and turning it off starts the three seconds again",
+  );
+  assert.match(screen, /screenReaderOn\(\)\.then\(heard\);\s+const listening = AccessibilityInfo\.addEventListener\("screenReaderChanged", heard\);/);
+  assert.match(screen, /listening\.remove\(\);/);
+  assert.match(
+    screen,
+    /<Pressable accessibilityRole="button" accessibilityLabel=\{panel \? \(panel === "audio" \? "Close Audio" : "Close Subtitles"\) : controls \? "Hide controls" : "Show controls"\}/,
+    "the tap area says it is a button and what it will do",
+  );
+  assert.match(screen, /<View\s+accessible\s+accessibilityRole="adjustable"\s+accessibilityLabel="Position"/, "VoiceOver can land on the scrubber");
 });

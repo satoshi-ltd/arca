@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.7 — 2026-11-11
+
+- With TalkBack or VoiceOver on, the phone's film player keeps its controls on screen instead of hiding them after three seconds, so pausing, seeking and closing no longer race a timer; the area that shows and hides them is announced as a button.
+
+Needs: native build
+
 ## 0.9.6 — 2026-11-11
 
 - Deleting photos from a gallery on the desktop or the web no longer says “Originals stay in Photos”, which is only true for photos uploaded from a phone. It now says the files leave the shared folder on every device that syncs it, that nothing is removed from a phone's own photo library and that History can restore them while retention keeps them, and it counts videos as videos (“Delete 2 photos and 1 video?”).

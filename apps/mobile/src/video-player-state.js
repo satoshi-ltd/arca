@@ -1,6 +1,8 @@
 import { MIN_POSITION, SAVE_EVERY, UP_NEXT_COUNTDOWN, UP_NEXT_SECONDS } from "./video-library.js";
 
-export const CONTROLS_HIDE = 3000;
+const CONTROLS_HIDE = 3000;
+
+export const controlsLeave = ({ playing, idle, screenReader }) => !!playing && !screenReader && idle > CONTROLS_HIDE;
 
 export function initialPlayer(now = 0, position = 0) {
   return { position: Math.max(0, Number(position) || 0), duration: 0, playing: false, savedAt: now, saved: null, upNext: null, cancelled: false, ended: false };

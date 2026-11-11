@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Animated, AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Animated, AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
 import { requireOptionalNativeModule, useEvent } from "expo";
 import { Busy, Button, Icon, useDesign } from "./components";
@@ -7,7 +7,8 @@ import { useMotion, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { episodeCode, playerTitles } from "./video-library.js";
 import { NETWORK_LEFT } from "./video-sync.js";
-import { CONTROLS_HIDE, clock, countdown, initialPlayer, playerStep, scrubAction, seekTarget } from "./video-player-state.js";
+import { clock, controlsLeave, countdown, initialPlayer, playerStep, scrubAction, seekTarget } from "./video-player-state.js";
+import { screenReaderOn } from "./announce.js";
 import { audioOptions, currentAudio, libraryAudioOptions, rememberedAudio, sameLanguage } from "./video-audio.js";
 import { COMPATIBLE_AUDIO, absoluteTime, audioForLanguage, createRestarter, fullDuration, recoveryPlan, seekPlan } from "./video-compatible.js";
 import { applyChoice, chosenKey, cueText, restoreChoice, subtitleOptions, titleKey } from "./subtitles.js";
@@ -25,6 +26,7 @@ function Scrubber({ position, duration, seek }) {
   const at = (x) => width > 0 && duration > 0 && seek(Math.max(0, Math.min(1, x / width)) * duration);
   return (
     <View
+      accessible
       accessibilityRole="adjustable"
       accessibilityLabel="Position"
       accessibilityValue={{ text: `${clock(position)} of ${clock(duration)}` }}
@@ -120,6 +122,22 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   const [loadError, setLoadError] = useState(null);
   const [now, setNow] = useState(Date.now());
   const touched = useRef(Date.now());
+  const reader = useRef(false);
+  useEffect(() => {
+    let live = true;
+    const heard = (on) => {
+      if (!live) return;
+      reader.current = !!on;
+      touched.current = Date.now();
+      if (on) setControls(true);
+    };
+    screenReaderOn().then(heard);
+    const listening = AccessibilityInfo.addEventListener("screenReaderChanged", heard);
+    return () => {
+      live = false;
+      listening.remove();
+    };
+  }, []);
   const { status, error } = useEvent(player, "statusChange", { status: player.status });
   const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
   const { availableSubtitleTracks } = useEvent(player, "availableSubtitleTracksChange", { availableSubtitleTracks: [] });
@@ -291,7 +309,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
           duration: fullDuration(currentRef.current, session.item, player.duration),
           playing: player.playing,
         });
-      if (player.playing && Date.now() - touched.current > CONTROLS_HIDE) setControls(false);
+      if (controlsLeave({ playing: player.playing, idle: Date.now() - touched.current, screenReader: reader.current })) setControls(false);
     }, TICK);
     const ended = player.addListener("playToEnd", () => send({ type: "ended" }));
     return () => {
@@ -346,7 +364,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   return (
     <View style={s.videoFrame}>
       <VideoView player={player} style={s.videoSurface} nativeControls={false} contentFit="contain" surfaceType="textureView" />
-      <Pressable accessibilityLabel={controls ? "Hide controls" : "Show controls"} style={s.videoTapArea} onPress={() => (panel ? (setPanel(null), wake()) : controls ? setControls(false) : wake())} />
+      <Pressable accessibilityRole="button" accessibilityLabel={panel ? (panel === "audio" ? "Close Audio" : "Close Subtitles") : controls ? "Hide controls" : "Show controls"} style={s.videoTapArea} onPress={() => (panel ? (setPanel(null), wake()) : controls ? setControls(false) : wake())} />
       {(reopening || recovering || status === "loading" || status === "idle") && !failed && (
         <View pointerEvents="none" style={s.viewerVideoLoading}>
           <Busy color={c.onMedia} />

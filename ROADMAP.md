@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **MOB-VIDEO-A11Y** — A screen-reader user can pause, seek or close a film without racing a three-second timer
-  `bug · agent · high`
-  The player hides its controls after 3 s of playback and removes them from the accessibility tree; moving accessibility focus never wakes them, and the tap area has no role. Notices already hold their timers for screen readers. Accept: a pure rule in `video-player-state.js` (hide only when playing, idle and no screen reader) with a test, and the tap area is a button.
 - **PERF-SCOPED-READS** — A scoped scan or index read costs the scope, not the folder
   `feature · agent · high`
   `rowsInScope` and `clearLocal` match `path=? COLLATE NOCASE OR path LIKE ?`, which no index serves, once per scope, and every scoped scan lists the whole folder to build its name map. That runs on every `/v1/propose` and every watcher batch: a phone backing up 30,000 photos costs the hub on the order of 10⁹ row visits. Accept: scopes are read through `files_volume_path_key` (an equality and a range), the query plan shows a search and no scan, and a one-path scan in a 5,000-row folder returns at most 10 rows in total.
@@ -395,6 +392,9 @@ Defects against SPEC §9 first, then ideas that add or change a control and need
 
 ### Usability — phone
 
+- **MOB-VIDEO-ASSISTIVE** — The film player waits for people who use a switch, a keyboard or a screen reader's focus
+  `feature · agent · normal · native`
+  The controls now stay while TalkBack or VoiceOver is on, but Switch Access, Voice Access, Switch Control and external keyboards are not detected, so their users must reach a control within three seconds; the Up next card advances by itself after ten seconds without being announced; opening the Audio or Subtitles panel does not move accessibility focus to it. Accept: the controls also stay while any of those is in use (Android's service list filtered to input services; iOS through native code), Up next is announced and holds its countdown for a screen reader, and a panel takes focus when it opens; tests cover the rules.
 - **MOB-MEDIA-INSETS** — Player and viewer controls clear the cutout and the gesture bar
   `bug · agent · normal`
   `VideoPlayer.jsx` places its top and bottom bars and the Audio and Subtitles panel at 0 with no safe-area insets (and the picture is rotated on a portrait phone, so the insets must be mapped); the photo viewer applies only top and bottom insets, so its bar sits under a notch in landscape. Accept: a `layout.js` helper gives both their four margins, tested for portrait, landscape and the rotated player.
