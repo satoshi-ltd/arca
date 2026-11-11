@@ -20,7 +20,7 @@ async function tray(t, status, { api = null, update = { available: false }, cove
     observe() {}
   };
   w.lucide = { createIcons() {} };
-  const ui = { w, calls: [], emitted: [], listeners: {}, covers: [], status, intervals };
+  const ui = { w, calls: [], emitted: [], listeners: {}, covers: [], status, intervals, shown: async () => true };
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
@@ -48,6 +48,7 @@ async function tray(t, status, { api = null, update = { available: false }, cove
         ui.emitted.push([name, payload]);
       },
     },
+    window: { getCurrentWindow: () => ({ isVisible: () => ui.shown() }) },
   };
   await w.eval(`(async () => {${read("tray.js")}\nwindow.refreshTray = refresh;})()`);
   await settle();
@@ -514,4 +515,36 @@ test("the tray checks for an update by the wall clock and when it opens an hour 
   ui.w.dispatchEvent(new ui.w.Event("focus"));
   await settle();
   assert.equal(checks(), 4, "no check starts while an update installs");
+});
+
+test("the tray asks for status every two seconds only while its popover is on screen, focused or not", async (t) => {
+  const ui = await tray(t, { role: "hub", phase: "idle", volumes: [] });
+  const status = () => ui.routes().filter((route) => route === "/v1/status").length;
+  const every = ui.intervals.find(([, ms]) => ms === 2000)[0];
+  ui.shown = async () => false;
+  const loaded = status();
+  for (let n = 0; n < 5; n++) await every();
+  await settle();
+  assert.equal(status(), loaded, "a closed popover does not poll");
+  ui.shown = async () => true;
+  await every();
+  await settle();
+  assert.equal(status(), loaded + 1, "a popover shown without taking focus refreshes on the next tick");
+  ui.w.dispatchEvent(new ui.w.Event("focus"));
+  await settle();
+  assert.equal(status(), loaded + 2, "taking focus refreshes at once");
+  ui.w.dispatchEvent(new ui.w.Event("blur"));
+  await every();
+  await settle();
+  assert.equal(status(), loaded + 3, "losing focus while still on screen keeps it fresh");
+  ui.shown = async () => false;
+  await every();
+  await settle();
+  assert.equal(status(), loaded + 3, "hiding it stops the polling again");
+  ui.shown = async () => {
+    throw new Error("no window");
+  };
+  await every();
+  await settle();
+  assert.equal(status(), loaded + 4, "an unknown visibility polls");
 });

@@ -301,7 +301,10 @@ events?.listen("update-state", (event) => {
 events?.emit("music-command", { command: "state" });
 await refresh();
 void checkUpdate();
-setInterval(() => {
+// Native visibility, not focus: the popover can open without becoming key, and the native loop keeps the icon current while it is closed.
+const popover = window.__TAURI__.window?.getCurrentWindow();
+setInterval(async () => {
+  if (popover && !(await popover.isVisible().catch(() => true))) return;
   if (!running) refresh();
 }, 2000);
 const checkUpdateIfOlder = (limit) => {

@@ -61,7 +61,7 @@ async function boot(t, { status, route = "#/folders", web = false, downloads = [
   const dom = new JSDOM(html, { runScripts: "outside-only", url: `http://tauri.localhost/${route}` });
   const w = dom.window;
   const pending = new Set();
-  const ui = { posts: [], routes: [], timers: { 2000: [] } };
+  const ui = { posts: [], routes: [], timers: { 2000: [] }, intervals: [], shown: async () => true };
   t.after(async () => {
     do {
       await Promise.allSettled([...pending]);
@@ -69,7 +69,7 @@ async function boot(t, { status, route = "#/folders", web = false, downloads = [
     } while (pending.size);
     dom.window.close();
   });
-  w.setInterval = () => 0;
+  w.setInterval = (callback, ms) => `interval-${ui.intervals.push([callback, ms])}`;
   const setTimer = w.setTimeout.bind(w);
   const clearTimer = w.clearTimeout.bind(w);
   let held = 0;
@@ -156,6 +156,7 @@ async function boot(t, { status, route = "#/folders", web = false, downloads = [
           ),
       },
       event: { listen: async () => () => {}, emit: async () => {} },
+      window: { getCurrentWindow: () => ({ isVisible: () => ui.shown() }) },
     };
   w.eval(`(async()=>{${script}\n})()`);
   const $ = (selector) => w.document.querySelector(selector);
@@ -640,6 +641,41 @@ test("the hub row offers Change address…, which saves the new address through 
   await until(() => !ui.$("#dialog").open);
   assert.deepEqual(ui.posts.filter(([path]) => path === "/v1/hub-url").at(-1), ["/v1/hub-url", { url: "http://helios:17831", confirmed: true }]);
   await until(() => /Hub address changed\. Syncing with Casa\./.test(ui.$("#notice").textContent));
+});
+
+test("a hidden window does not poll for status, and showing it again asks once", async (t) => {
+  const ui = await boot(t, { status: replicaStatus() });
+  const status = () => ui.routes.filter((route) => route === "/v1/status").length;
+  await until(() => status() >= 1 && ui.idle());
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const polls = ui.intervals.filter(([callback, ms]) => ms === 5000 && /windowShown/.test(String(callback)));
+  assert.equal(polls.length, 1);
+  const tick = polls[0][0];
+  let state = "visible";
+  Object.defineProperty(ui.w.document, "visibilityState", { configurable: true, get: () => state });
+  let before = status();
+  await tick();
+  assert.equal(status(), before + 1, "a shown window polls every five seconds");
+
+  ui.shown = async () => false;
+  await tick();
+  assert.equal(status(), before + 1, "a window hidden to the tray whose page still reads visible asks nothing");
+  ui.shown = async () => {
+    throw new Error("no window");
+  };
+  await tick();
+  assert.equal(status(), before + 2, "an unknown visibility polls");
+  ui.shown = async () => true;
+
+  state = "hidden";
+  before = status();
+  ui.w.document.dispatchEvent(new ui.w.Event("visibilitychange"));
+  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(status(), before, "a hidden page asks nothing");
+  state = "visible";
+  ui.w.document.dispatchEvent(new ui.w.Event("visibilitychange"));
+  await until(() => status() === before + 1);
 });
 
 test("Connect to hub… shows why an address could not be reached and keeps the dialog open", async (t) => {

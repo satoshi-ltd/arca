@@ -148,7 +148,7 @@ export function finishInstallationReset(store) {
       .all())
       store.db.exec(`DELETE FROM "${name.replaceAll('"', '""')}"`);
     store.db.exec("DELETE FROM sqlite_sequence; COMMIT");
-    store.savedHistory = null;
+    store.savedHistory = store.totals = store.counts = null;
   } catch (error) {
     store.db.exec("ROLLBACK");
     throw error;

@@ -553,6 +553,17 @@ test("the player stops, empties and clears the media session when the hub change
   assert.equal($("audio").getAttribute("src"), null);
 });
 
+test("a hidden window that is playing still stops when its folder is no longer a library", async (t) => {
+  const ui = await open(t);
+  await grid(ui);
+  await playAlbum(ui);
+  Object.defineProperty(ui.w.document, "visibilityState", { configurable: true, get: () => "hidden" });
+  ui.patch = (value) => ({ ...value, volumes: value.volumes.map((v) => ({ ...v, music: false })) });
+  await ui.poll();
+  await until(() => ui.$("#music-player").hidden && ui.idle());
+  assert.equal(ui.$("audio").getAttribute("src"), null);
+});
+
 test("an expired desktop ticket is renewed once and playback resumes where it stopped; a second failure explains it", async (t) => {
   const ui = await open(t);
   const { $, w } = ui;

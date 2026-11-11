@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.10 — 2026-11-11
+
+- An idle hub or computer does much less work in the background: the status that the app, the tray and other devices keep asking for no longer recounts every file and version each time, only after something changed.
+- The desktop asks for status less often: a window sent to the tray stops polling unless it is playing music, and the tray popover refreshes only while it is on screen.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.9 — 2026-11-11
 
 - The phone stays responsive while it syncs many small files: transfer progress refreshes the screen at most once a second instead of once per finished file, and the folder list no longer recounts every file each time a setting is saved.

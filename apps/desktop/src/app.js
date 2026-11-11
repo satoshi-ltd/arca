@@ -154,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.9";
+const APP_VERSION = "0.9.10";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -12745,7 +12745,16 @@ async function pollStatus(force = false) {
     }
   }
 }
-setInterval(pollStatus, 5000);
+// WebView2 keeps a tray-hidden window's page visible, so native visibility is asked too; a playing track still polls to stop when its folder goes.
+const shellWindow = native ? window.__TAURI__.window?.getCurrentWindow() : null;
+const windowShown = async () =>
+  document.visibilityState !== "hidden" && (!shellWindow || (await shellWindow.isVisible().catch(() => true)));
+setInterval(async () => {
+  if ((musicPlayer && musicElement && !musicElement.paused) || (await windowShown())) return pollStatus();
+}, 5000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "hidden") pollStatus(true).catch(() => {});
+});
 setInterval(refreshRelative, 60000);
 const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
 const UPDATE_ON_FOCUS = 60 * 60 * 1000;

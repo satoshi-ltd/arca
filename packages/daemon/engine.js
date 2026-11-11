@@ -185,6 +185,15 @@ export class Engine {
     this.tail = next.catch(() => {});
     return next;
   }
+  backupState() {
+    return {
+      enabled: false,
+      ...this.config.backup,
+      error: this.backupError || this.backupEngine?.damage || null,
+      waiting: Boolean(this.backupWaiting),
+      progress: this.backupProgress(),
+    };
+  }
   status(visibleTotals) {
     const s = this.store;
     return {
@@ -213,13 +222,7 @@ export class Engine {
       root: this.config.root,
       retention: this.config.retention || { days: 0, versions: 0 },
       folderRetention: this.config.folderRetention || {},
-      backup: {
-        enabled: false,
-        ...this.config.backup,
-        error: this.backupError || this.backupEngine?.damage || null,
-        waiting: Boolean(this.backupWaiting),
-        progress: this.backupProgress(),
-      },
+      backup: this.backupState(),
       error: this.error,
       pauseUntil: this.paused ? this.pauseUntil || null : null,
       hubUnavailable: !!this.hubUnavailable,
@@ -290,17 +293,8 @@ export class Engine {
           "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,d.last_address,a.enabled AS backup_enabled,a.revision AS backup_revision,a.updated AS backup_updated FROM devices d LEFT JOIN backup_ack a ON a.device=d.id",
         )
         .all(),
-      historyRevisions: Number(
-        s.db
-          .prepare(
-            "SELECT (SELECT COUNT(*) FROM revisions) - (SELECT COUNT(*) FROM files f JOIN revisions r ON r.rev=f.rev AND r.volume=f.volume AND r.path=f.path) AS count",
-          )
-          .get().count,
-      ),
-      backupRevisions: Number(
-        s.db.prepare("SELECT COUNT(*) AS count FROM backup_history").get()
-          .count,
-      ),
+      historyRevisions: s.historyRevisions(),
+      backupRevisions: s.backupRevisions(),
     };
   }
   connectionLost(error, hub = null, version = null) {
@@ -1645,7 +1639,7 @@ export class Engine {
           this.backupRunning = true;
           await backup.cycle();
           this.config.backup.lastSync = backup.lastSync;
-          this.config.backup.revisions = backup.status().backupRevisions;
+          this.config.backup.revisions = backup.store.backupRevisions();
           this.config.backup.folders = backup.store.volumes().length;
           this.config.backup.contentBytes = Number(
             backup.store.db
@@ -2146,7 +2140,7 @@ export class Engine {
         this.backupError =
           "Backup stopped locally; hub acknowledgement pending: " + e.message;
       }
-      return this.status().backup;
+      return this.backupState();
     }
     const destination = this.store.resolveLocation(
       location || this.config.backup?.path || "",
@@ -2212,7 +2206,7 @@ export class Engine {
       if (!e.hubUnavailable && e.status !== 503) throw e;
       this.backupError = "Backup enabled; waiting for the hub to acknowledge";
     }
-    return this.status().backup;
+    return this.backupState();
   }
   // An unmounted Linux disk leaves an empty mount point on the system disk; never start a backup there.
   requireBackupDisk(location) {

@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **PERF-STATUS-TOTALS** — `/v1/status` does not scan the index, and hidden windows do not poll
-  `feature · agent · high`
-  Per-folder totals and `historyRevisions` are scans on each call; the hidden tray polls every 2 s and a hidden main window every 5 s, about 42 calls a minute while idle; `/v1/catalog`, `/v1/remote`, every replica's machine report and two backup paths call `status()` as well. Accept: totals memoized on `file_generations.generation` and a revision counter, callers that need only `.backup` stop computing totals, the tray and a hidden main window do not poll; a test shows a second unchanged `status()` runs no counting query and that a commit and retention update the counts.
 - **PERF-GALLERY-PAGE** — A gallery page does not re-read the whole photo library
   `feature · agent · high`
   `page()` builds and sorts every visible photo before `LIMIT 61`, again for `months` and again for the `indexing` probe; `periods()` and `memories()` build the same rows; the open desktop gallery re-requests every loaded page with `fresh=true` every 5 s and rewrites each to IndexedDB. Accept: the ordered rows are memoized on the folder's file generation, the rules and a gallery counter bumped by every metadata, member and asset write, and shared by periods and memories; the 5 s timer runs only while `/v1/events` is stale; a test counts the `WITH media` statements across two unchanged pages (0 the second time) and sees a new photo.
@@ -262,6 +259,9 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 - **SEC-IOS-ATS** — iOS never allows arbitrary plaintext loads
   `chore · agent · low · native`
   `NSAllowsArbitraryLoads` is on although the native module already refuses HTTP outside verified private or tailnet addresses. Accept: `NSAllowsLocalNetworking` replaces it and the config test pins it.
+- **SEC-ERASE-GENERATION-ROW** — Erase leaves no folder ID behind in the index
+  `bug · agent · low`
+  `finishInstallationReset` empties the tables in catalogue order, and `file_generations` goes before `local_files`, whose delete trigger writes a `file_generations` row again; a replica that held local changes keeps one row with the erased share ID in the emptied index. Seen by the review of 0.9.10 (scratch run), not covered by a test. Accept: after Erase every table is empty whatever the order, with a test on a replica that holds `local_files` rows and fails today.
 
 ### Performance — hub and desktop
 
@@ -303,6 +303,9 @@ No measurements: counts of statements and calls are traced, times are estimates.
 - **PERF-WEB-IMAGE-CACHE** — Pages and thumbnails get separate browser quotas
   `feature · agent · low`
   The IndexedDB store holds 128 records shared by gallery pages and thumbnails, so the persistent thumbnail cache is nearly empty after a restart. Accept: separate quotas (pages by count, thumbnails by bytes) in a pure module with a test; whether private images may be cached by the browser is a maintainer decision.
+- **PERF-WIN-HIDDEN-EVENTS** — A window hidden or minimized on Windows stops its background requests
+  `feature · agent · low`
+  WebView2 keeps reporting the page as visible while its window is hidden, so on Windows the `/v1/events` long poll (gated on `document.hidden`) continues in a tray-hidden window and asks for status on every change, and a minimized window keeps the five-second status poll; nothing fires when the window returns, so the first status answer waits for the next tick. Traced in wry, not run on Windows. Accept: the events loop, the gallery and audio-library refreshes and the status poll share one shown-window test that asks the native window (visible and not minimized) in the desktop app, a native show or restore polls once, and a DOM test covers a page that reads visible in a hidden window.
 
 ### Performance — phone
 

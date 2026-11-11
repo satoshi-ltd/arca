@@ -417,6 +417,19 @@ export class Store {
       CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS row_generations(name TEXT PRIMARY KEY,generation INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS revisions_generation_insert AFTER INSERT ON revisions BEGIN
+        INSERT INTO row_generations(name,generation) VALUES('revisions',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS revisions_generation_delete AFTER DELETE ON revisions BEGIN
+        INSERT INTO row_generations(name,generation) VALUES('revisions',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS backup_history_generation_insert AFTER INSERT ON backup_history BEGIN
+        INSERT INTO row_generations(name,generation) VALUES('backup_history',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS backup_history_generation_delete AFTER DELETE ON backup_history BEGIN
+        INSERT INTO row_generations(name,generation) VALUES('backup_history',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+      END;
       CREATE TABLE IF NOT EXISTS backup_damaged(rev INTEGER PRIMARY KEY,row TEXT NOT NULL,hash TEXT,missing INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0);
     `);
     if (
@@ -1158,12 +1171,46 @@ export class Store {
     } catch (error) {
       return { files: null, bytes: null, policyError: error.message };
     }
+    const generation =
+      this.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume)?.generation || 0;
+    this.totals ||= new Map();
+    const cached = this.totals.get(volume);
+    if (cached?.generation === generation) return { files: cached.files, bytes: cached.bytes };
     const { files, bytes } = this.db
       .prepare(
         `SELECT count(*) AS files, coalesce(sum(size),0) AS bytes FROM ${this.fileSource()} WHERE volume=? AND deleted=0 AND directory=0`,
       )
       .get(volume);
+    this.totals.set(volume, { generation, files, bytes });
     return { files, bytes };
+  }
+  // Counts are kept until a trigger-maintained generation moves, so an idle status call reads no table through.
+  counted(name, stamp, sql) {
+    this.counts ||= new Map();
+    const cached = this.counts.get(name);
+    if (cached?.stamp === stamp) return cached.count;
+    const count = Number(this.db.prepare(sql).get().count);
+    this.counts.set(name, { stamp, count });
+    return count;
+  }
+  historyRevisions() {
+    const { revisions, files } = this.db
+      .prepare(
+        "SELECT (SELECT generation FROM row_generations WHERE name='revisions') AS revisions, (SELECT COALESCE(SUM(generation),0) FROM file_generations) AS files",
+      )
+      .get();
+    return this.counted(
+      "historyRevisions",
+      `${revisions}:${files}`,
+      "SELECT (SELECT COUNT(*) FROM revisions) - (SELECT COUNT(*) FROM files f JOIN revisions r ON r.rev=f.rev AND r.volume=f.volume AND r.path=f.path) AS count",
+    );
+  }
+  backupRevisions() {
+    return this.counted(
+      "backupRevisions",
+      this.db.prepare("SELECT generation FROM row_generations WHERE name='backup_history'").get()?.generation || 0,
+      "SELECT COUNT(*) AS count FROM backup_history",
+    );
   }
   async allVisibleTotals() {
     return new Map(
