@@ -157,7 +157,7 @@ test("every workflow uses the same checkout and setup-node majors and closes its
     const lines = fs.readFileSync(new URL(name, directory), "utf8").replace(/\r\n/g, "\n").split("\n");
     const open = [];
     lines.forEach((line, index) => {
-      const use = line.match(/uses:\s*actions\/(checkout|setup-node)@(v\d+)/);
+      const use = line.match(/uses:\s*actions\/(checkout|setup-node)@[0-9a-f]{40} # (v\d+)\./);
       if (use) versions[use[1]].add(use[2]);
       if (/^\s*if\b.*;\s*then\s*$/.test(line)) open.push(line.search(/\S/));
       if (/^\s*fi\s*$/.test(line))
@@ -237,7 +237,7 @@ test("the Docker workflow builds and tags the commit of the release that trigger
   const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
   const docker = read(".github/workflows/publish-docker.yml");
   const ref = "ref: ${{ github.event.workflow_run.head_sha || github.sha }}";
-  const checkouts = [...docker.matchAll(/- uses: actions\/checkout@v5\n((?: {8}.+\n)+)/g)];
+  const checkouts = [...docker.matchAll(/- uses: actions\/checkout@[0-9a-f]{40} # v\d+\.\d+\.\d+\n((?: {8}.+\n)+)/g)];
   assert.equal(checkouts.length, 3, "the gate, the build and the tag job check out the repository");
   for (const [, options] of checkouts) assert.ok(options.includes(ref), `a checkout lacks ${ref}`);
   assert.match(docker, /RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);

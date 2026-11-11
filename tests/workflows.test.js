@@ -8,7 +8,9 @@ const directory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", 
 const names = fs.readdirSync(directory).filter((name) => /\.ya?ml$/.test(name));
 const source = (name) => fs.readFileSync(path.join(directory, name), "utf8").replace(/\r\n/g, "\n");
 
-function readWorkflow(text, name) {
+const PIN = /^([\w.-]+\/[\w./-]+@[0-9a-f]{40}) # (v\d+\.\d+\.\d+|master branch)$/;
+
+function readWorkflow(text, name, pins = []) {
   const lines = text.split("\n");
   let at = 0;
   const fail = (why) => {
@@ -44,8 +46,10 @@ function readWorkflow(text, name) {
       const entry = /^([A-Za-z_][\w.-]*):(?: +(.*))?$/.exec(lines[at].slice(indent).trimEnd());
       if (!entry) fail("expected a key at this indentation");
       if (Object.hasOwn(map, entry[1])) fail("duplicate key");
+      const pin = entry[1] === "uses" && PIN.exec(entry[2] ?? "");
       at++;
-      map[entry[1]] = value(entry[2] ?? "", indent);
+      if (pin) pins.push({ ref: pin[1], comment: pin[2] });
+      map[entry[1]] = pin ? pin[1] : value(entry[2] ?? "", indent);
     }
   };
   const sequence = (indent) => {
@@ -239,8 +243,10 @@ test("desktop builds hand their installers to one upload job that alone writes t
     { ...jobs.upload, steps: jobs.upload.steps.length },
     { if: publishing, needs: ["prepare", "desktop"], "runs-on": "ubuntu-24.04", permissions: { contents: "write" }, steps: 2 },
   );
+  assert.equal(jobs.upload.steps[0].uses.split("@")[0], "actions/download-artifact");
+  assert.equal(jobs.desktop.steps[handOff].uses.split("@")[0], "actions/upload-artifact");
   assert.deepEqual(jobs.upload.steps[0], {
-    uses: jobs.desktop.steps[handOff].uses.replace("upload", "download"),
+    uses: jobs.upload.steps[0].uses,
     with: { pattern: "desktop-*", path: "release-assets", "merge-multiple": "true" },
   });
   assert.equal(jobs.upload.steps[1].run, 'gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber');
@@ -250,4 +256,83 @@ test("desktop builds hand their installers to one upload job that alone writes t
   const docker = audit(source("publish-docker.yml"), "publish-docker.yml").workflow.jobs;
   assert.deepEqual(docker.docker.permissions, { contents: "read" });
   assert.deepEqual(docker.record.permissions, { contents: "write" });
+});
+
+test("every action runs at a pinned commit named by its release, and the site installs an exact wrangler", () => {
+  for (const name of names) {
+    const text = source(name);
+    const pins = [];
+    readWorkflow(text, name, pins);
+    const uses = text.match(/^ +(- )?uses: .*$/gm);
+    assert.equal(pins.length, uses.length, `${name}: every uses is a pinned commit with its version`);
+    for (const { ref, comment } of pins)
+      assert.equal(comment === "master branch", ref.startsWith("dtolnay/rust-toolchain@"), `${name}: ${ref} # ${comment}`);
+  }
+  const site = source("publish-site.yml");
+  const installs = site.match(/wrangler@\S*/g);
+  assert.ok(installs?.length);
+  for (const install of installs) assert.match(install, /^wrangler@\d+\.\d+\.\d+$/, "wrangler is installed at an exact version");
+});
+
+test("the workflow reader accepts a version comment only on a full commit pin", () => {
+  const sample = (uses) => `name: sample\njobs:\n  build:\n    steps:\n      - uses: ${uses}\n`;
+  const sha = "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09";
+  const pins = [];
+  assert.equal(readWorkflow(sample(`actions/checkout@${sha} # v5.1.0`), "sample.yml", pins).jobs.build.steps[0].uses, `actions/checkout@${sha}`);
+  assert.deepEqual(pins, [{ ref: `actions/checkout@${sha}`, comment: "v5.1.0" }]);
+  for (const uses of [
+    "actions/checkout@v5 # v5.1.0",
+    `actions/checkout@${sha.slice(0, 12)} # v5.1.0`,
+    `actions/checkout@${sha.toUpperCase()} # v5.1.0`,
+    `actions/checkout@${sha} # latest`,
+    `actions/checkout@${sha} # v5`,
+    `actions/checkout@${sha} #v5.1.0`,
+  ])
+    assert.throws(() => readWorkflow(sample(uses), "sample.yml"), /sample\.yml/, uses);
+  assert.equal(readWorkflow(sample("actions/checkout@v5"), "sample.yml", []).jobs.build.steps[0].uses, "actions/checkout@v5", "an unpinned ref still parses, so the pin test can name it");
+});
+
+test("Cloudflare credentials reach only the steps that check them and deploy", () => {
+  const text = source("publish-site.yml");
+  const { workflow } = audit(text, "publish-site.yml");
+  const cloudflare = (env) => Object.keys(env || {}).filter((key) => key.startsWith("CLOUDFLARE_"));
+  assert.deepEqual(cloudflare(workflow.env), []);
+  const scoped = [];
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    assert.deepEqual(cloudflare(job.env), [], `job ${id} exposes Cloudflare to every step`);
+    for (const step of job.steps)
+      if (cloudflare(step.env).length) scoped.push([step.name, cloudflare(step.env)]);
+  }
+  const keys = ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_PAGES_PROJECT_NAME"];
+  assert.deepEqual(scoped, [
+    ["Verify deployment configuration", keys],
+    ["Deploy to Cloudflare Pages", keys],
+  ]);
+  assert.equal(text.match(/CLOUDFLARE_\w+: /g).length, 6, "no other place declares a Cloudflare variable");
+});
+
+test("Dependabot watches actions, both npm lockfiles and the desktop crate weekly, grouping minor and patch updates", () => {
+  const file = path.join(directory, "..", "dependabot.yml");
+  const config = readWorkflow(fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n"), "dependabot.yml");
+  assert.equal(config.version, "2");
+  const root = path.join(directory, "..", "..");
+  const lockfiles = { npm: "package-lock.json", cargo: "Cargo.lock" };
+  assert.deepEqual(
+    config.updates.map((entry) => [entry["package-ecosystem"], entry.directory]),
+    [["github-actions", "/"], ["npm", "/"], ["npm", "/apps/mobile"], ["cargo", "/apps/desktop/src-tauri"]],
+  );
+  for (const entry of config.updates) {
+    assert.deepEqual(entry.schedule, { interval: "weekly" });
+    const groups = Object.values(entry.groups || {});
+    assert.deepEqual(groups.map((group) => group["update-types"]), [["minor", "patch"]], entry["package-ecosystem"]);
+    const lock = lockfiles[entry["package-ecosystem"]];
+    if (lock) assert.ok(fs.existsSync(path.join(root, entry.directory, lock)), `${entry.directory} has ${lock}`);
+  }
+});
+
+test("the release note says the desktop app updates itself", () => {
+  const { jobs } = audit(source("publish.yml"), "publish.yml").workflow;
+  const notes = jobs.publish.steps.map((step) => step.run || "").join("\n");
+  assert.match(notes, /--notes "[^"]*The desktop app updates itself from signed releases[^"]*"/);
+  assert.doesNotMatch(notes, /No automatic updates/);
 });

@@ -32,9 +32,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-PROPOSE-RETRY** — A hub that cannot write its own copy acknowledges the accepted edit once
   `bug · agent · normal`
   When materializing fails after the commit, `propose` answers an error; the replica retries, and each retry stores another identical revision, wakes every device and resets the parking count. Accept: repeating a replica's sync while the hub write keeps failing leaves one revision for that content, answers the replica with the accepted row, reports the issue on the hub's own folder and parks the row after three hub attempts.
-- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
-  `chore · agent · normal`
-  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
 - **SYNC-UNREADABLE-FILE** — One file that cannot be read stops only itself
   `bug · agent · normal`
   A file held open exclusively on Windows, unreadable in Docker, changing during the scan or vanished mid-scan aborts the whole folder scan on every cycle, so nothing else in that folder syncs in either direction. Accept: a folder with one unreadable file syncs the others, reports that file, and never proposes it as deleted; an incomplete inventory is still never a deletion.

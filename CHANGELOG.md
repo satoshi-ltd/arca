@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.19 — 2026-11-11
+
+- Release workflows run only pinned code: every action is pinned to a commit, the site deploy installs an exact wrangler and gives the Cloudflare credentials only to its check and deploy steps, and Dependabot proposes weekly grouped updates for actions, npm and cargo.
+- The release note now says the desktop app updates itself from signed releases.
+
 ## 0.9.18 — 2026-11-11
 
 - With Reduce Motion on, screens, sheets, rows and notices on the phone appear at once from the moment the app opens, instead of animating in at full length while the app was still reading the setting.

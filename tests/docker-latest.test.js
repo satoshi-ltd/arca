@@ -44,7 +44,7 @@ test("Docker publishes its version before querying and promoting latest, under a
   assert.match(promotionJob, /needs: \[gate, docker\]/);
   assert.match(promotionJob, /needs\.gate\.outputs\.record == 'true'/, "an existing version image still retries promotion");
   assert.match(promotionJob, /needs\.gate\.outputs\.publish == 'true' && needs\.docker\.result == 'success'/);
-  assert.match(promotionJob, /uses: docker\/login-action@v3/);
+  assert.match(promotionJob, /uses: docker\/login-action@[0-9a-f]{40} # v\d+\.\d+\.\d+\n/);
   assert.match(text, /needs: \[gate, docker, promote\]\n    if: always\(\) && needs\.promote\.result == 'success'/);
   assert.doesNotMatch(promotionJob, /actions\/checkout/, "promotion is independent of the version checkout and a failed promotion reruns alone");
   assert.doesNotMatch(step, /import\(/, "promotion also works when the released checkout predates this workflow");
