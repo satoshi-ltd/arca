@@ -638,6 +638,86 @@ test("missing marker or symlink stops scan without publishing deletions", async 
   await assert.rejects(hub.sync(), /Symlink/);
 });
 
+const incrementalCycle = (n) => n.engine.exclusive(() => n.engine.cycle({ incremental: true }));
+const linkAway = (n, v, name, root, as = name) => {
+  const folder = n.engine.store.volume(v.id).path;
+  const moved = path.join(root, `moved-${path.basename(name)}`);
+  fs.renameSync(path.join(folder, name), moved);
+  fs.symlinkSync(moved, path.join(folder, as), fs.statSync(moved).isDirectory() ? "dir" : "file");
+};
+const linkBack = (n, v, name, root, as = name) => {
+  const folder = n.engine.store.volume(v.id).path;
+  fs.rmSync(path.join(folder, as));
+  fs.renameSync(path.join(root, `moved-${path.basename(name)}`), path.join(folder, name));
+};
+const live = (n, v, names) => names.map((name) => n.engine.store.current(v.id, name)?.deleted);
+
+test("a synced folder or file replaced by a symlink stops an incremental hub scan instead of recording deletions", async (t) => {
+  const { hub, volume, root, connect } = await setup(t);
+  write(hub, volume, "album/a.jpg", "a");
+  write(hub, volume, "album/2023/b.jpg", "b");
+  write(hub, volume, "note.txt", "note");
+  await hub.sync();
+  const mac = await connect("mirror");
+  await mac.sync();
+  const names = ["album", "album/a.jpg", "album/2023", "album/2023/b.jpg", "note.txt"];
+  linkAway(hub, volume, "album", root);
+  hub.engine.work.mark(volume.id, "album/2023/b.jpg");
+  await assert.rejects(incrementalCycle(hub), /Symlink requires attention: album$/, "a path below the link names the link");
+  hub.engine.work.mark(volume.id, "album");
+  await assert.rejects(incrementalCycle(hub), /Symlink requires attention: album$/);
+  assert.deepEqual(live(hub, volume, names), [0, 0, 0, 0, 0]);
+  linkBack(hub, volume, "album", root);
+  const fullAt = hub.engine.work.state(volume.id).full_at;
+  await incrementalCycle(hub);
+  assert.equal(hub.engine.store.db.prepare("SELECT COUNT(*) n FROM sync_dirty WHERE volume=?").get(volume.id).n, 0, "the error clears");
+  assert.equal(hub.engine.work.state(volume.id).full_at, fullAt, "without a full scan");
+  linkAway(hub, volume, "note.txt", root);
+  hub.engine.work.mark(volume.id, "note.txt");
+  await assert.rejects(incrementalCycle(hub), /Symlink requires attention: note\.txt$/);
+  assert.deepEqual(live(hub, volume, names), [0, 0, 0, 0, 0]);
+  linkBack(hub, volume, "note.txt", root);
+  await incrementalCycle(hub);
+  await mac.sync();
+  assert.equal(read(mac, volume, "album/2023/b.jpg"), "b");
+  assert.equal(read(mac, volume, "note.txt"), "note");
+});
+
+test("a link that differs from the synced folder only by letter case still stops the scan", async (t) => {
+  const { hub, volume, root } = await setup(t);
+  write(hub, volume, "album/a.jpg", "a");
+  await hub.sync();
+  linkAway(hub, volume, "album", root, "Album");
+  hub.engine.work.mark(volume.id, "album");
+  await assert.rejects(incrementalCycle(hub), /Symlink requires attention: Album$/);
+  assert.deepEqual(live(hub, volume, ["album", "album/a.jpg"]), [0, 0]);
+});
+
+test("a synced folder or file replaced by a symlink on a replica stops its incremental cycle instead of proposing deletions", async (t) => {
+  const { hub, volume, root, connect } = await setup(t);
+  write(hub, volume, "album/a.jpg", "a");
+  write(hub, volume, "album/2023/b.jpg", "b");
+  write(hub, volume, "note.txt", "note");
+  await hub.sync();
+  const mac = await connect("mirror");
+  await mac.sync();
+  const names = ["album", "album/a.jpg", "album/2023", "album/2023/b.jpg", "note.txt"];
+  assert.equal(await mac.engine.unchangedCopy(volume.id, "note.txt"), true);
+  linkAway(mac, volume, "album", root);
+  mac.engine.work.mark(volume.id, "album");
+  await assert.rejects(incrementalCycle(mac), /Symlink requires attention: album/);
+  linkBack(mac, volume, "album", root);
+  await incrementalCycle(mac);
+  linkAway(mac, volume, "note.txt", root);
+  mac.engine.work.mark(volume.id, "note.txt");
+  await assert.rejects(incrementalCycle(mac), /Symlink requires attention: note\.txt/);
+  assert.equal(await mac.engine.unchangedCopy(volume.id, "note.txt"), false, "a link is never an unchanged copy");
+  await hub.sync();
+  assert.deepEqual(live(hub, volume, names), [0, 0, 0, 0, 0]);
+  assert.equal(read(hub, volume, "album/2023/b.jpg"), "b");
+  assert.equal(read(hub, volume, "note.txt"), "note");
+});
+
 test("pending write recovery preserves external edit and restores intended revision", async (t) => {
   const { hub, volume } = await setup(t);
   write(hub, volume, "a", "base");

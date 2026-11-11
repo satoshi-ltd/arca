@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 — 2026-11-11
+
+- A symbolic link found in place of a synced folder or file (for example, after moving a folder to another disk and linking it back) now stops that folder with “Symlink requires attention”, on the hub and on desktop and server replicas. Before, the quick scan that follows a change read the link as a deletion and removed the folder's files from every device; only the periodic full scan stopped.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.1 — 2026-11-11
 
 - On the phone, a synced folder whose directory disappears (for example, removed in the iPhone's Files app) now stops with “Local folder is unavailable. Stop syncing this folder and start it again to download it.” Before, the next download or shared file recreated it empty, and every file it had held was then deleted on the hub and on every other device.

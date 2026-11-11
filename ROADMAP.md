@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **SYNC-SYMLINK-SCOPED** — A synced path that becomes a symlink stops the folder instead of deleting it everywhere
-  `bug · agent · high`
-  An incremental scan reads a symlinked path as absent (`hasExactPath`), so the hub tombstones every row under it and a replica proposes the deletions, while a full scan stops with "Symlink requires attention". Moving a synced directory to another disk and leaving a link deletes it on every device. Accept: replacing a synced file and a synced directory with a symlink, then an incremental cycle on a hub and on a replica, records no tombstone or deletion proposal and reports the same error as the full scan.
 - **SYNC-HUB-ROLLBACK** — A hub whose index went back in time never reverts newer files on replicas
   `bug · agent · high`
   A replica whose cursor is ahead of the hub's latest revision gets 409, resets its cursor to 0 and applies the snapshot; its newer files match its own index, so they are replaced as known content with no conflict copy. Any index restore (SEC-INDEX-SNAPSHOT, a disk or VM snapshot) triggers it. Accept: a test rolls a hub's index back behind a synced replica and the newer content survives as an upload or a conflict copy while the folder reports that the hub's history went back; a cursor ahead of the hub is treated as a reconcile, not a reset; the hub advertises a history epoch stored outside the index. The replica reconciles by itself, as it does for a replacement hub, and the folder reports it once; stopping to ask instead is the maintainer's call before this starts.

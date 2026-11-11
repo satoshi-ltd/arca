@@ -722,22 +722,39 @@ export class Store {
         409,
       );
   }
-  hasExactPath(v, name) {
+  pathState(v, name) {
     let current = v.path;
-    for (const part of name.split("/")) {
+    const parts = name.split("/");
+    const absent = { present: false, link: null };
+    for (const [index, part] of parts.entries()) {
+      const linked = (entry) => {
+        const target = path.join(current, entry);
+        return fs.lstatSync(target).isSymbolicLink()
+          ? { present: false, link: [...parts.slice(0, index), entry].join("/").normalize("NFC") }
+          : null;
+      };
       try {
-        const actual = fs
-          .readdirSync(current)
-          .find((entry) => entry.normalize("NFC") === part.normalize("NFC"));
-        if (!actual) return false;
+        const entries = fs.readdirSync(current);
+        const wanted = part.normalize("NFC");
+        const actual = entries.find((entry) => entry.normalize("NFC") === wanted);
+        if (!actual) {
+          // A link under another letter case still stands where the indexed path was.
+          const lower = wanted.toLowerCase();
+          const folded = entries.find((entry) => entry.normalize("NFC").toLowerCase() === lower);
+          return (folded && linked(folded)) || absent;
+        }
+        const link = linked(actual);
+        if (link) return link;
         current = path.join(current, actual);
-        if (fs.lstatSync(current).isSymbolicLink()) return false;
       } catch (e) {
-        if (["ENOENT", "ENOTDIR"].includes(e.code)) return false;
+        if (["ENOENT", "ENOTDIR"].includes(e.code)) return absent;
         throw e;
       }
     }
-    return true;
+    return { present: true, link: null };
+  }
+  hasExactPath(v, name) {
+    return this.pathState(v, name).present;
   }
   caseAlias(volume, name) {
     return this.db
@@ -1195,7 +1212,10 @@ export class Store {
           )
         )
           continue;
-        if (!this.hasExactPath(v, name)) continue;
+        const { present, link } = this.pathState(v, name);
+        // A link in place of a synced path is not its absence: stop as the full scan does.
+        if (link) fail(`Symlink requires attention: ${link}`, 409);
+        if (!present) continue;
         const file = this.filePath(v, name);
         let stat;
         try {

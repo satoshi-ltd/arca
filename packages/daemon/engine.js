@@ -2936,6 +2936,7 @@ export class Engine {
     return this.writePlaylist(volume, target, file, next);
   }
   async unchangedCopy(volume, name) {
+    if (this.store.pathState(this.store.volume(volume), name).link) return false;
     await this.reconcileLocal(volume, [name]);
     const view = this.store.viewCurrent(volume, name);
     const synced = this.store.current(volume, name);
