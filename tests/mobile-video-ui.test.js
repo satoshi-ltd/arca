@@ -280,12 +280,15 @@ test("offline, the library shows its downloads, or asks to connect when there ar
 test("the app plays downloads without the hub, queues positions and resumes downloads when Wi-Fi or the hub returns", () => {
   assert.match(app, /playbackSource\(\{\s+downloads: downloads\.current,\s+kept: locals\.some\(\(f\) => f\.id === session\.volume && f\.selected\)\s+\? keptSource\(engine\.current\.files, engine\.current\.scope, session\.volume, session\.item, Platform\.OS\)\s+: null,\s+volume: session\.volume,\s+item: session\.item,\s+mode: session\.mode \|\| "auto",\s+audio: session\.audio \?\? null,\s+stream: \(\) =>\s+videoSource\(/);
   assert.match(app, /playbackCues\(\{\s+downloads: downloads\.current,[\s\S]{0,200}load: \(\) => loadSubtitles\(/);
-  assert.match(app, /const manager = createVideoDownloads\(\{ replica, client, onChange: setVideoDownloads \}\);/, "downloads run on any network that reaches the hub");
+  assert.match(app, /const manager = createVideoDownloads\(\{ replica, client, onChange: setVideoDownloads, canRetry: downloadsCanRetry\(replica\) \}\);/, "downloads run on any network that reaches the hub");
   assert.match(app, /const fresh = await refreshVideoLibrary\(replica, folder\.id, \{ signal: controller\.signal, downloads: downloads\.current \}\);/, "only a fresh library from the hub removes downloads");
   assert.match(app, /if \(!catalog\) return;\s+downloads\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);/);
   assert.doesNotMatch(app, /cachedVideoLibrary\([^)]*downloads/);
   assert.match(app, /if \(!connected \|\| status\.offline \|\| !replica\?\.scope\) return;\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+flushPositions\(\{ client, replica \}\)/);
   assert.match(app, /network\?\.addNetworkStateListener\(\(\) => \{\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)/);
+  assert.match(app, /flushPositions\(\{ client, replica \}\)\.catch\(\(\) => \{\}\);\s+const listener = AppState\.addEventListener\("change", \(value\) => \{\s+if \(value !== "active"\) return;\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+\}\);\s+return \(\) => listener\.remove\(\);\s+\}, \[connected, status\.offline, replica, replica\?\.scope\]\);/, "returning to the app resumes waiting downloads while the hub is not known unreachable");
+  assert.match(app, /const downloadsCanRetry = \(replica\) => \(\) =>\s+AppState\.currentState === "active" && !replica\.hubUnavailable;/, "the retry timer acts only in the foreground with the hub not known unreachable");
+  assert.match(app, /const manager = createAudioDownloads\(\{ replica, client, onChange: setAudioDownloads, canRetry: downloadsCanRetry\(replica\) \}\);/);
   const load = app.slice(app.indexOf("const cached = await cachedVideoLibrary(replica, folder.id);"), app.indexOf("const shownVideo ="));
   assert.match(load, /await withQueuedPositions\(replica, folder\.id, cached\);/, "offline, the list resumes from positions still queued");
   assert.ok(load.indexOf("flushPositions") < load.indexOf("refreshVideoLibrary"), "queued positions reach the hub before the list is read again");

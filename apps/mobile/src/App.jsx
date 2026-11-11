@@ -265,6 +265,8 @@ const date = (value) =>
       })
     : "No completed sync yet";
 const tabs = ["Folders", "Devices", "History", "Settings"];
+const downloadsCanRetry = (replica) => () =>
+  AppState.currentState === "active" && !replica.hubUnavailable;
 export default function App() {
   const system = useColorScheme();
   const [prefs, setPrefs] = useState({});
@@ -1108,7 +1110,7 @@ export default function App() {
   }, [videoFolder, folder?.id, replica, connected]);
   useEffect(() => {
     if (!replica?.scope) return undefined;
-    const manager = createVideoDownloads({ replica, client, onChange: setVideoDownloads });
+    const manager = createVideoDownloads({ replica, client, onChange: setVideoDownloads, canRetry: downloadsCanRetry(replica) });
     downloads.current = manager;
     replica.videoDownloads = manager;
     manager.load().catch(() => {});
@@ -1120,7 +1122,7 @@ export default function App() {
   }, [replica, replica?.scope]);
   useEffect(() => {
     if (!replica?.scope) return undefined;
-    const manager = createAudioDownloads({ replica, client, onChange: setAudioDownloads });
+    const manager = createAudioDownloads({ replica, client, onChange: setAudioDownloads, canRetry: downloadsCanRetry(replica) });
     audioManager.current = manager;
     replica.audioDownloads = manager;
     manager.load().catch(() => {});
@@ -1140,6 +1142,12 @@ export default function App() {
     downloads.current?.resume().catch(() => {});
     audioManager.current?.resume().catch(() => {});
     flushPositions({ client, replica }).catch(() => {});
+    const listener = AppState.addEventListener("change", (value) => {
+      if (value !== "active") return;
+      downloads.current?.resume().catch(() => {});
+      audioManager.current?.resume().catch(() => {});
+    });
+    return () => listener.remove();
   }, [connected, status.offline, replica, replica?.scope]);
   useEffect(() => {
     const network = requireOptionalNativeModule("ExpoNetwork") ? require("expo-network") : null;

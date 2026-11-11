@@ -144,7 +144,7 @@ export const VIDEO_KIND = {
   verify: async (files, uri, row) => (await quickHash((at, length) => files.read(uri, at, length), row.size)) === row.hash,
 };
 
-export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, since = Date.now() }) {
+export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, canRetry = () => true, since = Date.now() }) {
   const store = replica.store;
   const files = replica.files;
   const scope = replica.scope;
@@ -293,11 +293,14 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
     await save({ ...finished, done: row.size, state: "done", error: "" }, false, signal);
     if (replaces) await discard({ ...finished, ...replaces });
   }
+  const anyWaiting = () => [...rows.values()].some((row) => row.state === "waiting");
   function later() {
     if (retry || stopped) return;
     retry = setTimeout(() => {
       retry = null;
-      manager.resume().catch(() => {});
+      if (!anyWaiting()) return;
+      if (client.state().connection?.linked && canRetry()) manager.resume().catch(() => {});
+      else later();
     }, retryDelay);
   }
   function pump() {
@@ -313,7 +316,7 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
         if (controller.signal.aborted || stopped || !row) return;
         if (error?.downloadWait || isHubUnreachable(error) || error?.code === "HUB_TIMEOUT") {
           await save({ ...row, state: "waiting", error: error?.downloadWait ? error.message : HUB_AWAY });
-          if (error?.syncing) later();
+          later();
         } else await save({ ...row, state: "failed", error: error?.message || "This download failed." });
       })
       .catch(() => {})
@@ -390,6 +393,8 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
     async resume() {
       await this.load();
       if (stopped) return;
+      clearTimeout(retry);
+      retry = null;
       for (const row of rows.values()) if (row.state === "waiting") await save({ ...row, state: "queued" }, true);
       emit();
       pump();
@@ -408,6 +413,10 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
         removed.push({ key, path, row });
       }
       if (!removed.length) return;
+      if (!anyWaiting()) {
+        clearTimeout(retry);
+        retry = null;
+      }
       const active = removed.some(({ key }) => running?.key === key) ? running : null;
       active?.controller.abort(cancelled());
       emit();

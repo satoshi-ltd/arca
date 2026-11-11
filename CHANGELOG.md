@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.15 — 2026-11-11
+
+- A movie, episode or track download on the phone left Waiting because the hub was slow to answer now tries again on its own a minute later and as soon as you return to the app, instead of waiting for the network to change or the app to restart.
+
+Needs: native build
+
 ## 0.9.14 — 2026-11-11
 
 - The release pipeline no longer gives a repository write token to the jobs that install dependencies and build: desktop builds hand their installers to a small job that uploads them to the release, the Docker build runs read-only, and no checkout leaves a token in the git configuration.

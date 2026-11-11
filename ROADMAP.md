@@ -47,9 +47,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **MOB-PARTIAL-CLEANUP** — Stop syncing mid-download leaves no partial file behind
   `bug · agent · normal`
   `cleanTransferObjects` removes only partials of applied rows, so the one in flight, up to the size of the file, survives Stop syncing and later cycles until Erase (reproduced). Accept: every partial that no `applying` row references is removed, a yielded download keeps its partial, and a journal row superseded on the hub is dropped instead of finished first.
-- **MOB-DOWNLOAD-RESUME** — A download left Waiting resumes when the app returns
-  `bug · agent · normal`
-  A block that times out while the app is in the background turns the row `waiting`, and `resume()` runs only on a connection or network change, so it waits for a relaunch although SPEC says it resumes when the hub is reachable. Accept: a row that timed out retries after the retry delay and on foreground, tested with the manager's `retryDelay` and `pause` hooks and a client that fails one block.
 - **MOB-REDUCE-MOTION** — Reduce Motion stops screens, sheets, rows and notices from animating in
   `bug · agent · normal`
   `useReduceMotion` starts at false in every instance and learns the setting from a promise, so animations started on mount run at full length. Accept: one module-level store primed before the first screen and read synchronously; a hook mounted after it resolved returns true on its first render.

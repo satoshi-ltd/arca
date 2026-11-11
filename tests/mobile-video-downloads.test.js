@@ -726,6 +726,176 @@ test("a hub still syncing the video makes the download wait and retry, not fail"
   downloads.stop();
 });
 
+const hubTimeout = () => Object.assign(new Error("Hub request timed out"), { code: "HUB_TIMEOUT" });
+const timeoutOnce = (client, at) => {
+  const raw = client.raw;
+  let failed = false;
+  client.raw = async (route, options) => {
+    if (!failed && options.headers.Range.startsWith(`bytes=${at}-`)) {
+      failed = true;
+      throw hubTimeout();
+    }
+    return raw(route, options);
+  };
+};
+const nap = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const until = async (done) => {
+  for (let i = 0; i < 400 && !done(); i++) await nap(5);
+  return done();
+};
+const timers = () => process.getActiveResourcesInfo().filter((name) => name === "Timeout").length;
+
+test("a download whose block timed out retries by itself after the retry delay and leaves no timer behind", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(3 * MIB + 5);
+  const hash = quick(content);
+  const item = movie(content, hash, { subtitles: [] });
+  const { state, client } = hub({ content, hash, item });
+  timeoutOnce(client, MIB);
+  const idle = timers();
+  const seen = [];
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 20, onChange: (rows) => seen.push(rows.get(`v1\n${item.path}`)) });
+  await downloads.add("v1", [item]);
+  assert.ok(await until(() => downloads.get("v1", item.path).state === "done"), "no connection or network change was needed");
+  const stalled = seen.find((row) => row?.state === "waiting");
+  assert.equal(stalled?.error, HUB_AWAY, "the timed-out block left it waiting");
+  assert.equal(stalled.done, MIB);
+  assert.deepEqual(state.ranges.map(([from]) => from), [0, MIB, 2 * MIB, 3 * MIB], "it continues from the bytes it had");
+  assert.ok(fs.readFileSync(files.videoDownload("hub-a", "v1", `${hash}.mkv`)).equals(content));
+  assert.equal(timers(), idle, "nothing stays scheduled once it finished");
+  await downloads.stop();
+});
+
+test("returning to the app resumes a timed-out download before the retry delay and cancels the pending retry", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(2 * MIB + 5);
+  const hash = quick(content);
+  const item = movie(content, hash, { subtitles: [] });
+  const { client } = hub({ content, hash, item });
+  timeoutOnce(client, MIB);
+  const idle = timers();
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 60000 });
+  await downloads.add("v1", [item]);
+  assert.equal((await settled(downloads, "v1", item.path)).state, "waiting");
+  assert.ok(await until(() => timers() === idle + 1), "the retry is scheduled a minute away");
+  await downloads.resume();
+  assert.equal((await settled(downloads, "v1", item.path)).state, "done");
+  assert.equal(timers(), idle);
+  await downloads.stop();
+});
+
+test("the retry holds while the app is in the background or the hub is known unreachable, with one timer for every waiting download", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(MIB + 5);
+  const hash = quick(content);
+  const first = movie(content, hash, { subtitles: [] });
+  const second = { ...first, id: "m:2", path: "Movies/Second.mkv" };
+  const { client } = hub({ content, hash, item: first });
+  const raw = client.raw;
+  let away = true;
+  let asked = 0;
+  client.raw = async (route, options) => {
+    asked++;
+    if (away) throw hubTimeout();
+    return raw(route, options);
+  };
+  let allowed = false;
+  const idle = timers();
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 15, canRetry: () => allowed });
+  await downloads.add("v1", [first, second]);
+  const states = () => [first, second].map((item) => downloads.get("v1", item.path).state);
+  assert.ok(await until(() => states().every((state) => state === "waiting")));
+  away = false;
+  const before = asked;
+  await nap(80);
+  assert.equal(asked, before, "nothing is asked of the hub meanwhile");
+  assert.deepEqual(states(), ["waiting", "waiting"]);
+  assert.equal(timers(), idle + 1);
+  allowed = true;
+  assert.ok(await until(() => states().every((state) => state === "done")), "the next retry runs once the app is back and the hub is not known unreachable");
+  assert.equal(timers(), idle);
+  await downloads.stop();
+});
+
+test("a phone that is not linked keeps its downloads waiting untouched, and the retry picks them up once it is", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(MIB + 5);
+  const hash = quick(content);
+  const item = movie(content, hash, { subtitles: [] });
+  const { state, client } = hub({ content, hash, item });
+  state.linked = false;
+  let changes = 0;
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 15, onChange: () => changes++ });
+  await downloads.add("v1", [item]);
+  assert.equal((await settled(downloads, "v1", item.path)).error, HUB_AWAY);
+  await nap(20);
+  const before = changes;
+  await nap(80);
+  assert.equal(changes, before, "the row does not flip between downloading and waiting");
+  assert.equal(state.ranges.length, 0);
+  state.linked = true;
+  assert.ok(await until(() => downloads.get("v1", item.path).state === "done"));
+  await downloads.stop();
+});
+
+test("cancelling the last waiting download cancels its retry, whether the hub timed out or was still syncing the file", async (t) => {
+  for (const failure of [hubTimeout, () => new HubError("Sync this video before playing it", 409)]) {
+    const { store, files } = setup(t);
+    await store.init();
+    const content = media(MIB + 5);
+    const hash = quick(content);
+    const item = movie(content, hash, { subtitles: [] });
+    const { client } = hub({ content, hash, item });
+    let asked = 0;
+    client.raw = async () => {
+      asked++;
+      throw failure();
+    };
+    let changes = 0;
+    const idle = timers();
+    const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 15, canRetry: () => false, onChange: () => changes++ });
+    await downloads.add("v1", [item]);
+    assert.equal((await settled(downloads, "v1", item.path)).state, "waiting");
+    assert.ok(await until(() => timers() === idle + 1));
+    await downloads.remove("v1", item.path);
+    assert.equal(timers(), idle);
+    const [before, requests] = [changes, asked];
+    await nap(60);
+    assert.equal(changes, before, "nothing runs for a download that is gone");
+    assert.equal(asked, requests);
+    await downloads.stop();
+  }
+});
+
+test("a download that failed for good is not retried by the timer or by returning to the app", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(MIB + 5);
+  const hash = quick(content);
+  const item = movie(content, hash, { subtitles: [] });
+  const { state, client } = hub({ content, hash, item });
+  files.free = async () => 0;
+  const idle = timers();
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, chunk: MIB, pause: async () => {}, retryDelay: 15 });
+  await downloads.add("v1", [item]);
+  const failed = await settled(downloads, "v1", item.path);
+  assert.equal(failed.state, "failed");
+  assert.equal(failed.error, NO_SPACE);
+  await nap(20);
+  assert.equal(timers(), idle, "a failure schedules nothing");
+  files.free = async () => 64 * 1024 * MIB;
+  await nap(60);
+  await downloads.resume();
+  await nap(20);
+  assert.equal(downloads.get("v1", item.path).state, "failed");
+  assert.equal(state.ranges.length, 0);
+  await downloads.stop();
+});
+
 test("after a hash change the free space is checked again and an existing copy of the new content is reused", async (t) => {
   const { store, files } = setup(t);
   await store.init();

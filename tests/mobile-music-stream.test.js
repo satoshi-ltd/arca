@@ -139,6 +139,32 @@ test("an audio download reads the hub's music media, verifies the whole content 
   await downloads.stop();
 });
 
+test("an audio download whose block timed out retries by itself after the retry delay", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const one = crypto.randomBytes(3000);
+  const list = tracks(one, crypto.randomBytes(10));
+  const { client, calls } = hub(new Map([[list[0].path, one]]), () => ({ version: "1", tracks: list }));
+  const raw = client.raw;
+  let failed = false;
+  client.raw = async (route, options) => {
+    if (!failed && options.headers.Range.startsWith("bytes=1024-")) {
+      failed = true;
+      throw Object.assign(new Error("Hub request timed out"), { code: "HUB_TIMEOUT" });
+    }
+    return raw(route, options);
+  };
+  const seen = [];
+  const downloads = createAudioDownloads({ replica: { scope: "hub-a", store, files, client }, client, chunk: 1024, retryDelay: 20, onChange: (rows) => seen.push(rows.get(`v\n${list[0].path}`)) });
+  await downloads.add("v", [list[0]]);
+  for (let i = 0; i < 400 && downloads.get("v", list[0].path).state !== "done"; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(downloads.get("v", list[0].path).state, "done");
+  assert.equal(seen.find((row) => row?.state === "waiting")?.done, 1024, "the timed-out block left it waiting");
+  assert.deepEqual(fs.readFileSync(files.audioDownload("hub-a", "v", `${list[0].hash}.mp3`)), one);
+  assert.equal(calls.length, 3, "only the missing blocks are asked for again");
+  await downloads.stop();
+});
+
 test("a streamed library reads the hub's answer whole online, only its downloads offline, and publishes local or hub URIs", async (t) => {
   const { store, files } = setup(t);
   await store.init();
