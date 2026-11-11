@@ -128,6 +128,7 @@ export function finishInstallationReset(store) {
         "transcodes",
         "web-code.json",
         "promotion.json",
+        "history.json",
       ].includes(name) ||
       /^before-(promotion|reconnect)-[a-f0-9-]+\.sqlite$/.test(name) ||
       /^config\.json\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/.test(
@@ -147,6 +148,7 @@ export function finishInstallationReset(store) {
       .all())
       store.db.exec(`DELETE FROM "${name.replaceAll('"', '""')}"`);
     store.db.exec("DELETE FROM sqlite_sequence; COMMIT");
+    store.savedHistory = null;
   } catch (error) {
     store.db.exec("ROLLBACK");
     throw error;

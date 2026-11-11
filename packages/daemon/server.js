@@ -139,6 +139,13 @@ export async function start(home, options = {}) {
       engine.close();
       fail("Only hub and replica daemons are supported");
     }
+    if (engine.config.role === "hub")
+      try {
+        engine.store.historyEpoch();
+      } catch (e) {
+        engine.close();
+        throw e;
+      }
   } catch (e) {
     releaseLock(lock);
     throw e;
@@ -1264,6 +1271,7 @@ export async function start(home, options = {}) {
           blobRanges: true,
           directories: true,
           pathTransitions: true,
+          history: s.historyEpoch(),
           id: config.id,
           name: config.name,
           device: device.id,

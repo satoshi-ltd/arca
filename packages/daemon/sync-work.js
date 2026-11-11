@@ -111,6 +111,13 @@ export class SyncWork {
       )
       .run(volume, dates);
   }
+  epoch(volume, epoch) {
+    this.store.db
+      .prepare(
+        "INSERT INTO sync_state(volume,epoch) VALUES(?,?) ON CONFLICT(volume) DO UPDATE SET epoch=excluded.epoch",
+      )
+      .run(volume, epoch);
+  }
   policy(volume, policy) {
     this.store.db
       .prepare(

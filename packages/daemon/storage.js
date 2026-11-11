@@ -454,6 +454,13 @@ export class Store {
       this.db.exec(
         "ALTER TABLE sync_state ADD COLUMN dates INTEGER NOT NULL DEFAULT 0",
       );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(sync_state)")
+        .all()
+        .some((column) => column.name === "epoch")
+    )
+      this.db.exec("ALTER TABLE sync_state ADD COLUMN epoch TEXT");
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS added_dates(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,added TEXT NOT NULL,PRIMARY KEY(volume,path))",
     );
@@ -582,6 +589,76 @@ export class Store {
         directories.add(parent);
     }
     return { root: v.path, files, directories };
+  }
+  revisionHead() {
+    return Number(
+      this.db.prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'").get()?.seq || 0,
+    );
+  }
+  // The epoch lives outside the index so an index that went back in time is told apart from the one it replaced.
+  historyEpoch({ flush = false } = {}) {
+    const file = path.join(this.home, "history.json");
+    const head = this.revisionHead();
+    if (!this.savedHistory) {
+      let text = null;
+      try {
+        text = fs.readFileSync(file, "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      try {
+        const saved = JSON.parse(text);
+        if (typeof saved.epoch === "string" && Number.isSafeInteger(saved.head))
+          this.savedHistory = { epoch: saved.epoch, head: saved.head, at: 0 };
+      } catch {}
+    }
+    const saved = this.savedHistory;
+    if (!saved || head < saved.head) {
+      const next = { epoch: crypto.randomUUID(), head, at: Date.now() };
+      atomic(file, JSON.stringify({ epoch: next.epoch, head }));
+      this.savedHistory = next;
+    } else if (head > saved.head && (flush || Date.now() - saved.at >= 30000)) {
+      try {
+        atomic(file, JSON.stringify({ epoch: saved.epoch, head }));
+        Object.assign(saved, { head, at: Date.now() });
+      } catch {}
+    }
+    return { epoch: this.savedHistory.epoch, head };
+  }
+  // Leaves the files in place and the folder as never synced, so the next cycle relinks it against the hub.
+  forgetIndex(id) {
+    const stuck = this.db
+      .prepare("SELECT json_extract(row, '$.path') AS path FROM pending WHERE volume=? LIMIT 4")
+      .all(id)
+      .map((row) => row.path);
+    if (stuck.length)
+      fail(
+        `The hub went back to an earlier state, and interrupted writes must finish before this folder is linked to it again: ${stuck.slice(0, 3).join(", ")}${stuck.length > 3 ? ", …" : ""}`,
+        409,
+      );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const table of [
+        "gallery_assets",
+        "gallery_members",
+        "gallery_deletions",
+        "accepted_proposals",
+        "sync_dirty",
+        "forgotten",
+        "sync_state",
+        "files",
+        "local_files",
+      ])
+        this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
+      this.db
+        .prepare("DELETE FROM proposals WHERE json_extract(response, '$.volume')=?")
+        .run(id);
+      this.db.prepare("UPDATE volumes SET last_sync=NULL WHERE id=?").run(id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   forgetVolume(id) {
     const v = this.volume(id);

@@ -66,6 +66,12 @@ const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
 const HOLD_ATTEMPTS = 24;
 const MIN_UPLOAD_CHUNK = 256 * 1024;
 const STALE_HISTORY_REQUESTS = 8;
+export const HISTORY_BACK =
+  "The hub went back to an earlier state. The next sync links this folder to it again: files the hub lacks are uploaded, changed ones are kept as conflict copies and outdated ones go to the Trash.";
+const contradicts = (indexed, row) =>
+  row.rev < indexed.rev ||
+  (row.rev === indexed.rev &&
+    (row.hash !== indexed.hash || !!row.deleted !== !!indexed.deleted));
 const hubIdentity = (hub) => (hub ? hub.id || hub.url : null);
 export const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
 const MISSING_LOCAL =
@@ -821,6 +827,13 @@ export class Engine {
       renameFrom: null,
     };
   }
+  historyWentBack(v) {
+    this.store.forgetIndex(v.id);
+    this.localSeen.delete(v.id);
+    this.staleHeads.delete(v.id);
+    this.work.mark(v.id);
+    fail(HISTORY_BACK, 409);
+  }
   // Until a first sync completes, the hub is the source of truth for files the local index does not know.
   async setAsideStale(v, disk, known) {
     const unknown = [...disk].filter(
@@ -1053,6 +1066,12 @@ export class Engine {
           );
         if (catalog.id !== this.config.hub.id)
           fail("Hub identity changed; reconnect explicitly", 409);
+        const hubHistory =
+          this.config.role === "replica" &&
+          typeof catalog.history?.epoch === "string" &&
+          Number.isSafeInteger(catalog.history.head)
+            ? catalog.history
+            : null;
         this.config.hub.name = catalog.name;
         this.config.hub.deviceId =
           typeof catalog.device === "string" ? catalog.device : null;
@@ -1141,6 +1160,14 @@ export class Engine {
                 catalog.volumes.find((row) => row.id === v.id)?.policyError,
                 409,
               );
+            if (hubHistory) {
+              const seen = this.work.state(v.id);
+              if (
+                (seen.epoch && seen.epoch !== hubHistory.epoch) ||
+                seen.cursor > hubHistory.head
+              )
+                this.historyWentBack(v);
+            }
             await this.syncIgnore(v);
             const policy = this.policyKey(v);
             if (this.work.state(v.id).policy !== policy) {
@@ -1410,6 +1437,14 @@ export class Engine {
                   }
                 }
                 after = page.next;
+                // Do not merge with the apply loop: a contradiction must stop the page before any row lands.
+                if (this.config.role === "replica")
+                  for (const row of page.files) {
+                    // syncIgnore indexes the hub's latest policy revision, which may be ahead of this row while the hub's own write is pending.
+                    if (row.path === IGNORE_FILE) continue;
+                    const indexed = s.current(v.id, row.path);
+                    if (indexed && contradicts(indexed, row)) this.historyWentBack(v);
+                  }
                 for (const row of page.files) {
                   this.checkSyncInterrupted();
                   if (
@@ -1513,6 +1548,7 @@ export class Engine {
             if (backfillDates && !skipped)
               this.work.dates(v.id, ADDED_DATES_FEED);
             this.work.complete(v, plan);
+            if (hubHistory) this.work.epoch(v.id, hubHistory.epoch);
             if (plan.acknowledge) s.clearLocal(v.id, plan.paths);
             for (const name of blocked.values()) this.work.mark(v.id, name);
             this.work.policy(v.id, policy);
@@ -2436,6 +2472,9 @@ export class Engine {
     );
     const remote = versions[0];
     if (!remote) return;
+    const indexed = s.current(v.id, IGNORE_FILE);
+    if (this.config.role === "replica" && indexed && contradicts(indexed, remote))
+      this.historyWentBack(v);
     if (remote.deleted) {
       const known = s.current(v.id, IGNORE_FILE);
       const file = path.join(v.path, IGNORE_FILE);
@@ -3040,6 +3079,10 @@ export class Engine {
     );
   }
   close() {
+    if (this.config.role === "hub")
+      try {
+        this.store.historyEpoch({ flush: true });
+      } catch {}
     this.gallery?.close();
     this.music?.close();
     this.video?.close();

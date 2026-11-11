@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3 — 2026-11-11
+
+- If the hub goes back to an earlier state (its index or its disk restored from a copy), desktop and server replicas no longer replace their newer files with the hub's older ones. The folder says once that the hub went back and is then linked to it again as when it was first selected, which needs free space in the state directory of about the folder's size: files the hub no longer has upload, changed ones are kept as conflict copies or, when the hub still holds that version, moved to the Trash, and files deleted since come back.
+- The hub now keeps a small `history.json` beside its index to tell a restored index from the one it replaced. Leave it in place when restoring an index copy, and carry it along when moving a hub's state.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.2 — 2026-11-11
 
 - A symbolic link found in place of a synced folder or file (for example, after moving a folder to another disk and linking it back) now stops that folder with “Symlink requires attention”, on the hub and on desktop and server replicas. Before, the quick scan that follows a change read the link as a deletion and removed the folder's files from every device; only the periodic full scan stopped.

@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **SYNC-HUB-ROLLBACK** — A hub whose index went back in time never reverts newer files on replicas
-  `bug · agent · high`
-  A replica whose cursor is ahead of the hub's latest revision gets 409, resets its cursor to 0 and applies the snapshot; its newer files match its own index, so they are replaced as known content with no conflict copy. Any index restore (SEC-INDEX-SNAPSHOT, a disk or VM snapshot) triggers it. Accept: a test rolls a hub's index back behind a synced replica and the newer content survives as an upload or a conflict copy while the folder reports that the hub's history went back; a cursor ahead of the hub is treated as a reconcile, not a reset; the hub advertises a history epoch stored outside the index. The replica reconciles by itself, as it does for a replacement hub, and the folder reports it once; stopping to ask instead is the maintainer's call before this starts.
 - **VIDEO-MARK-UNSELECTED** — A hub folder without a working copy cannot become a Movies & TV library
   `bug · agent · high`
   `mark()` never checks `selected`, and garbage collection stops protecting the objects of a video folder, so marking a folder after Stop syncing here deletes the hub's only copy once the collection delay passes. Accept: `/v1/video/mark` answers 409 for a folder the hub does not hold in place, the interface says why, and a test sees no object of that folder collected.
@@ -175,12 +172,24 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 - **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
   `bug · agent · normal`
   The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT), where a same-timestamp edit is legitimate, keep today's behaviour unless the maintainer says otherwise at approval.
+- **SYNC-ROLLBACK-ANCHOR** — A hub restored whole and changed again is still told apart on the next incremental sync
+  `feature · agent · normal`
+  When `history.json` is restored together with the index and the hub then records enough new revisions to pass a replica's cursor, an incremental cycle sees only higher revisions, so a path the hub changed again replaces the replica's newer file as an ordinary update, and a file only the replica had is never uploaded again; the periodic full pass catches only rows that contradict. Accept: `/v1/changes` carries a digest of the revision at the replica's cursor, a mismatch is treated as the hub having gone back, and a test restores a hub whole, changes the same path on it past the replica's cursor and sees the replica's version kept as a conflict copy on an incremental cycle.
+- **SYNC-RELINK-NO-COPY** — Relinking a folder does not copy unchanged files into the state directory
+  `feature · agent · normal`
+  A relink scan has no index to trust, so `capture` copies and hashes every file into `objects`: linking an existing folder, and now the automatic relink after a hub went back, needs free space of about the folder's size on the state volume on each replica, and a relink that stops midway keeps those copies. Accept: a relink trusts a `scan_cache` record whose signature matches and stages only what must upload, with a test counting object copies for a folder identical to the hub's.
+- **BACKUP-HUB-ROLLBACK** — A full backup notices that the hub went back
+  `feature · agent · low`
+  The backup worker's archive cursor is not compared with the hub's history: against a hub that went back it gets 409 and then, once the hub passes the cursor, a silent gap in what it copies. Accept: the worker reads the catalog's `history`, keeps the revisions it already holds, restarts its copy from the hub's head on a changed epoch or a cursor ahead, and reports it; with a test.
+- **MOB-HUB-ROLLBACK** — A phone reconciles with a hub that went back in time
+  `feature · agent · normal`
+  The phone skips hub rows older than its own, so nothing is replaced, but it then stays diverged: its newer files never upload and its later edits are refused as stale. Accept: the phone reads the catalog's `history` epoch and head, and on a changed epoch or a cursor ahead of the head relinks the folder as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub.
 - **SEC-HUB-IN-USE-OTHER** — Other hub changes to a file FFmpeg holds open wait instead of failing on Windows
   `bug · agent · low`
   The Windows in-use check covers `/v1/delete-file` and Delete movie or episode only. Gallery deletion, a replica's proposed deletion applied on the hub, hub rename, restore and a conflict choice can still record a change whose move then fails while a preview or probe holds the file. Accept: each path ends the hub's own work on the file or answers 409 before recording anything, with Windows-shaped tests.
 - **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
-  `feature · agent · low · depends: SYNC-HUB-ROLLBACK`
-  Blocked: restoring an older index today makes replicas silently replace their newer files (SYNC-HUB-ROLLBACK). Accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index from the scanner worker (keeping one, mode 0600), Erase removes it, and the CLI restore command changes the hub's history epoch so replicas reconcile instead of reverting, with a test.
+  `feature · agent · low`
+  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index from the scanner worker (keeping one, mode 0600), Erase removes it, and the CLI documents how to restore it with the daemon stopped; `history.json` stays in place, so the restored index starts a new history epoch and replicas reconcile instead of reverting; after such a start the hub finishes one full scan before it serves heads, so a working copy it still holds does not turn into redundant conflict copies on replicas; with tests.
 
 ### Stability
 
@@ -205,6 +214,9 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 - **MOB-EXPORT-DEADLINE** — A large video's export is limited by stalls, not by total time
   `bug · agent · normal · native`
   iOS and Android give the whole export one 90 s deadline, so an iCloud original that needs longer never uploads. Accept: the deadline restarts on each chunk in Swift and Kotlin; the JS contract test covers the error codes.
+- **SYNC-IGNORE-RECREATED** — A hub `.arcaignore` deleted and created again does not pause its replicas
+  `bug · agent · normal`
+  After the hub's `.arcaignore` is deleted and then recreated, every desktop replica stops with “.arcaignore differs between this device and the hub”: the replica's index row for the deleted policy has no hash, so it never equals the hash of the empty local policy in `syncIgnore`. Reproduced by the review of 0.9.3 on 0.9.2 as well. Accept: a replica whose indexed policy row is a deletion and whose local policy is empty or absent takes the recreated policy, with a test.
 - **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
   `bug · agent · low`
   An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
