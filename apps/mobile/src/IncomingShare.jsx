@@ -26,6 +26,9 @@ import {
   incomingFilenameError,
   incomingFolderError,
   resolveShared,
+  sharedKey,
+  shareTurn,
+  stallGuard,
 } from "./incoming-files";
 import { native } from "./private-network";
 import {
@@ -54,7 +57,8 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
   const [place, setPlace] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [naming, setNaming] = useState(null);
-  const receiving = useRef(false),
+  const receiving = useRef(""),
+    owned = useRef(""),
     saving = useRef(false),
     session = useRef(null),
     attempt = useRef(0);
@@ -65,18 +69,39 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
     setNaming(null);
     setRecent([]);
   }, [connection?.hubId]);
+  // A newer share may already be stored when an older run ends: clear only the share that run handled.
+  const clearShare = (key) => {
+    let stored = key;
+    try {
+      stored = sharedKey(Sharing.getSharedPayloads());
+    } catch {}
+    if (stored === key) Sharing.clearSharedPayloads();
+  };
   useEffect(() => {
     let active = true;
     async function receive() {
-      if (receiving.current || saving.current) return;
-      receiving.current = true;
+      if (saving.current) return;
+      let raw = [];
+      let unreadable = null;
+      try {
+        raw = Sharing.getSharedPayloads();
+      } catch (e) {
+        unreadable = e;
+      }
+      const turn = shareTurn(receiving.current, raw);
+      if (turn === "ignore" && !unreadable) return;
+      if (turn === "replace" || (unreadable && receiving.current))
+        await session.current?.cancel().catch(() => {});
+      const key = sharedKey(raw);
+      receiving.current = key;
+      owned.current = key;
       const current = ++attempt.current;
       const superseded = () => current !== attempt.current;
       try {
+        if (unreadable) throw unreadable;
         const r = await runtime();
         session.current ||= new IncomingSession(r);
         let pending;
-        const raw = Sharing.getSharedPayloads();
         if (raw.length) {
           if (active) {
             setPreparing(true);
@@ -106,10 +131,12 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
               throw new Error(
                 "Share the exported file, rather than a link or text.",
               );
-            return Sharing.getResolvedSharedPayloadsAsync();
+            return stallGuard(Sharing.getResolvedSharedPayloadsAsync(), async () => 0, {
+              startMs: 120000,
+            });
           }, id);
           if (superseded()) return;
-          Sharing.clearSharedPayloads();
+          clearShare(key);
         }
         if (active && pending?.length) {
           setVolume(null);
@@ -122,7 +149,8 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
         } else if (!active) await session.current.cancel();
       } catch (e) {
         if (superseded()) return;
-        Sharing.clearSharedPayloads();
+        if (unreadable) Sharing.clearSharedPayloads();
+        else clearShare(key);
         if (active) {
           setError(e.message);
           setOpen(true);
@@ -130,7 +158,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
       } finally {
         if (!superseded()) {
           if (active) setPreparing(false);
-          receiving.current = false;
+          receiving.current = "";
         }
       }
     }
@@ -258,7 +286,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
     saving.current = true;
     setBusy(true);
     attempt.current++;
-    receiving.current = false;
+    receiving.current = "";
     setPreparing(false);
     setParked(false);
     try {
@@ -267,7 +295,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
       setPlace(null);
       setVolume(null);
       setDirectory("");
-      Sharing.clearSharedPayloads();
+      clearShare(owned.current);
       setOpen(false);
       setError("");
     } catch (e) {

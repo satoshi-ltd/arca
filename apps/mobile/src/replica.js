@@ -115,6 +115,11 @@ export class Replica {
   inventoryKey(folderId) {
     return `inventory:${this.scope}:${folderId}`;
   }
+  // Call before the local write: a process killed between the two must still scan on its next cycle.
+  async inventoryNow(volume) {
+    this.lastInventory.delete(volume);
+    await this.store.set(this.inventoryKey(volume), 0);
+  }
   get checking() {
     return !!this.active && this.busy && !this.connectionChecked && !this.paused;
   }
@@ -1844,6 +1849,7 @@ export class Replica {
     }
     if (!destination)
       throw new Error("Too many conflicting copies of this file already exist.");
+    await this.inventoryNow(volume);
     await this.files.clearStaged(this.files.parent(destination));
     await this.files.mkdir(this.files.parent(destination));
     await this.files.copy(source, destination);
@@ -1911,6 +1917,7 @@ export class Replica {
       )
     )
       throw new Error("A file or folder with that name already exists.");
+    await this.inventoryNow(volume);
     await this.files.move(
       file,
       this.files.work(this.scope, volume, destination),
@@ -1948,6 +1955,7 @@ export class Replica {
   async writePlaylist(volume, path, text) {
     const target = this.files.work(this.scope, volume, path);
     const staged = this.files.staged(target);
+    await this.inventoryNow(volume);
     await this.files.mkdir(this.files.parent(target));
     try {
       await this.files.write(staged, new TextEncoder().encode(text));
@@ -2071,6 +2079,7 @@ export class Replica {
       const info = await this.files.stat(file);
       if (!info || info.directory || row?.directory)
         throw new Error("This file is not on this phone.");
+      await this.inventoryNow(volume);
       await this.files.remove(file);
       await this.noteLocal(volume, { kind: "remove", path: name });
       this.changed();

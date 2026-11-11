@@ -594,3 +594,66 @@ test("the phone lists, for each kept folder, its cursor and the newest revision 
   const newest = f.daemon.engine.store.db.prepare("SELECT path,hash,rev FROM files WHERE volume=? AND rev<=? ORDER BY rev DESC LIMIT 1").get(f.volume.id, check.cursor);
   assert.deepEqual(check.last, { path: newest.path, hash: newest.hash, deleted: false, rev: newest.rev });
 });
+
+const coldStart = async (f) => {
+  const replica = new Replica({ store: f.store, files: f.files, client: f.client, platform: "android" });
+  await replica.load();
+  return replica;
+};
+
+test("a file saved on the phone uploads on the next scheduled cycle after the run that followed it was cut short", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
+  await f.select();
+  await f.replica.sync(true);
+  const source = path.join(path.dirname(f.volume.path), "incoming.bin");
+  fs.writeFileSync(source, "shared from another app");
+  await f.replica.importFile(f.volume.id, "shared.txt", source);
+  const scan = f.replica.scan.bind(f.replica);
+  f.replica.scan = async (folder) => {
+    f.replica.suspend();
+    return scan(folder);
+  };
+  await f.replica.sync();
+  assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 0, "the cut run queued nothing");
+  const next = await coldStart(f);
+  await next.sync(false, { scheduled: true });
+  await f.daemon.engine.cycle();
+  assert.equal(next.error, null);
+  assert.equal(fs.readFileSync(path.join(f.volume.path, "shared.txt"), "utf8"), "shared from another app");
+});
+
+const reachesHub = async (t, change, expected) => {
+  const f = await phone(t);
+  for (const name of ["a.txt", "b.txt"]) fs.writeFileSync(path.join(f.volume.path, name), name);
+  await f.select();
+  await f.replica.sync(true);
+  await change(f);
+  const next = await coldStart(f);
+  await next.sync(false, { scheduled: true });
+  await f.daemon.engine.cycle();
+  assert.equal(next.error, null);
+  assert.deepEqual(
+    fs.readdirSync(f.volume.path).filter((name) => /\.txt$/.test(name)).sort(),
+    expected,
+  );
+};
+
+test("a delete made on the phone reaches the hub on the next scheduled cycle after a cold start", (t) =>
+  reachesHub(t, (f) => f.replica.removeFile(f.volume.id, "a.txt"), ["b.txt"]));
+
+test("a rename made on the phone reaches the hub on the next scheduled cycle after a cold start", (t) =>
+  reachesHub(t, (f) => f.replica.renameFile(f.volume.id, "b.txt", "c.txt"), ["a.txt", "c.txt"]));
+
+test("a playlist written on the phone makes its folder's inventory due, in memory and in the saved time a cold start reads", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
+  await f.select();
+  await f.replica.sync(true);
+  const key = f.replica.inventoryKey(f.volume.id);
+  assert.ok((await f.store.get(key, 0)) > 0);
+  f.files.staged = (target) => path.join(path.dirname(target), `.arca-copy-${crypto.randomUUID()}`);
+  await f.replica.writePlaylist(f.volume.id, "Playlists/Road.m3u8", "#EXTM3U\n");
+  assert.equal(f.replica.lastInventory.has(f.volume.id), false);
+  assert.equal(await f.store.get(key, 0), 0);
+});

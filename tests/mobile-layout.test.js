@@ -571,10 +571,11 @@ test("cancelling a stalled share frees later shares and a superseded read never 
   const share = fs.readFileSync(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
   const receive = share.slice(share.indexOf("async function receive()"), share.indexOf("receive();"));
   assert.match(receive, /const current = \+\+attempt\.current;/);
-  assert.match(receive, /if \(superseded\(\)\) return;\s+Sharing\.clearSharedPayloads\(\);/);
+  assert.match(receive, /if \(superseded\(\)\) return;\s+clearShare\(key\);/);
   assert.match(receive, /finally \{\s+if \(!superseded\(\)\) \{/);
   const discard = share.slice(share.indexOf("async function discard()"), share.indexOf("const destinations"));
-  assert.match(discard, /attempt\.current\+\+;\s+receiving\.current = false;\s+setPreparing\(false\);/);
+  assert.match(discard, /attempt\.current\+\+;\s+receiving\.current = "";\s+setPreparing\(false\);/);
+  assert.match(discard, /clearShare\(owned\.current\);/);
 });
 
 test("offline onboarding selects from the saved catalog and Folders never shows an endless skeleton offline", () => {

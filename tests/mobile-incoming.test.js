@@ -6,9 +6,13 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   IncomingSession,
+  SHARE_STALLED,
   clearIncoming,
   copyPicked,
   resolveShared,
+  shareTurn,
+  sharedKey,
+  stallGuard,
 } from "../apps/mobile/src/incoming-files.js";
 
 async function fixture(t) {
@@ -306,4 +310,134 @@ test("the share sheet saves in one step to the last destination and Change opens
   const load = screen.slice(screen.indexOf("if (!open) return;"), screen.indexOf("}, [open, connection?.hubId, locals]);"));
   assert.match(load, /r\.scope && r\.scope === connection\?\.hubId\s+\? await loadDestinations\(r\.store, r\.scope, choices\)/);
   assert.match(screen, /setDirectory\(""\);\s+setPlace\(null\);\s+setNaming\(null\);\s+setRecent\(\[\]\);\s+\}, \[connection\?\.hubId\]\);/, "another hub starts without the old list or picker");
+});
+
+const plainStat = (f) => ({
+  ...f.runtime,
+  files: { ...f.runtime.files, stat: (p) => fs.stat(p) },
+});
+
+test("a sender that stops delivering a shared file ends with an actionable error and leaves nothing staged, even when it finishes later", async (t) => {
+  const f = await fixture(t);
+  const runtime = plainStat(f);
+  const staged = path.join(f.temporary, "stall-1-0");
+  let finish;
+  const resumed = new Promise((resolve) => (finish = resolve));
+  const receive = async (uri, destination) => {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "half");
+    await resumed;
+    await fs.writeFile(destination, "whole file");
+    return { name: "run.fit", size: 10 };
+  };
+  const raw = [{ shareType: "file", value: "content://other.app/files/1" }];
+  await assert.rejects(
+    resolveShared(runtime, receive, raw, "stall-1", { startMs: 300, stallMs: 40, pollMs: 10 }),
+    { message: SHARE_STALLED },
+  );
+  await missing(staged);
+  const remove = runtime.files.remove;
+  const cleaned = new Promise((resolve) => {
+    runtime.files.remove = async (target) => {
+      await remove(target);
+      resolve(target);
+    };
+  });
+  finish();
+  assert.equal(await cleaned, staged);
+  await missing(staged);
+});
+
+test("a sender that has delivered nothing yet gets the longer start allowance, and one that keeps delivering is never cut", async (t) => {
+  const f = await fixture(t);
+  const receive = async (uri, destination) => {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    for (let block = 0; block < 16; block++) {
+      await fs.appendFile(destination, "block");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return { name: "long.fit", size: 80 };
+  };
+  const raw = [{ shareType: "file", value: "content://other.app/files/2" }];
+  const [resolved] = await resolveShared(plainStat(f), receive, raw, "slow-1", {
+    startMs: 5000,
+    stallMs: 400,
+    pollMs: 10,
+  });
+  assert.equal(resolved.contentSize, 80);
+  assert.equal((await fs.stat(path.join(f.temporary, "slow-1-0"))).size, 80);
+});
+
+test("a sender gets the long allowance until its first byte and the short one after it, counted in polls", async () => {
+  const scripted = (values) => {
+    let polls = 0;
+    return { probe: async () => values[Math.min(polls++, values.length - 1)], polls: () => polls };
+  };
+  const never = new Promise(() => {});
+  const silent = scripted([0]);
+  await assert.rejects(stallGuard(never, silent.probe, { startMs: 80, stallMs: 30, pollMs: 10 }), { message: SHARE_STALLED });
+  assert.equal(silent.polls(), 9, "eight idle polls after the baseline");
+  const stopped = scripted([0, 0, 0, 0, 0, 0, 5]);
+  await assert.rejects(stallGuard(never, stopped.probe, { startMs: 80, stallMs: 30, pollMs: 10 }), { message: SHARE_STALLED });
+  assert.equal(stopped.polls(), 10, "six silent polls survive, then three idle polls after the last byte");
+  const early = scripted([5]);
+  await assert.rejects(stallGuard(never, early.probe, { startMs: 80, stallMs: 30, pollMs: 10 }), { message: SHARE_STALLED });
+  assert.equal(early.polls(), 4, "bytes already there at the first poll count as started");
+  const blind = scripted([]);
+  const failing = async () => {
+    await blind.probe();
+    throw new Error("stat failed");
+  };
+  await assert.rejects(stallGuard(never, failing, { startMs: 40, stallMs: 30, pollMs: 10 }), { message: SHARE_STALLED });
+  assert.equal(blind.polls(), 5, "a probe that always fails still ends at the start allowance");
+});
+
+test("time during which the phone ran no timers is not counted as a stall, and a failing progress probe never rejects by itself", async () => {
+  const realNow = Date.now;
+  let work;
+  const done = new Promise((resolve) => (work = resolve));
+  const guarded = stallGuard(done, async () => 0, { startMs: 200, stallMs: 200, pollMs: 10 });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  Date.now = () => realNow() + 60 * 60 * 1000;
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    work("delivered");
+    assert.equal(await guarded, "delivered");
+  } finally {
+    Date.now = realNow;
+  }
+  let probes = 0;
+  const broken = stallGuard(
+    new Promise((resolve) => setTimeout(() => resolve("ok"), 60)),
+    async () => {
+      probes++;
+      throw new Error("stat failed");
+    },
+    { startMs: 5000, stallMs: 5000, pollMs: 10 },
+  );
+  assert.equal(await broken, "ok");
+  assert.ok(probes > 0);
+});
+
+test("a share that arrives while another is being prepared replaces it, and the same share arriving again is ignored", async () => {
+  const first = [{ shareType: "file", value: "content://other.app/files/1" }];
+  const second = [{ shareType: "file", value: "content://other.app/files/2" }];
+  assert.equal(shareTurn("", first), "start");
+  assert.equal(shareTurn("", []), "start");
+  assert.equal(shareTurn(sharedKey(first), first), "ignore");
+  assert.equal(shareTurn(sharedKey(first), []), "ignore");
+  assert.equal(shareTurn(sharedKey(first), second), "replace");
+  assert.equal(shareTurn(sharedKey(first), [{ shareType: "image", value: first[0].value }]), "ignore", "the type the sender reports may change between reads");
+  const screen = await fs.readFile(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
+  assert.match(
+    screen,
+    /try \{\s+raw = Sharing\.getSharedPayloads\(\);\s+\} catch \(e\) \{\s+unreadable = e;\s+\}\s+const turn = shareTurn\(receiving\.current, raw\);\s+if \(turn === "ignore" && !unreadable\) return;/,
+    "the sheet decides from the stored share before it starts, and an unreadable share reaches the error sheet",
+  );
+  assert.match(screen, /if \(turn === "replace" \|\| \(unreadable && receiving\.current\)\)\s+await session\.current\?\.cancel\(\)\.catch\(\(\) => \{\}\);/);
+  assert.match(screen, /if \(superseded\(\)\) return;\s+clearShare\(key\);/, "a replaced run never clears the newer share");
+  assert.match(screen, /if \(stored === key\) Sharing\.clearSharedPayloads\(\);/, "a run clears only the share it handled");
+  assert.equal((screen.match(/Sharing\.clearSharedPayloads\(\)/g) || []).length, 2, "the only unconditional clear is the unreadable share");
+  assert.match(screen, /stallGuard\(Sharing\.getResolvedSharedPayloadsAsync\(\), async \(\) => 0, \{\s+startMs: 120000,\s+\}\)/, "the iPhone path has a deadline too");
 });

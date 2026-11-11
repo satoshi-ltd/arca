@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 — 2026-11-11
+
+- A file saved to Arca on the phone from another app now uploads on the next sync even when you went back to the other app right away or the hub was away; before, it could stay on the phone for up to six hours. The same holds for files and photos you add, rename or delete on the phone and for playlist edits.
+- When the app sharing a file stops sending it, the sheet ends with “The other app stopped sending the file. Share it again.” instead of staying on “Preparing files…” for good, and a new share made meanwhile replaces the one being prepared instead of being dropped.
+
+Needs: native build
+
 ## 0.8.50 — 2026-11-10
 
 - The desktop and web photo viewer zooms like the phone's: pinch on the trackpad to zoom around the pointer up to 4×, double-click the photo to zoom in and again to see it whole, and drag or scroll with two fingers to move around a zoomed photo.

@@ -46,7 +46,53 @@ export function incomingDestination(directory, name) {
   if (error) throw new Error(error);
   return validPath((prefix ? `${prefix}/${name}` : name).normalize("NFC"));
 }
-export async function resolveShared(r, receive, raw, id) {
+export const SHARE_STALLED = "The other app stopped sending the file. Share it again.";
+// Idle time is counted in polls, never wall time, so a suspended app is not read as a stalled sender.
+export async function stallGuard(
+  work,
+  progress,
+  { startMs = 300000, stallMs = 60000, pollMs = 1000, late } = {},
+) {
+  let timer;
+  let last;
+  let based = false;
+  let started = false;
+  let idle = 0;
+  const stalled = new Promise((_, reject) => {
+    timer = setInterval(async () => {
+      let now = last;
+      try {
+        now = await progress();
+      } catch {}
+      if (!based) {
+        based = true;
+        last = now;
+        started = !!now;
+      } else if (now !== last) {
+        last = now;
+        started = true;
+        idle = 0;
+      } else if ((idle += pollMs) >= (started ? stallMs : startMs))
+        reject(new Error(SHARE_STALLED));
+    }, pollMs);
+  });
+  try {
+    return await Promise.race([work, stalled]);
+  } catch (error) {
+    if (error.message === SHARE_STALLED) work.then(late, () => {}).catch(() => {});
+    throw error;
+  } finally {
+    clearInterval(timer);
+  }
+}
+// The URI alone: Android recomputes shareType from the sender's provider on every read.
+export const sharedKey = (payloads) => JSON.stringify(payloads.map((p) => p.value ?? p.contentUri));
+export function shareTurn(preparing, payloads) {
+  if (!preparing) return "start";
+  if (!payloads.length || sharedKey(payloads) === preparing) return "ignore";
+  return "replace";
+}
+export async function resolveShared(r, receive, raw, id, timing) {
   if (!raw.length || raw.length > 20)
     throw new Error("Share between 1 and 20 files at a time.");
   if (
@@ -59,7 +105,11 @@ export async function resolveShared(r, receive, raw, id) {
     for (const [index, p] of raw.entries()) {
       const destination = r.files.incoming(`${id}-${index}`);
       staged.push(destination);
-      const received = await receive(p.value, destination);
+      const received = await stallGuard(
+        receive(p.value, destination),
+        async () => (await r.files.stat(destination).catch(() => null))?.size ?? 0,
+        { ...timing, late: () => r.files.remove(destination) },
+      );
       await r.space(0);
       payloads.push({
         shareType: p.shareType,
