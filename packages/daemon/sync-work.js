@@ -15,10 +15,26 @@ export function covers(paths, name) {
     })
   );
 }
+export function within(names) {
+  const folded = new Set([...names].map((name) => name.toLowerCase()));
+  return (name) => {
+    if (!folded.size) return false;
+    const parts = name.toLowerCase().split("/");
+    for (let length = parts.length; length > 0; length--)
+      if (folded.has(parts.slice(0, length).join("/"))) return true;
+    return false;
+  };
+}
 export const ADDED_DATES_FEED = 1;
 export class SyncWork {
   constructor(store) {
     this.store = store;
+    this.retries = new Map();
+  }
+  retry(volume, name) {
+    const names = this.retries.get(volume) || new Set();
+    names.add(name);
+    this.retries.set(volume, names);
   }
   mark(volume, name = "") {
     // Missing filenames and policy changes require a complete reconciliation.
@@ -69,7 +85,8 @@ export class SyncWork {
       !state.full_at ||
       Date.now() - state.full_at >= RECONCILE_MS ||
       entries.some((e) => e.path === "");
-    let scope = paths ?? (full ? null : entries.map((e) => e.path));
+    const retried = paths === undefined ? [...(this.retries.get(v.id) || [])] : [];
+    let scope = paths ?? (full ? null : [...entries.map((e) => e.path), ...retried]);
     if (scope)
       scope = scope.filter(
         (p, i) =>
@@ -83,10 +100,13 @@ export class SyncWork {
       cutoff,
       acknowledge: paths === undefined,
       full: scope === null,
+      retried,
     };
   }
   complete(v, plan) {
     if (!plan.acknowledge) return;
+    const names = this.retries.get(v.id);
+    for (const name of plan.retried) names?.delete(name);
     const db = this.store.db;
     db.prepare("DELETE FROM sync_dirty WHERE volume=? AND seq<=?").run(
       v.id,

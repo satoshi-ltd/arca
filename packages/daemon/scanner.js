@@ -5,8 +5,8 @@ export class Scanner {
     this.sequence = 0;
     this.pending = new Map();
   }
-  scan(volume, paths = null) {
-    return this.request({ volume, paths });
+  scan(volume, paths = null, skipUnreadable = false) {
+    return this.request({ volume, paths, skipUnreadable });
   }
   snapshot(volume) {
     return this.request({ operation: "snapshot", volume });
@@ -31,7 +31,11 @@ export class Scanner {
               syncInterrupted: m.syncInterrupted,
             }),
           );
-        else job.resolve(m.rows || new Map(m.entries));
+        else if (m.rows) job.resolve(m.rows);
+        else
+          job.resolve(
+            Object.assign(new Map(m.entries), { unreadable: new Map(m.unreadable) }),
+          );
       });
       const failed = (e) => {
         if (this.worker !== worker) return;

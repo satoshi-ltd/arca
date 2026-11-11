@@ -754,3 +754,294 @@ test("F6 a recovery sweep removes a transfer temporary even when its timestamp i
   Store.prototype.sweepTemps.call(null, dir);
   assert.equal(fs.existsSync(orphan), false);
 });
+
+const scanInProcess = (n, refuse) => {
+  const s = n.engine.store,
+    capture = s.capture.bind(s);
+  s.capture = (file, ...rest) => {
+    const code = refuse(file);
+    if (code) throw Object.assign(new Error(`${code}: resource busy or locked`), { code });
+    return capture(file, ...rest);
+  };
+  n.engine.scanner.scan = async (v, paths = null, skipUnreadable = false) =>
+    s.scan(v, paths, () => {}, skipUnreadable);
+};
+const tombstones = (n, volume, name) =>
+  n.engine.store.db
+    .prepare("SELECT COUNT(*) AS n FROM revisions WHERE volume=? AND path=? AND deleted=1")
+    .get(volume.id, name).n;
+
+test("R1 one file that cannot be read stops only itself on the hub and on a replica", async (t) => {
+  const { hub, volume, connect, file, write, read, head } = await setup(t);
+  const a = await connect("a");
+  write(hub, "locked.txt", "v1");
+  await hub.sync();
+  await a.sync();
+  const rev = head("locked.txt").rev;
+  let hubLocked = true,
+    replicaLocked = false;
+  scanInProcess(hub, (path) => hubLocked && path === file(hub, "locked.txt") && "EBUSY");
+  scanInProcess(a, (path) => replicaLocked && path === file(a, "locked.txt") && "EBUSY");
+  write(hub, "from-hub.txt", "hub");
+  write(a, "from-a.txt", "a");
+  await hub.sync();
+  assert.match(
+    hub.engine.folderStates.get(volume.id).error,
+    /^Could not read 1 file in this folder: locked\.txt: EBUSY/,
+  );
+  assert.equal(head("locked.txt").rev, rev);
+  assert.equal(tombstones(hub, volume, "locked.txt"), 0);
+  await a.sync();
+  assert.equal(read(a, "from-hub.txt"), "hub");
+  assert.equal(read(hub, "from-a.txt"), "a");
+  hubLocked = false;
+  replicaLocked = true;
+  write(hub, "locked.txt", "v2 from the hub");
+  write(hub, "later.txt", "later");
+  await hub.sync();
+  assert.equal(hub.engine.folderStates.get(volume.id).state, "synced");
+  write(a, "from-a-later.txt", "a later");
+  await assert.rejects(a.sync(), /Could not read 1 file in this folder: locked\.txt: EBUSY/);
+  assert.equal(read(a, "later.txt"), "later");
+  assert.equal(read(hub, "from-a-later.txt"), "a later");
+  assert.equal(read(a, "locked.txt"), "v1", "an incoming row never replaces a file the scan could not read");
+  assert.equal(tombstones(hub, volume, "locked.txt"), 0);
+  assert.equal(read(hub, "locked.txt"), "v2 from the hub");
+  replicaLocked = false;
+  await a.sync();
+  assert.equal(read(a, "locked.txt"), "v2 from the hub");
+  assert.equal(a.engine.folderStates.get(volume.id).state, "synced");
+});
+
+for (const role of ["hub", "replica"])
+  test(`R1 a file that vanishes mid-scan on the ${role} is deleted only by a complete later scan`, async (t) => {
+    const { hub, volume, connect, file, write, head } = await setup(t);
+    const a = await connect("a");
+    write(hub, "gone.txt", "here");
+    await hub.sync();
+    await a.sync();
+    const n = role === "hub" ? hub : a;
+    let vanish = true;
+    scanInProcess(n, (path) => {
+      if (vanish && path === file(n, "gone.txt")) {
+        vanish = false;
+        fs.unlinkSync(path);
+      }
+      return null;
+    });
+    const scan = n.sync();
+    if (role === "replica") await assert.rejects(scan, /Could not read 1 file in this folder: gone\.txt: ENOENT/);
+    else await scan;
+    assert.match(n.engine.folderStates.get(volume.id).error, /gone\.txt: ENOENT/);
+    assert.equal(head("gone.txt").deleted, 0);
+    await n.sync();
+    assert.equal(head("gone.txt").deleted, 1);
+    assert.equal(n.engine.folderStates.get(volume.id).state, "synced");
+  });
+
+for (const role of ["hub", "replica"])
+  test(`R1 a directory the ${role} cannot list never deletes what is inside it`, async (t) => {
+    const { hub, volume, connect, file, write, read, head } = await setup(t);
+    const a = await connect("a");
+    write(hub, "album/a.jpg", "a");
+    write(hub, "album/deep/b.jpg", "b");
+    await hub.sync();
+    await a.sync();
+    const n = role === "hub" ? hub : a;
+    scanInProcess(n, () => null);
+    const readdir = fs.readdirSync;
+    let refused = true;
+    t.mock.method(fs, "readdirSync", (directory, ...rest) => {
+      if (refused && path.resolve(String(directory)) === file(n, "album"))
+        throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      return readdir(directory, ...rest);
+    });
+    write(n, "outside.txt", "still syncs");
+    const scan = n.sync();
+    if (role === "replica") await assert.rejects(scan, /Could not read 1 file in this folder: album: EACCES/);
+    else await scan;
+    assert.match(n.engine.folderStates.get(volume.id).error, /album: EACCES/);
+    for (const name of ["album", "album/a.jpg", "album/deep", "album/deep/b.jpg"]) {
+      assert.equal(head(name).deleted, 0, name);
+      assert.equal(tombstones(hub, volume, name), 0, name);
+    }
+    if (role === "replica") assert.equal(read(hub, "outside.txt"), "still syncs");
+    else {
+      await a.sync();
+      assert.equal(read(a, "outside.txt"), "still syncs");
+    }
+    refused = false;
+    await n.sync();
+    assert.equal(n.engine.folderStates.get(volume.id).state, "synced");
+    assert.equal(head("album/deep/b.jpg").deleted, 0);
+  });
+
+test("R1 the scanner worker skips an unreadable file only when asked", { skip: process.platform === "win32" || process.getuid?.() === 0 ? "needs POSIX permissions enforced for a non-root user" : false }, async (t) => {
+  const { hub, volume, file, write } = await setup(t);
+  write(hub, "private.txt", "secret");
+  write(hub, "open.txt", "open");
+  const locked = file(hub, "private.txt");
+  fs.chmodSync(locked, 0o000);
+  const v = hub.engine.store.volume(volume.id);
+  await assert.rejects(hub.engine.scanner.scan(v), /EACCES/);
+  const disk = await hub.engine.scanner.scan(v, null, true);
+  assert.ok(disk.has("open.txt"));
+  assert.equal(disk.has("private.txt"), false);
+  assert.match(disk.unreadable.get("private.txt"), /EACCES/);
+  fs.chmodSync(locked, 0o600);
+});
+
+test("R1 thousands of unreadable files cost one set lookup per row, not a scan of every unreadable path", async (t) => {
+  const { volume, connect } = await setup(t);
+  const a = await connect("a");
+  const s = a.engine.store,
+    v = s.volume(volume.id);
+  s.db.exec("BEGIN");
+  for (let n = 0; n < 5000; n++)
+    s.setFile({ volume: volume.id, path: `kept/${n}.txt`, hash: "0".repeat(64), size: 1, deleted: 0, rev: n + 1, directory: 0 });
+  s.db.exec("COMMIT");
+  const disk = new Map();
+  disk.unreadable = new Map(Array.from({ length: 5000 }, (_, n) => [`Locked/Item-${n}.TXT`, "EACCES"]));
+  disk.unreadable.set("kept/0.txt", "EBUSY");
+  const started = performance.now();
+  s.replaceLocal(v, null, disk);
+  const elapsed = performance.now() - started;
+  assert.equal(s.viewCurrent(volume.id, "kept/0.txt").deleted, 0);
+  assert.equal(s.viewCurrent(volume.id, "kept/1.txt").deleted, 1);
+  assert.ok(elapsed < 1000, `${Math.round(elapsed)} ms`);
+});
+
+test("R1 a local edit and a local-only file stay in the local view while they cannot be read", async (t) => {
+  const { hub, volume, connect, file, write } = await setup(t);
+  const a = await connect("a");
+  write(hub, "x.txt", "v1");
+  await hub.sync();
+  await a.sync();
+  write(a, "local-new.txt", "new");
+  write(a, "x.txt", "edited");
+  await a.engine.reconcileLocal(volume.id, ["local-new.txt", "x.txt"]);
+  const view = () =>
+    a.engine.store.db
+      .prepare("SELECT path,hash,deleted FROM files_view WHERE volume=? AND path IN ('local-new.txt','x.txt') ORDER BY path")
+      .all(volume.id);
+  const before = view();
+  assert.equal(before.length, 2);
+  scanInProcess(a, (p) => (p === file(a, "local-new.txt") || p === file(a, "x.txt")) && "EBUSY");
+  await a.engine.reconcileLocal(volume.id, ["local-new.txt", "x.txt"]);
+  assert.deepEqual(view(), before);
+  assert.deepEqual([...a.engine.localDirty.get(volume.id)].sort(), ["local-new.txt", "x.txt"], "they are checked again next time");
+});
+
+test("R1 a scoped hub scan keeps the folder's unreadable files reported and its last sync unchanged", async (t) => {
+  const { hub, volume, connect, file, write } = await setup(t);
+  const a = await connect("a");
+  write(hub, "locked.txt", "v1");
+  write(hub, "busy.txt", "v1");
+  await hub.sync();
+  await a.sync();
+  let busy = false;
+  scanInProcess(hub, (p) => (p === file(hub, "locked.txt") || (busy && p === file(hub, "busy.txt"))) && "EBUSY");
+  await hub.sync();
+  const before = hub.engine.store.volume(volume.id).last_sync;
+  write(a, "other.txt", "x");
+  await a.sync();
+  assert.match(hub.engine.folderStates.get(volume.id).error, /^Could not read 1 file in this folder: locked\.txt: EBUSY/);
+  assert.equal(hub.engine.store.volume(volume.id).last_sync, before);
+  busy = true;
+  write(hub, "busy.txt", "v2");
+  await hub.engine.scanHub(volume.id, { paths: ["busy.txt"] });
+  assert.match(hub.engine.folderStates.get(volume.id).error, /^Could not read 2 files in this folder: .*locked\.txt.*busy\.txt/);
+  busy = false;
+  await hub.engine.scanHub(volume.id, { paths: ["busy.txt"] });
+  assert.match(hub.engine.folderStates.get(volume.id).error, /^Could not read 1 file in this folder: locked\.txt/);
+});
+
+test("R1 an incoming row under a directory the replica cannot list waits instead of failing the folder", async (t) => {
+  const { hub, volume, connect, file, write, read } = await setup(t);
+  const a = await connect("a");
+  write(hub, "album/x.jpg", "x1");
+  await hub.sync();
+  await a.sync();
+  await a.incremental();
+  scanInProcess(a, () => null);
+  const readdir = fs.readdirSync;
+  let refused = true;
+  t.mock.method(fs, "readdirSync", (directory, ...rest) => {
+    if (refused && path.resolve(String(directory)) === file(a, "album"))
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    return readdir(directory, ...rest);
+  });
+  write(hub, "album/x.jpg", "x2");
+  write(hub, "sibling.txt", "s");
+  await hub.sync();
+  await assert.rejects(a.incremental(), /Could not read 1 file in this folder: album\/x\.jpg: EACCES/);
+  assert.equal(read(a, "sibling.txt"), "s");
+  assert.equal(read(a, "album/x.jpg"), "x1");
+  refused = false;
+  await a.sync();
+  assert.equal(read(a, "album/x.jpg"), "x2");
+  assert.equal(a.engine.folderStates.get(volume.id).state, "synced");
+});
+
+const dirty = (n, volume) =>
+  n.engine.store.db.prepare("SELECT COUNT(*) AS n FROM sync_dirty WHERE volume=?").get(volume.id).n;
+
+test("R1 one unreadable file never backs off its folder: the next incremental cycles carry other files both ways", async (t) => {
+  const { hub, volume, connect, file, write, read } = await setup(t);
+  const a = await connect("a");
+  write(hub, "locked.txt", "v1");
+  write(hub, "hub-locked.txt", "v1");
+  await hub.sync();
+  await a.sync();
+  await a.incremental();
+  await hub.incremental();
+  scanInProcess(a, (p) => p === file(a, "locked.txt") && "EBUSY");
+  scanInProcess(hub, (p) => p === file(hub, "hub-locked.txt") && "EBUSY");
+  a.engine.work.mark(volume.id, "locked.txt");
+  await assert.rejects(a.incremental(), (error) => error.folderOnly === true);
+  hub.engine.work.mark(volume.id, "hub-locked.txt");
+  await hub.incremental();
+  for (const n of [a, hub]) {
+    assert.equal(n.engine.folderBackoff.waiting(volume.id), null);
+    assert.equal(dirty(n, volume), 0, "a per-file retry never asks for a cycle every second");
+    assert.equal(n.engine.folderStates.get(volume.id).state, "error");
+  }
+  write(a, "fresh.txt", "fresh");
+  a.engine.work.mark(volume.id, "fresh.txt");
+  await assert.rejects(a.incremental(), /locked\.txt: EBUSY/);
+  assert.equal(read(hub, "fresh.txt"), "fresh");
+  write(hub, "remote.txt", "r");
+  hub.engine.work.mark(volume.id, "remote.txt");
+  await hub.incremental();
+  assert.match(hub.engine.folderStates.get(volume.id).error, /hub-locked\.txt: EBUSY/, "the hub keeps retrying its unreadable file");
+  await assert.rejects(a.incremental(), /locked\.txt: EBUSY/);
+  assert.equal(read(a, "remote.txt"), "r");
+});
+
+test("R1 one file a replica cannot write never backs off its folder", async (t) => {
+  const { hub, volume, connect, write, read } = await setup(t);
+  const a = await connect("a");
+  write(hub, "stuck.txt", "v1");
+  await hub.sync();
+  await a.sync();
+  await a.incremental();
+  const s = a.engine.store,
+    materializeRow = s.materializeRow.bind(s);
+  s.materializeRow = (row, expected) => {
+    if (row.path === "stuck.txt")
+      throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+    return materializeRow(row, expected);
+  };
+  write(hub, "stuck.txt", "v2");
+  await hub.sync();
+  await assert.rejects(a.incremental(), /stuck\.txt: EBUSY/);
+  assert.equal(a.engine.folderBackoff.waiting(volume.id), null);
+  assert.equal(dirty(a, volume), 0);
+  write(a, "fresh.txt", "fresh");
+  a.engine.work.mark(volume.id, "fresh.txt");
+  write(hub, "remote.txt", "r");
+  await hub.sync();
+  await assert.rejects(a.incremental(), /stuck\.txt: EBUSY/);
+  assert.equal(read(hub, "fresh.txt"), "fresh");
+  assert.equal(read(a, "remote.txt"), "r");
+});

@@ -154,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.22";
+const APP_VERSION = "0.9.23";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1671,8 +1671,11 @@ function working(button, label) {
   };
 }
 function folderProblem(error) {
-  const files = /^Could not (?:sync|write) (\d+) files?\b/.exec(error);
-  if (files) return `Could not sync ${countLabel(Number(files[1]), "file")}`;
+  if (/^Could not (?:sync|write|read) \d+ files?\b/.test(error))
+    return `Could not sync ${countLabel(
+      [...error.matchAll(/(?:^|; )Could not (?:sync|write|read) (\d+) files?\b/g)].reduce((sum, match) => sum + Number(match[1]), 0),
+      "file",
+    )}`;
   if (/^(?:ENOENT|ENOTDIR)\b|^Volume unavailable or marker missing|^Local folder is unavailable/.test(error))
     return "Path missing";
   if (/^ENOSPC\b|^Insufficient free disk space|no space left on device/i.test(error))

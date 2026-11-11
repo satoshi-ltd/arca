@@ -3,7 +3,7 @@ import { Store } from "./storage.js";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { snapshotRows } from "./snapshots.js";
-parentPort.on("message", ({ id, operation, volume, paths, cancellation }) => {
+parentPort.on("message", ({ id, operation, volume, paths, skipUnreadable, cancellation }) => {
   if (operation === "snapshot") {
     let db, result;
     try {
@@ -33,7 +33,8 @@ parentPort.on("message", ({ id, operation, volume, paths, cancellation }) => {
         });
     };
     checkpoint();
-    result = { id, entries: [...store.scan(volume, paths, checkpoint)] };
+    const scanned = store.scan(volume, paths, checkpoint, skipUnreadable);
+    result = { id, entries: [...scanned], unreadable: [...scanned.unreadable] };
     checkpoint();
     store.db.exec("BEGIN IMMEDIATE");
     try {

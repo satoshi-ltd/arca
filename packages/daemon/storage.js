@@ -2,6 +2,7 @@ import { entryKey, directoryItem } from "../core/entries.js";
 import { mediaKind } from "../core/gallery-date.js";
 import { disposableMetadata } from "../core/builtin-exclusions.js";
 import { readIgnore, compileIgnore, IGNORE_FILE } from "./exclusions.js";
+import { within } from "./sync-work.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -53,6 +54,7 @@ export function withinPath(child, parent) {
     if (path.dirname(current) === current) return false;
   }
 }
+const UNREADABLE = new Set(["EACCES", "EPERM", "EBUSY", "ENOENT", "FILE_CHANGED"]);
 export const overlapPath = (a, b) => withinPath(a, b) || withinPath(b, a);
 export const stateOverlap = (home, root, location) =>
   withinPath(home, location) ||
@@ -1146,7 +1148,7 @@ export class Store {
       const hash = quickHashFile(file);
       const size = fs.statSync(file).size;
       if (before !== signature())
-        fail("File changed during scan; retrying", 409);
+        fail("File changed while it was read, retrying", 409, "FILE_CHANGED");
       record([file, before, hash, size, Date.now()]);
       return { hash, size };
     }
@@ -1157,7 +1159,7 @@ export class Store {
       // Only the owned temporary copy needs write access for Windows flushing.
       fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
       if (before !== signature())
-        fail("File changed during scan; retrying", 409);
+        fail("File changed while it was read, retrying", 409, "FILE_CHANGED");
       const hash = hashOf(tmp),
         size = fs.statSync(tmp).size;
       const object = this.blob(hash);
@@ -1292,11 +1294,17 @@ export class Store {
   excluded(volume, name, directory = this.current(volume, name)?.directory) {
     return this.visibleRules(volume)(name, !!directory);
   }
-  scan(v, scopes = null, checkpoint = () => {}) {
+  scan(v, scopes = null, checkpoint = () => {}, skipUnreadable = false) {
     this.assertVolume(v);
     const inPlace = this.streamOnly(v.id);
     const quick = this.videoFolder(v.id);
     const result = new Map();
+    const unreadable = new Map();
+    result.unreadable = unreadable;
+    const skip = (name, error) => {
+      if (!skipUnreadable || !UNREADABLE.has(error.code)) throw error;
+      unreadable.set(name, error.message);
+    };
     const excluded = this.ignoreRules(v);
     const names = new Map();
     const unicodeNames = new Map();
@@ -1353,20 +1361,33 @@ export class Store {
       } else if (entry.isFile()) {
         const known =
           this.config.role === "hub" ? null : this.current(v.id, name);
-        result.set(
-          name,
-          this.capture(
-            this.filePath(v, name),
-            known && !known.deleted ? known.hash : null,
-            inPlace,
-            quick,
-          ),
-        );
+        try {
+          result.set(
+            name,
+            this.capture(
+              this.filePath(v, name),
+              known && !known.deleted ? known.hash : null,
+              inPlace,
+              quick,
+            ),
+          );
+        } catch (error) {
+          skip(name, error);
+        }
       } else fail(`Unsupported file: ${name}`, 409);
     };
     const walk = (relative) => {
       const directory = relative ? this.filePath(v, relative) : v.path;
-      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      let entries;
+      try {
+        entries = fs.readdirSync(directory, { withFileTypes: true });
+      } catch (error) {
+        if (!relative) throw error;
+        skip(relative, error);
+        if (error.code === "ENOENT") result.delete(relative);
+        return;
+      }
+      for (const entry of entries) {
         // A concurrent materialization may still own a young temporary.
         if (scopes === null && entry.isFile() && TRANSFER_TEMP.test(entry.name))
           sweepTemp(path.join(directory, entry.name), 3600000);
@@ -1384,7 +1405,14 @@ export class Store {
           )
         )
           continue;
-        const { present, link } = this.pathState(v, name);
+        let state;
+        try {
+          state = this.pathState(v, name);
+        } catch (error) {
+          skip(name, error);
+          continue;
+        }
+        const { present, link } = state;
         // A link in place of a synced path is not its absence: stop as the full scan does.
         if (link) fail(`Symlink requires attention: ${link}`, 409);
         if (!present) continue;
@@ -1393,8 +1421,9 @@ export class Store {
         try {
           stat = fs.lstatSync(file);
         } catch (e) {
-          if (e.code === "ENOENT") continue;
-          throw e;
+          if (e.code === "ENOENT" && !skipUnreadable) continue;
+          skip(name, e);
+          continue;
         }
         visit(name, stat);
       }
@@ -1453,10 +1482,19 @@ export class Store {
           directory: Number(!!item.directory),
         });
     }
+    const unread = [...(disk.unreadable?.keys() ?? [])];
+    const unreadablePath = within(unread);
+    const exact = this.db.prepare("SELECT * FROM local_files WHERE volume=? AND path_key=?");
+    const below = this.db.prepare("SELECT * FROM local_files WHERE volume=? AND path_key>=? AND path_key<?");
+    const kept = unread.flatMap((name) => {
+      const key = name.toLowerCase();
+      return [...exact.all(v.id, key), ...below.all(v.id, key + "/", key + "0")];
+    });
     for (const old of known.values())
       if (
         !old.deleted &&
         !disk.has(old.path) &&
+        !unreadablePath(old.path) &&
         !this.excluded(v.id, old.path, !!old.directory)
       )
         rows.push({ ...old, deleted: 1 });
@@ -1466,7 +1504,7 @@ export class Store {
       const insert = this.db.prepare(
         "INSERT OR REPLACE INTO local_files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,?,?,?,?,?)",
       );
-      for (const row of rows)
+      for (const row of [...kept, ...rows])
         insert.run(v.id, row.path, row.hash ?? null, row.size, row.deleted, row.rev, row.directory ? 1 : 0, row.path.toLowerCase());
       this.db.exec("COMMIT");
     } catch (error) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.23 — 2026-11-11
+
+- A file that cannot be read or written (held open by another app, permission denied, changed or removed while it was scanned) no longer stops or slows its whole folder: the rest syncs both ways at the usual pace, the folder names that file, and it is never treated as deleted.
+- This also stops a single file that cannot be written from making its whole folder wait, which 0.9.21 introduced.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.22 — 2026-11-11
 
 - When the hub cannot write a file into its own folder, an edit from a device is still accepted once: repeated syncs no longer pile up identical versions or wake every device, the hub names the file on its folder, and a save made on the hub meanwhile keeps the device's edit as a conflict copy.

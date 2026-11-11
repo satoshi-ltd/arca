@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **SYNC-UNREADABLE-FILE** — One file that cannot be read stops only itself
-  `bug · agent · normal`
-  A file held open exclusively on Windows, unreadable in Docker, changing during the scan or vanished mid-scan aborts the whole folder scan on every cycle, so nothing else in that folder syncs in either direction. Accept: a folder with one unreadable file syncs the others, reports that file, and never proposes it as deleted; an incomplete inventory is still never a deletion.
 
 ## In progress
 

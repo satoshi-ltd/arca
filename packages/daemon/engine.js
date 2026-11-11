@@ -39,7 +39,7 @@ import {
   applyFolderRetention,
   releaseReplicaObjects,
 } from "./maintenance.js";
-import { ADDED_DATES_FEED, FolderBackoff, SyncWork, covers } from "./sync-work.js";
+import { ADDED_DATES_FEED, FolderBackoff, SyncWork, covers, within } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import { moveToTrash } from "./trash.js";
 import { fileHeld } from "./open-files.js";
@@ -72,6 +72,14 @@ const contradicts = (indexed, row) =>
   row.rev < indexed.rev ||
   (row.rev === indexed.rev &&
     (row.hash !== indexed.hash || !!row.deleted !== !!indexed.deleted));
+const fileCount = (n) => (n === 1 ? "1 file" : `${n} files`);
+const unreadIssue = (unreadable) =>
+  unreadable.size
+    ? `Could not read ${fileCount(unreadable.size)} in this folder: ${[...unreadable]
+        .slice(0, 3)
+        .map(([name, reason]) => `${name}: ${reason}`)
+        .join("; ")}`
+    : null;
 const hubIdentity = (hub) => (hub ? hub.id || hub.url : null);
 export const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
 const MISSING_LOCAL =
@@ -123,7 +131,7 @@ export class Engine {
     this.folderBackoff = new FolderBackoff();
     this.activity = 0;
     this.folderStates = new Map();
-    this.unwrittenIssues = new Map();
+    this.folderIssues = new Map();
     this.progress = null;
     this.phase =
       this.config.role !== "hub" && !this.config.hub ? "unlinked" : "idle";
@@ -814,13 +822,19 @@ export class Engine {
           .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
           .run(result.row.rev, op);
     }
-    if (refused)
-      this.reportUnwritten(s.volume(volume), [
-        ...(this.unwrittenIssues.get(volume) ?? []).filter(
-          (issue) => !issue.startsWith(`${name}: `),
-        ),
-        refused,
-      ]);
+    if (refused) {
+      const known = this.folderIssues.get(volume);
+      this.reportIssues(
+        s.volume(volume),
+        [
+          ...(known?.unwritten ?? []).filter(
+            (issue) => !issue.startsWith(`${name}: `),
+          ),
+          refused,
+        ],
+        known?.unreadable,
+      );
+    }
     s.db.prepare("INSERT OR REPLACE INTO proposals(id,response) VALUES(?,?)").run(
       op,
       JSON.stringify({
@@ -1018,8 +1032,10 @@ export class Engine {
         }
         if (scope?.length === 0) continue;
         try {
-          this.store.replaceLocal(v, scope, await this.scanner.scan(v, scope));
+          const disk = await this.scanner.scan(v, scope, true);
+          this.store.replaceLocal(v, scope, disk);
           if (scope === null) this.localSeen.add(v.id);
+          for (const name of disk.unreadable?.keys() ?? []) this.noteLocal(v.id, name);
         } catch {
           if (paths === undefined) for (const name of scope ?? [""]) this.noteLocal(v.id, name);
         }
@@ -1249,7 +1265,10 @@ export class Engine {
             const disk =
               plan.paths?.length === 0
                 ? new Map()
-                : await this.scanner.scan(v, plan.paths);
+                : await this.scanner.scan(v, plan.paths, true);
+            const unreadable = new Map(disk.unreadable);
+            const unread = () => [...unreadable.keys()];
+            let unreadablePath = within(unreadable.keys());
             const known = new Map(
               s.rowsInScope(v.id, plan.paths).map((r) => [r.path, r]),
             );
@@ -1292,7 +1311,8 @@ export class Engine {
                 covers(plan.paths, row.path) &&
                 !s.excluded(v.id, row.path, row.directory) &&
                 !disk.has(row.path) &&
-                !diskNames.has(row.path.toLowerCase())
+                !diskNames.has(row.path.toLowerCase()) &&
+                !unreadablePath(row.path)
               ) {
                 try {
                   acknowledge(
@@ -1482,9 +1502,13 @@ export class Engine {
                     )
                     .map((r) => r.path);
                   const incomingDisk = paths.length
-                    ? await this.scanner.scan(v, paths)
+                    ? await this.scanner.scan(v, paths, true)
                     : new Map();
+                  for (const [name, reason] of incomingDisk.unreadable ?? [])
+                    unreadable.set(name, reason);
+                  unreadablePath = within(unreadable.keys());
                   for (const name of paths) {
+                    if (unreadablePath(name)) continue;
                     const local = incomingDisk.get(name),
                       known = s.current(v.id, name);
                     if (entryKey(local) !== entryKey(known)) {
@@ -1523,7 +1547,10 @@ export class Engine {
                     );
                   }
                   if (s.excluded(v.id, row.path, row.directory)) continue;
-                  if (blocked.has(row.path.toLowerCase())) {
+                  if (
+                    blocked.has(row.path.toLowerCase()) ||
+                    unreadablePath(row.path)
+                  ) {
                     skipped = true;
                     continue;
                   }
@@ -1618,18 +1645,22 @@ export class Engine {
                 v.id,
                 [...awaited.values()].map((held) => held.name),
               );
-            for (const name of blocked.values()) this.work.mark(v.id, name);
+            for (const name of blocked.values()) this.work.retry(v.id, name);
+            for (const name of unread()) this.work.retry(v.id, name);
             this.work.policy(v.id, policy);
-            if (!issues.length)
+            const troubled = issues.length || unreadable.size;
+            if (!troubled)
               s.db
                 .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
                 .run(new Date().toISOString(), v.id);
             this.folderStates.set(
               v.id,
-              issues.length
+              troubled
                 ? {
                     state: "error",
-                    error: `Could not sync ${issues.length === 1 ? "1 file" : `${issues.length} files`}: ${issues.slice(0, 3).join("; ")}`,
+                    error: [unreadIssue(unreadable), issues.length && `Could not sync ${fileCount(issues.length)}: ${issues.slice(0, 3).join("; ")}`]
+                      .filter(Boolean)
+                      .join("; "),
                     lastCompleted: v.last_sync,
                   }
                 : {
@@ -1637,10 +1668,9 @@ export class Engine {
                     lastCompleted: new Date().toISOString(),
                   },
             );
-            if (issues.length) {
-              this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
+            if (troubled)
               folderErrors.push(`${v.name}: ${this.folderStates.get(v.id).error}`);
-            } else this.folderBackoff.succeeded(v.id);
+            this.folderBackoff.succeeded(v.id);
             const marker = this.config.catalog?.find(
               (folder) => folder.id === v.id,
             );
@@ -2391,8 +2421,18 @@ export class Engine {
           for (const failure of error.failures)
             issues.push(`${failure.path}: ${failure.error.message}`);
         }
-        const disk = await this.scanner.scan(v, plan.paths);
+        const disk = await this.scanner.scan(v, plan.paths, true);
         checkpoint();
+        const unreadable = new Map(
+          plan.paths === null
+            ? []
+            : [...(this.folderIssues.get(v.id)?.unreadable ?? [])].filter(
+                ([name]) => !covers(plan.paths, name),
+              ),
+        );
+        for (const [name, reason] of disk.unreadable ?? []) unreadable.set(name, reason);
+        const unread = [...unreadable.keys()];
+        const unreadablePath = within(unread);
         const known = s.rowsInScope(v.id, plan.paths);
         const excluded = s.ignoreRules(v);
         const diskNames = new Set(
@@ -2406,6 +2446,7 @@ export class Engine {
             covers(plan.paths, row.path) &&
             !disk.has(row.path) &&
             !diskNames.has(row.path.toLowerCase()) &&
+            !unreadablePath(row.path) &&
             !excluded(row.path, !!row.directory) &&
             s.unwritten(v.id, row.path)?.deleted !== 0
           )
@@ -2438,19 +2479,18 @@ export class Engine {
           }
         }
         this.work.complete(v, plan);
+        for (const name of unread) this.work.retry(v.id, name);
         const time = new Date().toISOString();
-        if (!issues.length)
+        if (!issues.length && !unread.length)
           s.db
             .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
             .run(time, v.id);
-        if (issues.length) {
-          this.reportUnwritten(v, issues);
-          this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
-        } else {
-          this.unwrittenIssues.delete(v.id);
+        if (issues.length || unread.length) this.reportIssues(v, issues, unreadable);
+        else {
+          this.folderIssues.delete(v.id);
           this.folderStates.set(v.id, { state: "synced", lastCompleted: time });
-          if (!paths) this.folderBackoff.succeeded(v.id);
         }
+        if (!paths) this.folderBackoff.succeeded(v.id);
       } catch (e) {
         if (e.syncInterrupted) {
           this.folderStates.set(v.id, {
@@ -2474,11 +2514,13 @@ export class Engine {
         folderOnly: !deviceWide,
       });
   }
-  reportUnwritten(v, issues) {
-    this.unwrittenIssues.set(v.id, issues);
+  reportIssues(v, unwritten, unreadable = new Map()) {
+    this.folderIssues.set(v.id, { unwritten, unreadable });
     this.folderStates.set(v.id, {
       state: "error",
-      error: `Could not write ${issues.length === 1 ? "1 file" : `${issues.length} files`} to this folder: ${issues.slice(0, 3).join("; ")}`,
+      error: [unreadIssue(unreadable), unwritten.length && `Could not write ${fileCount(unwritten.length)} to this folder: ${unwritten.slice(0, 3).join("; ")}`]
+        .filter(Boolean)
+        .join("; "),
       lastCompleted: v.last_sync,
     });
   }

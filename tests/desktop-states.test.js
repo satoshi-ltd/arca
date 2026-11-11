@@ -113,6 +113,8 @@ test("a folder names its state from folder-level errors only; isolated file issu
       failing("one", "Could not sync 1 file: notes/missing-chapter.md: ENOENT: no such file or directory, open 'notes/missing-chapter.md'"),
       failing("many", "Could not sync 3 files: a.txt: ENOENT: gone; b.txt: EACCES: denied; c.txt: EBUSY: busy"),
       failing("write", "Could not write 2 files to this folder: x/missing.png: ENOSPC: no space left on device; y.png: ENOENT"),
+      failing("read", "Could not read 1 file in this folder: locked.docx: EBUSY: resource busy or locked"),
+      failing("both", "Could not read 1 file in this folder: locked.docx: EBUSY: busy; Could not sync 2 files: a.txt: ENOENT: gone; b.txt: EACCES: denied"),
       failing("root", "ENOENT: no such file or directory, scandir '/data/root'"),
       failing("marker", "Volume unavailable or marker missing; synchronization stopped"),
       failing("full", "ENOSPC: no space left on device, write"),
@@ -125,6 +127,8 @@ test("a folder names its state from folder-level errors only; isolated file issu
   assert.equal(word("one"), "Could not sync 1 file");
   assert.equal(word("many"), "Could not sync 3 files");
   assert.equal(word("write"), "Could not sync 2 files");
+  assert.equal(word("read"), "Could not sync 1 file");
+  assert.equal(word("both"), "Could not sync 3 files");
   assert.equal(row("one").querySelector('[data-action="locate-folder"]'), null, "a file issue never offers Locate…");
   assert.equal(word("root"), "Path missing");
   assert.ok(row("root").querySelector('[data-action="locate-folder"]'));
