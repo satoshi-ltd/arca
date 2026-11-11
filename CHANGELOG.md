@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.12 — 2026-11-11
+
+- A linked device can no longer put markup into the hub's Devices page through its backup report: the hub refuses a backup acknowledgement whose revision is not a whole number, whether backup is on or off, and Devices always prints that revision as a number.
+
+Needs: desktop build · hub redeploy
+
 ## 0.9.11 — 2026-11-11
 
 - Large photo libraries open and scroll faster: the hub or computer reads a gallery's photos once and reuses that for every page, the year and month views and On this day until something in the folder changes, instead of re-reading the whole library for each request.

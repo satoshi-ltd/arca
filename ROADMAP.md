@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **SEC-BACKUP-ACK** — A linked device never injects markup into the hub's Devices page
-  `bug · agent · normal`
-  `/v1/backup-ack` validates `revision` only when `enabled` is true and stores it in a non-strict column; Devices renders it raw as "history rev …". A replica credential can therefore place markup in the hub administrator's page; scripts are blocked by the policy, but forms and `data-action` elements are not. Accept: a non-integer `revision` answers 400 whatever `enabled` is and leaves the row unchanged, and the page renders the value as a number, with a DOM test.
 - **SYNC-PROPOSE-RETRY** — A hub that cannot write its own copy acknowledges the accepted edit once
   `bug · agent · normal`
   When materializing fails after the commit, `propose` answers an error; the replica retries, and each retry stores another identical revision, wakes every device and resets the parking count. Accept: repeating a replica's sync while the hub write keeps failing leaves one revision for that content, answers the replica with the accepted row, reports the issue on the hub's own folder and parks the row after three hub attempts.
@@ -259,6 +256,15 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 - **SEC-ERASE-GENERATION-ROW** — Erase leaves no folder ID behind in the index
   `bug · agent · low`
   `finishInstallationReset` empties the tables in catalogue order, and `file_generations` goes before `local_files`, whose delete trigger writes a `file_generations` row again; a replica that held local changes keeps one row with the erased share ID in the emptied index. Seen by the review of 0.9.10 (scratch run), not covered by a test. Accept: after Erase every table is empty whatever the order, with a test on a replica that holds `local_files` rows and fails today.
+- **SEC-BACKUP-ACK-COLUMN** — A stored backup acknowledgement is always a revision number
+  `bug · agent · low`
+  `/v1/backup-ack` refuses non-integers since 0.9.12, but a row written before that keeps its value: the upsert takes `MAX(revision, excluded.revision)` and SQLite ranks text above every integer, so honest reports never replace it; the page prints 0, yet the retention floor compares against it (text: nothing is ever removable; an inflated number: no version counts as protected) until the device is removed. Reproduced by the review of 0.9.12 on the schema; it needs a linked device that used the old hole. Accept: the upsert treats a stored value that is not an integer within the hub's revisions as 0, the retention floor ignores such rows, and a test stores text and an oversized number and sees the next honest report replace them.
+- **SEC-CSP-FORM-ACTION** — An injected form cannot submit anywhere
+  `chore · agent · low`
+  The web UI's content security policy sets no `form-action`, which is what made markup injected into a page worth anything while scripts are blocked. Accept: the policy carries `form-action 'self'` on the hub's web UI and the desktop app, with a test on the served header and on `tauri.conf.json`, and the sign-in, onboarding and dialog forms still work in the DOM tests.
+- **SEC-ARCHIVE-FLOOR** — Only a device that backs up holds the hub's history
+  `bug · agent · normal`
+  `GET /v1/archive` marks whichever replica credential calls it, a phone included, as an enabled backup at revision 0, which puts the retention floor at 0: one request from any linked device stops version pruning on the hub until that device is removed. It fails safe (nothing is lost) and was traced by the review of 0.9.12, not run. Accept: asking for the archive does not enable a backup acknowledgement by itself (only `/v1/backup-ack {enabled: true}` does), phones are refused as SPEC says they never back up, and a test shows retention still prunes after a replica that is not a backup read the archive.
 
 ### Performance — hub and desktop
 

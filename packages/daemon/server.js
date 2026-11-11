@@ -1857,10 +1857,11 @@ export async function start(home, options = {}) {
             .get().n;
           if (
             typeof b.enabled !== "boolean" ||
-            (b.enabled &&
-              (!Number.isSafeInteger(b.revision) ||
+            (b.revision === undefined
+              ? b.enabled
+              : !Number.isSafeInteger(b.revision) ||
                 b.revision < 0 ||
-                b.revision > highest)) ||
+                b.revision > highest) ||
             (b.hold !== undefined &&
               b.hold !== null &&
               (!Number.isSafeInteger(b.hold) || b.hold < 1))

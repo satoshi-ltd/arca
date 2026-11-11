@@ -4011,6 +4011,58 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
   );
 });
 
+test("Devices prints a backup's acknowledged revision as a number, never as markup", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-backup-markup-"));
+  init(home, { port: 0, name: "Hub" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://casa/#/machines",
+  });
+  const w = dom.window;
+  let poll;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    return 0;
+  };
+  w.fetch = (route, options = {}) =>
+    fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+      ...nodeInit(options),
+      headers: {
+        Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector("#devices-list"));
+  const response = await w.fetch("/v1/devices", {
+    method: "POST",
+    body: JSON.stringify({ name: "Backup Mac", role: "replica" }),
+  });
+  const device = await response.json();
+  const store = (revision) =>
+    daemon.engine.store.db
+      .prepare(
+        "INSERT INTO backup_ack(device,enabled,revision,updated) VALUES(?,1,?,?) ON CONFLICT(device) DO UPDATE SET revision=excluded.revision",
+      )
+      .run(device.id, revision, new Date().toISOString());
+  const card = () => w.document.querySelector("#devices-list .backup-card");
+  store('<form id="injected"><button data-action="revoke" data-id="hub">Remove</button></form>');
+  await poll();
+  assert.match(card().textContent, /Backup Mac backs up this hub/);
+  assert.match(card().querySelector("p").textContent, /· history rev 0$/);
+  assert.equal(w.document.querySelector("#injected"), null);
+  assert.equal(card().querySelector("form, [data-action]"), null);
+  store(43);
+  await poll();
+  assert.match(card().querySelector("p").textContent, /· history rev 43$/);
+});
+
 test("LAN mobile metadata appears on hub and other machines appear read-only on desktop replicas", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-mobile-roster-ui-"));
   init(home, { port: 0, name: "Casa" });

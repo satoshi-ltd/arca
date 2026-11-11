@@ -1167,6 +1167,35 @@ test("damage the hourly check finds holds its revision on the hub until the back
   await assert.rejects(mac.engine.openBackup().json("/v1/backup-ack", { enabled: true, revision: 0, hold: 0 }), /Invalid backup acknowledgement/);
 });
 
+test("a backup acknowledgement stores only an integer revision, whatever enabled is", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("ack-revision");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  const highest = hub.engine.store.current(volume.id, "note").rev;
+  const send = (body) => hub.api("/v1/backup-ack", body, mac.invite.token);
+  const row = () => hub.engine.store.db.prepare("SELECT revision,enabled,updated,hold FROM backup_ack").get();
+  await send({ enabled: true, revision: highest });
+  const stored = row();
+  assert.deepEqual([stored.revision, stored.enabled], [highest, 1]);
+  for (const enabled of [false, true])
+    for (const revision of ['<form data-action="revoke"></form>', "1", 0.5, -1, highest + 1, null, true, [1], {}]) {
+      await assert.rejects(
+        send({ enabled, revision }),
+        { status: 400, message: "Invalid backup acknowledgement" },
+        `enabled ${enabled}, revision ${JSON.stringify(revision)}`,
+      );
+      assert.deepEqual(row(), stored);
+    }
+  await assert.rejects(send({ enabled: true }), { status: 400 });
+  assert.deepEqual(row(), stored);
+  await send({ enabled: false });
+  assert.deepEqual([row().revision, row().enabled], [highest, 0], "disabling without a revision keeps the acknowledged one");
+  await send({ enabled: false, revision: 0 });
+  assert.deepEqual([row().revision, row().enabled], [highest, 0]);
+  assert.equal(typeof row().revision, "number");
+});
+
 test("a hold the hub can never satisfy expires instead of freezing retention", async (t) => {
   const { root, hub, volume, connect } = await setup(t);
   const mac = await connect("hold-bound");
