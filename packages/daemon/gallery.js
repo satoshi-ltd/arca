@@ -17,6 +17,8 @@ export { mediaKind, galleryDate };
 // Revisit videos checked before container capture dates were supported.
 const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
   (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;
+const bytewise = (a, b) => (a === b ? 0 : Buffer.compare(Buffer.from(a), Buffer.from(b)));
+const cursor = (row) => (row.date ?? "!") + "|" + row.path;
 // Derivatives are disposable and bounded; original objects remain untouched.
 export class Gallery {
   constructor(store) {
@@ -30,6 +32,7 @@ export class Gallery {
     this.pending = new Map();
     this.indexing = new Map();
     this.volumes = new Set();
+    this.kept = new Map();
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS gallery_prepared(hash TEXT PRIMARY KEY, attempted INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS gallery_revision_lookup ON revisions(volume,path,hash,created)",
     );
@@ -245,38 +248,42 @@ export class Gallery {
     }
     return rows.length === 64 && handled > 0;
   }
-  async page(volume, query) {
+  // Every gallery read shares these rows; they are kept until a counter that a write to any table they read from bumps has moved.
+  media(volume) {
     const s = this.s;
+    const kept = this.kept.get(volume);
+    this.kept.delete(volume);
     s.volume(volume);
     const excluded = s.visibleRules(volume);
+    const files = s.fileSource();
+    const stamp = s.db
+      .prepare(
+        "SELECT (SELECT generation FROM file_generations WHERE volume=?) AS files,(SELECT generation FROM row_generations WHERE name='gallery') AS gallery,(SELECT generation FROM row_generations WHERE name='revisions:' || ?) AS revisions",
+      )
+      .get(volume, volume);
+    const key = `${files}:${stamp.files}:${stamp.gallery}:${stamp.revisions}`;
+    if (kept?.key === key && kept.excluded === excluded) {
+      this.kept.set(volume, kept);
+      return kept;
+    }
+    s.db.function("arca_gallery_visible", (name) =>
+      mediaKind(name) && !excluded(name, false) ? 1 : 0,
+    );
+    s.db.function("arca_gallery_date", (name, captured, added, modified) => galleryDate(name, captured, added, modified).date);
     const indexing = Boolean(
       s.db
         .prepare(
-          `SELECT 1 FROM ${s.fileSource()} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+          `SELECT 1 FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
        WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL
        AND ${needsCaptureDate} LIMIT 1`,
         )
         .get(volume),
     );
-    if (indexing) this.prepare(volume);
-    s.db.function("arca_gallery_visible", (name) =>
-      mediaKind(name) && !excluded(name, false) ? 1 : 0,
-    );
-    const month = query.get("month") || "";
-    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
-      fail("Invalid gallery month");
-    const after = query.get("after") || (month ? month + "~" : "");
-    const from = query.get("after") ? "" : query.get("from") || "";
-    const before = query.get("before") || "";
-    if (Math.max(after.length, from.length, before.length) > 4096)
-      fail("Invalid gallery cursor");
-    s.db.function(
-      "arca_gallery_date",
-      (name, captured, added, modified) =>
-        galleryDate(name, captured, added, modified).date,
-    );
-    const files = s.fileSource();
-    const source = `WITH media AS (
+    const rows = [];
+    const months = new Map();
+    for (const row of s.db
+      .prepare(
+        `WITH media AS (
       SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
         coalesce((SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash),(SELECT a.added FROM added_dates a WHERE a.volume=f.volume AND a.path=f.path AND a.hash=f.hash)) AS added
       FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
@@ -284,49 +291,68 @@ export class Gallery {
       AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
         WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
         AND EXISTS (SELECT 1 FROM ${files} primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
-    ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
-    const cursor = "CASE WHEN date IS NULL THEN '!' ELSE date END || '|' || path";
-    const select = (bound, order) =>
-      s.db
-        .prepare(
-          source +
-            ` SELECT *,${cursor} AS cursor FROM dated WHERE ${bound} ORDER BY cursor ${order} LIMIT 61`,
-        )
-        .all(volume, before || after || from);
+    ) SELECT * FROM media ORDER BY coalesce(arca_gallery_date(path,captured,added,modified),'!') || '|' || path DESC`,
+      )
+      .iterate(volume)) {
+      const date = galleryDate(row.path, row.captured, row.added, row.modified).date;
+      rows.push({ path: row.path, hash: row.hash, size: row.size, rev: row.rev, captured: row.captured, modified: row.modified, added: row.added, date });
+      const month = date === null ? null : date.slice(0, 7);
+      const group = months.get(month) || { month, count: 0, rev: 0, videos: 0 };
+      group.count++;
+      group.rev = Math.max(group.rev, row.rev);
+      if (mediaKind(row.path) === "video") group.videos++;
+      months.set(month, group);
+    }
+    const next = { key, excluded, indexing, rows, months };
+    this.kept.set(volume, next);
+    if (this.kept.size > 2) this.kept.delete(this.kept.keys().next().value);
+    return next;
+  }
+  async page(volume, query) {
+    const month = query.get("month") || "";
+    const media = this.media(volume);
+    if (media.indexing) this.prepare(volume);
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+      fail("Invalid gallery month");
+    const after = query.get("after") || (month ? month + "~" : "");
+    const from = query.get("after") ? "" : query.get("from") || "";
+    const before = query.get("before") || "";
+    if (Math.max(after.length, from.length, before.length) > 4096)
+      fail("Invalid gallery cursor");
+    const all = media.rows;
+    const below = (bound, inclusive) => {
+      let low = 0,
+        high = all.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        const order = bytewise(cursor(all[middle]), bound);
+        if (order < 0 || (inclusive && !order)) high = middle;
+        else low = middle + 1;
+      }
+      return low;
+    };
     let rows, previous, next;
     if (before) {
-      const newer = select(`${cursor} > ?`, "ASC");
-      rows = newer.slice(0, 60).reverse();
-      previous = newer.length > 60 ? rows[0].cursor : null;
+      const end = below(before, true);
+      rows = all.slice(Math.max(0, end - 60), end);
+      previous = end > 60 ? cursor(rows[0]) : null;
       next = null;
     } else {
-      const older = select(
-        after ? `${cursor} < ?` : from ? `${cursor} <= ?` : "?=''",
-        "DESC",
-      );
-      rows = older.slice(0, 60);
-      next = older.length > 60 ? rows[59].cursor : null;
+      const start = after ? below(after, false) : from ? below(from, true) : 0;
+      rows = all.slice(start, start + 60);
+      next = all.length > start + 60 ? cursor(rows[59]) : null;
       previous =
-        (month || from) &&
-        !query.get("after") &&
-        rows.length &&
-        s.db
-          .prepare(source + ` SELECT 1 FROM dated WHERE ${cursor} > ? LIMIT 1`)
-          .get(volume, rows[0].cursor)
-          ? rows[0].cursor
+        (month || from) && !query.get("after") && rows.length && start > 0
+          ? cursor(rows[0])
           : null;
     }
-    const months = s.db
-      .prepare(
-        source +
-          ` SELECT substr(date,1,7) AS month,count(*) AS count,max(rev) AS rev,sum(arca_media_kind(path)='video') AS videos
-      FROM dated GROUP BY month ORDER BY month DESC`,
-      )
-      .all(volume);
-    const timeline = months.filter((row) => row.month !== null);
-    const undated = months.find((row) => row.month === null);
+    const timeline = [...media.months.values()]
+      .filter((row) => row.month !== null)
+      .sort((a, b) => bytewise(b.month, a.month))
+      .map((row) => ({ ...row }));
+    const undated = media.months.get(null);
     return {
-      indexing,
+      indexing: media.indexing,
       timeline,
       undated: {
         count: undated?.count || 0,
@@ -335,6 +361,7 @@ export class Gallery {
       },
       items: rows.map((row) => ({
         ...row,
+        cursor: cursor(row),
         dateSource: galleryDate(row.path, row.captured, row.added, row.modified)
           .source,
         kind: mediaKind(row.path),
@@ -343,56 +370,61 @@ export class Gallery {
       previous,
     };
   }
-
-  datedSource(volume) {
-    const s = this.s;
-    s.volume(volume);
-    const excluded = s.visibleRules(volume);
-    s.db.function("arca_gallery_visible", (name) =>
-      mediaKind(name) && !excluded(name, false) ? 1 : 0,
-    );
-    s.db.function(
-      "arca_gallery_date",
-      (name, captured, added, modified) =>
-        galleryDate(name, captured, added, modified).date,
-    );
-    const files = s.fileSource();
-    return `WITH media AS (
-      SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
-        coalesce((SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash),(SELECT a.added FROM added_dates a WHERE a.volume=f.volume AND a.path=f.path AND a.hash=f.hash)) AS added
-      FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
-      WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
-      AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
-        WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
-        AND EXISTS (SELECT 1 FROM ${files} primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
-    ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
+  // Covers order by date and then path, not by cursor: dates differ in length, so the two orders disagree.
+  grouped(rows, group, first) {
+    const groups = new Map();
+    for (const row of rows) {
+      const name = group(row);
+      const entry = groups.get(name);
+      if (!entry) groups.set(name, { name, count: 1, row });
+      else {
+        entry.count++;
+        const order = bytewise(row.date, entry.row.date) || bytewise(row.path, entry.row.path);
+        if (first ? order < 0 : order > 0) entry.row = row;
+      }
+    }
+    return [...groups.values()].sort((a, b) => bytewise(b.name, a.name));
   }
   periods(volume, query) {
     const level = query.get("level") || "year";
     if (!["year", "month"].includes(level)) fail("Invalid gallery level");
     const size = level === "year" ? 4 : 7;
-    const rows = this.s.db
-      .prepare(
-        this.datedSource(volume) +
-          `, ranked AS (SELECT path,hash,rev,date,substr(date,1,${size}) AS period,count(*) OVER (PARTITION BY substr(date,1,${size})) AS count,row_number() OVER (PARTITION BY substr(date,1,${size}) ORDER BY date DESC,path DESC) AS n FROM dated WHERE date IS NOT NULL)
-          SELECT period,substr(date,1,7) AS latest,count,path,hash,rev,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY period DESC`,
-      )
-      .all(volume);
-    return { level, periods: rows };
+    const dated = this.media(volume).rows.filter((row) => row.date !== null);
+    return {
+      level,
+      periods: this.grouped(dated, (row) => row.date.slice(0, size), false).map(({ name, count, row }) => ({
+        period: name,
+        latest: row.date.slice(0, 7),
+        count,
+        path: row.path,
+        hash: row.hash,
+        rev: row.rev,
+        kind: mediaKind(row.path),
+      })),
+    };
   }
   memories(volume, query) {
     const day = query.get("day") || "";
     const year = query.get("year") || "";
     if (!/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(day) || !/^\d{4}$/.test(year))
       fail("Invalid gallery day");
-    const rows = this.s.db
-      .prepare(
-        this.datedSource(volume) +
-          `, ranked AS (SELECT path,hash,rev,date,substr(date,1,4) AS year,count(*) OVER (PARTITION BY substr(date,1,4)) AS count,row_number() OVER (PARTITION BY substr(date,1,4) ORDER BY date ASC,path ASC) AS n FROM dated WHERE substr(date,6,5)=? AND substr(date,1,4)<?)
-          SELECT year,count,path,hash,rev,date || '|' || path AS cursor,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY year DESC LIMIT 12`,
-      )
-      .all(volume, day, year);
-    return { day, memories: rows };
+    const dated = this.media(volume).rows.filter(
+      (row) => row.date !== null && row.date.slice(5, 10) === day && bytewise(row.date.slice(0, 4), year) < 0,
+    );
+    return {
+      day,
+      memories: this.grouped(dated, (row) => row.date.slice(0, 4), true)
+        .slice(0, 12)
+        .map(({ name, count, row }) => ({
+          year: name,
+          count,
+          path: row.path,
+          hash: row.hash,
+          rev: row.rev,
+          cursor: cursor(row),
+          kind: mediaKind(row.path),
+        })),
+    };
   }
 
   async info(volume, name, hash) {

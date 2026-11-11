@@ -481,6 +481,27 @@ export class Store {
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS added_dates(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,added TEXT NOT NULL,PRIMARY KEY(volume,path))",
     );
+    for (const [table, writes] of [
+      ["gallery_metadata", ["INSERT", "UPDATE"]],
+      ["gallery_members", ["INSERT", "DELETE"]],
+      ["gallery_assets", ["INSERT", "UPDATE", "DELETE"]],
+      ["added_dates", ["INSERT", "UPDATE", "DELETE"]],
+    ])
+      for (const write of writes)
+        this.db.exec(
+          `CREATE TRIGGER IF NOT EXISTS ${table}_generation_${write.toLowerCase()} AFTER ${write} ON ${table} BEGIN
+            INSERT INTO row_generations(name,generation) VALUES('gallery',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+          END`,
+        );
+    for (const [write, row] of [
+      ["INSERT", "NEW"],
+      ["DELETE", "OLD"],
+    ])
+      this.db.exec(
+        `CREATE TRIGGER IF NOT EXISTS revisions_folder_${write.toLowerCase()} AFTER ${write} ON revisions BEGIN
+          INSERT INTO row_generations(name,generation) VALUES('revisions:' || ${row}.volume,1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+        END`,
+      );
     if (
       !this.db
         .prepare("PRAGMA table_info(music_tracks)")

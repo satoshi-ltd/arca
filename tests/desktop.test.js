@@ -7376,6 +7376,288 @@ test("the photo timeline scales months by count, keeps year labels apart and scr
   assert.equal(rail.querySelectorAll("[aria-current]").length, 1);
 });
 
+async function galleryWindow(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-timer-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  const photo = async (name, background) => {
+    fs.writeFileSync(path.join(v.path, name), await sharp({ create: { width: 40, height: 40, channels: 3, background } }).jpeg().toBuffer());
+    await daemon.engine.cycle();
+  };
+  await photo("photo.jpg", "red");
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
+  const started = w.Date.now();
+  const ui = { w, photo, pages: 0, ahead: 0, indexing: false, phase: null, gate: null, far: false, observers: [] };
+  w.Date.now = () => started + ui.ahead;
+  w.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.targets = [];
+      ui.observers.push(this);
+    }
+    observe(target) {
+      this.targets.push(target);
+    }
+    unobserve() {}
+    disconnect() {
+      this.targets = [];
+    }
+  };
+  const rect = w.Element.prototype.getBoundingClientRect;
+  w.Element.prototype.getBoundingClientRect = function () {
+    return ui.far && this.classList.contains("photo-newer") ? { top: -1000, bottom: -1000, left: 0, right: 0, width: 0, height: 0 } : rect.call(this);
+  };
+  const intervals = [];
+  w.setInterval = (callback, ms) => {
+    intervals.push([callback, ms]);
+    return 0;
+  };
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const route = args.route.startsWith("/v1/events") ? "/v1/events" : args.route;
+          if (route.startsWith("/v1/gallery?")) await ui.gate;
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          if (args.route.startsWith("/v1/status") && ui.phase) return { ...data, phase: ui.phase };
+          if (!args.route.startsWith("/v1/gallery?")) return data;
+          ui.pages++;
+          ui.ready = !data.indexing;
+          return ui.indexing ? { ...data, indexing: true } : data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  ui.settle = async () => {
+    for (let round = 0; round < 3; round++) {
+      await drainRequests(requests);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  ui.tiles = () => w.document.querySelectorAll(".photo-thumb").length;
+  ui.go = async (hash) => {
+    w.location.hash = hash;
+    w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+    await ui.settle();
+  };
+  ui.open = async (tiles) => {
+    await ui.go(`#/folders/${v.id}`);
+    await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+    if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
+    await until(() => w.document.querySelector(".photo-timeline button") && ui.tiles() === tiles && ui.ready);
+    await ui.settle();
+  };
+  const timer = (ms, source) => intervals.findLast(([callback, every]) => every === ms && source.test(String(callback)))[0];
+  ui.tick = () => timer(5000, /refreshGallery/)();
+  ui.events = () => timer(1000, /\/v1\/events/)();
+  ui.poll = () => timer(5000, /windowShown/)();
+  ui.changed = () => w.document.dispatchEvent(new w.Event("arca-changes"));
+  ui.newer = () => ui.observers.findLast((observer) => observer.targets.some((el) => el.classList.contains("photo-newer"))).callback([{ isIntersecting: true }]);
+  ui.scrub = async (month) => {
+    const rail = w.document.querySelector(".photo-timeline");
+    Object.defineProperty(rail, "clientHeight", { configurable: true, value: 600 });
+    rail.getBoundingClientRect = () => ({ top: 0, bottom: 600, left: 0, right: 76, width: 76, height: 600 });
+    w.dispatchEvent(new w.Event("resize"));
+    const button = [...rail.querySelectorAll("button")].find((el) => el.dataset.month === month);
+    const clientY = parseFloat(button.style.getPropertyValue("--segment-top")) + 16 + 2;
+    for (const type of ["pointerdown", "pointerup"]) rail.dispatchEvent(new w.MouseEvent(type, { bubbles: true, clientY, button: 0 }));
+    await ui.settle();
+  };
+  return ui;
+}
+
+test("the open gallery re-reads its range on a change at most every five seconds, retries what was put off and otherwise only as a fallback", async (t) => {
+  const ui = await galleryWindow(t);
+  await ui.open(1);
+  let asked = ui.pages;
+  const more = async (label) => {
+    await ui.settle();
+    assert.ok(ui.pages > asked, label);
+    asked = ui.pages;
+  };
+  const none = async (label) => {
+    await ui.settle();
+    assert.equal(ui.pages, asked, label);
+  };
+
+  await ui.tick();
+  await more("what a gallery mounted with is reconciled once");
+  await ui.events();
+  await none("a change within five seconds of the last re-read is not read at once");
+  await ui.tick();
+  await more("the timer reads it");
+  await ui.tick();
+  await none("with healthy events and nothing due the timer asks nothing");
+  ui.w.document.dispatchEvent(new ui.w.Event("visibilitychange"));
+  await more("coming back to the window re-reads at once, however recent the last re-read");
+  await ui.tick();
+  await none("once");
+
+  ui.ahead += 6000;
+  ui.changed();
+  await more("a change re-reads at once when the last re-read is five seconds old");
+  ui.changed();
+  await none("the next one waits");
+  await ui.tick();
+  await more("for the timer");
+  await ui.tick();
+  await none("once");
+
+  const dialog = ui.w.document.querySelector("#dialog");
+  dialog.setAttribute("open", "");
+  ui.ahead += 6000;
+  ui.changed();
+  await ui.tick();
+  await none("nothing is re-read under an open dialog");
+  dialog.removeAttribute("open");
+  await ui.tick();
+  await more("the re-read the dialog put off is retried by the timer");
+  await ui.tick();
+  await none("once");
+
+  ui.indexing = true;
+  ui.ahead += 6000;
+  ui.changed();
+  await ui.settle();
+  asked = ui.pages;
+  ui.indexing = false;
+  await ui.tick();
+  await more("a re-read that indexing cut short is retried");
+  await ui.tick();
+  await none("once");
+
+  const status = async (phase) => {
+    ui.phase = phase;
+    ui.ahead += 31000;
+    await ui.events();
+    await ui.poll();
+    await ui.settle();
+    asked = ui.pages;
+  };
+  await status("syncing");
+  await ui.tick();
+  await more("while this device syncs the timer re-reads");
+  await ui.tick();
+  await more("on every tick");
+  await status(null);
+  await ui.tick();
+  await none("and stops when the sync ends");
+
+  ui.ahead += 61000;
+  await ui.events();
+  await none("events that report nothing read nothing");
+  await ui.tick();
+  await more("after a minute without a re-read the timer makes one anyway");
+  await ui.tick();
+  await none("once");
+
+  ui.ahead += 21000;
+  await ui.tick();
+  await more("while /v1/events has gone quiet the timer re-reads");
+  await ui.tick();
+  await more("on every tick");
+});
+
+test("a gallery opened again shows what changed while it was closed", async (t) => {
+  const ui = await galleryWindow(t);
+  await ui.open(1);
+  await ui.events();
+  await ui.tick();
+  await ui.settle();
+  await ui.go("#/devices");
+  assert.equal(ui.w.document.querySelector(".photo-timeline"), null);
+  await ui.photo("second.jpg", "blue");
+  await ui.events();
+  await ui.settle();
+  await ui.open(1);
+  for (const deadline = performance.now() + 20000; ui.tiles() < 2 && performance.now() < deadline; ) {
+    await ui.events();
+    await ui.tick();
+    await ui.settle();
+  }
+  assert.equal(ui.tiles(), 2);
+});
+
+test("a page loaded after the last re-read and a change that arrives during one are read by the next tick", async (t) => {
+  const ui = await galleryWindow(t);
+  await ui.photo("IMG_20230105_000001.jpg", "blue");
+  await ui.open(2);
+  await ui.events();
+  for (let round = 0; round < 3; round++) {
+    await ui.tick();
+    await ui.settle();
+  }
+  let asked = ui.pages;
+  const more = async (label) => {
+    await ui.settle();
+    assert.ok(ui.pages > asked, label);
+    asked = ui.pages;
+  };
+  const none = async (label) => {
+    await ui.settle();
+    assert.equal(ui.pages, asked, label);
+  };
+  await ui.tick();
+  await none("the opened gallery is settled");
+
+  ui.far = true;
+  await ui.scrub("2023-01");
+  await more("the timeline opens the month");
+  assert.equal(ui.tiles(), 1);
+  await ui.tick();
+  await more("a month opened from the timeline is reconciled by the next tick");
+  await ui.tick();
+  await none("once");
+
+  ui.far = false;
+  ui.newer();
+  await more("scrolling up loads the newer page");
+  assert.equal(ui.tiles(), 2);
+  await ui.tick();
+  await more("which the next tick reconciles too");
+  await ui.tick();
+  await none("once");
+
+  let release;
+  ui.gate = new Promise((resolve) => (release = resolve));
+  ui.ahead += 6000;
+  ui.changed();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  ui.changed();
+  ui.gate = null;
+  release();
+  await ui.settle();
+  asked = ui.pages;
+  await ui.tick();
+  await more("a change that arrived during a re-read is read by the next tick");
+  await ui.tick();
+  await none("once");
+});
+
 test("the photo timeline appears and seeks while the gallery is still indexing", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-timeline-indexing-"));
   init(home, { port: 0, name: "Gallery" });

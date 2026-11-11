@@ -309,12 +309,17 @@ export async function start(home, options = {}) {
     return snapshotReads.get(key);
   };
   const pairingAttempts = new Attempts();
-  const feed = new ChangeFeed(() =>
-    digest(
+  // Read between syncs only: a long pull moves it with every file and would wake each waiting window twice a second.
+  let indexed = 0;
+  const feed = new ChangeFeed(() => {
+    if (engine.phase !== "syncing")
+      indexed = s.db.prepare("SELECT COALESCE(SUM(generation),0) AS files FROM file_generations").get().files;
+    return digest(
       JSON.stringify([
         s.db
           .prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'")
           .get()?.seq || 0,
+        indexed,
         s.volumes().map((v) => [v.id, v.name, v.selected]),
         config.folderRetention,
         config.name,
@@ -328,8 +333,8 @@ export async function start(home, options = {}) {
           ? [engine.hubUnavailable, engine.phase, engine.error, engine.paused]
           : []),
       ]),
-    ),
-  );
+    );
+  });
   // Remote-only views have a short deadline and retain their last successful data.
   s.db.exec(
     "CREATE TABLE IF NOT EXISTS remote_views(key TEXT PRIMARY KEY, value TEXT NOT NULL, used INTEGER NOT NULL)",

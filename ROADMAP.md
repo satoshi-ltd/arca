@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **PERF-GALLERY-PAGE** — A gallery page does not re-read the whole photo library
-  `feature · agent · high`
-  `page()` builds and sorts every visible photo before `LIMIT 61`, again for `months` and again for the `indexing` probe; `periods()` and `memories()` build the same rows; the open desktop gallery re-requests every loaded page with `fresh=true` every 5 s and rewrites each to IndexedDB. Accept: the ordered rows are memoized on the folder's file generation, the rules and a gallery counter bumped by every metadata, member and asset write, and shared by periods and memories; the 5 s timer runs only while `/v1/events` is stale; a test counts the `WITH media` statements across two unchanged pages (0 the second time) and sees a new photo.
 - **SEC-BACKUP-ACK** — A linked device never injects markup into the hub's Devices page
   `bug · agent · normal`
   `/v1/backup-ack` validates `revision` only when `enabled` is true and stores it in a non-strict column; Devices renders it raw as "history rev …". A replica credential can therefore place markup in the hub administrator's page; scripts are blocked by the policy, but forms and `data-action` elements are not. Accept: a non-integer `revision` answers 400 whatever `enabled` is and leaves the row unchanged, and the page renders the value as a number, with a DOM test.
@@ -306,6 +303,9 @@ No measurements: counts of statements and calls are traced, times are estimates.
 - **PERF-WIN-HIDDEN-EVENTS** — A window hidden or minimized on Windows stops its background requests
   `feature · agent · low`
   WebView2 keeps reporting the page as visible while its window is hidden, so on Windows the `/v1/events` long poll (gated on `document.hidden`) continues in a tray-hidden window and asks for status on every change, and a minimized window keeps the five-second status poll; nothing fires when the window returns, so the first status answer waits for the next tick. Traced in wry, not run on Windows. Accept: the events loop, the gallery and audio-library refreshes and the status poll share one shown-window test that asks the native window (visible and not minimized) in the desktop app, a native show or restore polls once, and a DOM test covers a page that reads visible in a hidden window.
+- **PERF-GALLERY-QUIET-WRITES** — A gallery write that changes nothing does not make galleries read again
+  `feature · agent · low`
+  The `gallery` row generation is shared by every gallery and moves on any write to `gallery_metadata`, `gallery_assets` and `added_dates`, including an upsert that stores the values already there (`rememberFileDate` and `rememberAddedDate` on every uploaded or pulled photo, the added-dates re-walk), so a kept gallery is read once more although nothing it shows changed. Measured by the review of 0.9.11; results stay correct. Accept: the UPDATE triggers fire only when a column the gallery reads changed (`WHEN OLD.x IS NOT NEW.x`), `gallery_members`, `gallery_assets` and `added_dates` move a per-folder counter, and a test shows an identical upsert and a write in another gallery leave a kept gallery unread.
 
 ### Performance — phone
 

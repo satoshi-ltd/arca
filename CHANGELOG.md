@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.11 — 2026-11-11
+
+- Large photo libraries open and scroll faster: the hub or computer reads a gallery's photos once and reuses that for every page, the year and month views and On this day until something in the folder changes, instead of re-reading the whole library for each request.
+- An open gallery on the desktop or the web no longer downloads its loaded pages again every five seconds; it refreshes when something changes, at most every five seconds, and otherwise checks once a minute; the five-second check remains only while the device is syncing or cannot hear about changes.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.10 — 2026-11-11
 
 - An idle hub or computer does much less work in the background: the status that the app, the tray and other devices keep asking for no longer recounts every file and version each time, only after something changed.

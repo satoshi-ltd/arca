@@ -154,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.10";
+const APP_VERSION = "0.9.11";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1302,6 +1302,7 @@ let status,
   submitDialog,
   renderSerial = 0,
   lastSignature = "",
+  eventsHealthyAt = 0,
   onboarding = null;
 // Hash routes also work in the native bundle and need no server rewrite rules.
 function routeURL() {
@@ -3553,6 +3554,9 @@ function mountGallery(volume) {
     sharp: [],
     sharpening: 0,
     waiting: 0,
+    due: 1,
+    settled: 0,
+    refreshedAt: 0,
   });
   const current = () => galleryView === state && root.isConnected;
   let hoverVideo = null;
@@ -4394,6 +4398,7 @@ function mountGallery(volume) {
         root.querySelector(".photo-timeline").replaceChildren();
       }
       state.failures = 0;
+      state.due++;
       updateTimeline(data);
       addItems(data.items);
       if (state.anchorMonth) {
@@ -4527,6 +4532,7 @@ function mountGallery(volume) {
         state.previous = null;
         return;
       }
+      state.due++;
       replaceItems([...data.items, ...state.items]);
       state.range = { from: data.items[0].cursor };
       state.previous = data.previous ?? null;
@@ -4551,6 +4557,7 @@ function mountGallery(volume) {
       return;
     state.refreshing = true;
     const range = state.range;
+    const due = state.due;
     try {
       const items = [];
       let after = "",
@@ -4576,6 +4583,7 @@ function mountGallery(volume) {
         after = data.next;
         if (!after) break;
       }
+      state.settled = due;
       state.previous = previous;
       updateSummary(data);
       if (JSON.stringify(items) === JSON.stringify(state.items)) return;
@@ -4588,11 +4596,26 @@ function mountGallery(volume) {
       /* Keep the visible gallery during temporary disconnection. */
     } finally {
       state.refreshing = false;
+      state.refreshedAt = Date.now();
     }
   };
-  const refreshTimer = setInterval(refreshGallery, 5000);
-  document.addEventListener("visibilitychange", refreshGallery);
-  document.addEventListener("arca-changes", refreshGallery);
+  // Pages shown from a cache or a saved view are due too: only a completed re-read of the range settles them, at most one every five seconds.
+  const galleryChanged = (event) => {
+    state.due++;
+    if (event.type === "visibilitychange" || Date.now() - state.refreshedAt >= 5000) return refreshGallery();
+  };
+  const refreshTimer = setInterval(() => {
+    const now = Date.now();
+    if (
+      state.due !== state.settled ||
+      now - eventsHealthyAt >= 20000 ||
+      now - state.refreshedAt >= 60000 ||
+      status?.phase === "syncing"
+    )
+      return refreshGallery();
+  }, 5000);
+  document.addEventListener("visibilitychange", galleryChanged);
+  document.addEventListener("arca-changes", galleryChanged);
   state.moreObserver =
     typeof IntersectionObserver === "function"
       ? new IntersectionObserver(
@@ -4704,8 +4727,8 @@ function mountGallery(volume) {
     clearInterval(refreshTimer);
     clearTimeout(state.scrollDate);
     clearTimeout(state.poll);
-    document.removeEventListener("visibilitychange", refreshGallery);
-    document.removeEventListener("arca-changes", refreshGallery);
+    document.removeEventListener("visibilitychange", galleryChanged);
+    document.removeEventListener("arca-changes", galleryChanged);
     stopHover();
     document.removeEventListener("visibilitychange", hideHover);
     resizeObserver?.disconnect();
@@ -12633,7 +12656,6 @@ window.addEventListener("blur", () => {
 });
 let polling = false,
   pollAgain = false,
-  eventsHealthyAt = 0,
   lastStatusPoll = 0;
 async function pollStatus(force = false) {
   if (!ready) return;
