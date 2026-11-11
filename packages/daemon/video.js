@@ -340,7 +340,15 @@ export class Video {
     return this.s.db.prepare("SELECT volume FROM video_folders").all().map((row) => row.volume);
   }
   mark(volume) {
-    this.s.volume(volume);
+    // A library is read in place and its objects stop being protected, so a folder held only as objects would lose its content.
+    const v = this.s.volume(volume);
+    if (!v.selected)
+      fail("Start syncing this folder on this hub first: Movies & TV plays the files in the hub's own folder.", 409);
+    try {
+      this.s.assertVolume(v);
+    } catch {
+      fail("This folder's files are not reachable on this hub. Reconnect its disk or locate the folder, then set it up.", 409);
+    }
     if (this.s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(volume))
       fail("This folder is a gallery. A folder is a gallery, an audio library or a video library, not more than one.", 409);
     if (this.s.db.prepare("SELECT 1 FROM music_folders WHERE volume=?").get(volume))

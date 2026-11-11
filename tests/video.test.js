@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Store, init } from "../packages/daemon/storage.js";
 import { Video, parseProbe, parseNfo, subtitleFor, subtitleText, subtitleLanguage } from "../packages/daemon/video.js";
 import { playerRoute } from "../packages/daemon/machines.js";
+import { applyRetention } from "../packages/daemon/maintenance.js";
 import { execFileSync } from "node:child_process";
 import ffmpeg from "ffmpeg-static";
 import { clip, hub, image } from "./video-support.js";
@@ -56,6 +57,66 @@ test("only the hub's administrator enables a video library, and a folder is one 
   await f.call("/v1/music/mark", { volume: songs.id });
   await assert.rejects(f.call("/v1/video/mark", { volume: songs.id }), { status: 409 });
   await assert.rejects(f.call("/v1/video/mark", { volume: "missing" }), { status: 404 });
+});
+
+const aged = (file) => {
+  const old = new Date(Date.now() - 3 * 86400000);
+  fs.utimesSync(file, old, old);
+};
+
+test("a folder the hub stopped syncing here cannot become a video library, so its only copy is never collected", async (t) => {
+  const f = await hub(t);
+  const name = "Heat (1995).mp4";
+  await f.call("/v1/unselect", { id: f.v.id });
+  assert.equal(f.s.volume(f.v.id).selected, 0);
+  const hash = await f.propose(name, clip({ tone: 403 }));
+  assert.equal(fs.existsSync(f.s.filePath(f.v, name)), false, "the film lives only in the hub's objects");
+  await assert.rejects(f.call("/v1/video/mark", { volume: f.v.id }), {
+    status: 409,
+    message: "Start syncing this folder on this hub first: Movies & TV plays the files in the hub's own folder.",
+  });
+  assert.equal(f.s.videoFolder(f.v.id), false);
+  const orphan = f.s.blob("f".repeat(64));
+  fs.writeFileSync(orphan, "unreferenced");
+  aged(orphan);
+  aged(f.s.blob(hash));
+  assert.equal(applyRetention(f.s, { versions: 1 }).objectsRemoved, 1, "the collection ran and took only the orphan");
+  assert.ok(fs.existsSync(f.s.blob(hash)), "the hub still holds the film");
+  await f.call("/v1/select", { id: f.v.id });
+  assert.ok(fs.existsSync(f.s.filePath(f.v, name)), "starting sync on the hub puts the film in its folder");
+  await f.call("/v1/video/mark", { volume: f.v.id });
+  assert.equal(f.s.videoFolder(f.v.id), true, "once the hub holds the folder in place it can be a library");
+});
+
+test("a folder whose directory is gone from the hub cannot become a video library", async (t) => {
+  const f = await hub(t);
+  const hash = await f.propose("Heat (1995).mp4", clip({ tone: 404 }));
+  fs.rmSync(f.v.path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await assert.rejects(f.call("/v1/video/mark", { volume: f.v.id }), {
+    status: 409,
+    message: "This folder's files are not reachable on this hub. Reconnect its disk or locate the folder, then set it up.",
+  });
+  assert.equal(f.s.videoFolder(f.v.id), false);
+  aged(f.s.blob(hash));
+  assert.equal(applyRetention(f.s, { versions: 1 }).objectsRemoved, 0);
+  assert.ok(fs.existsSync(f.s.blob(hash)));
+});
+
+test("Stop syncing here that queued behind a library being set up is refused, so the library keeps its working copy", async (t) => {
+  const f = await hub(t);
+  await f.propose("Heat (1995).mp4", clip({ tone: 405 }));
+  let release;
+  const held = f.daemon.engine.exclusive(() => new Promise((resolve) => (release = resolve)));
+  const mark = f.call("/v1/video/mark", { volume: f.v.id });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const unselect = f.call("/v1/unselect", { id: f.v.id });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  release();
+  await held;
+  await mark;
+  await assert.rejects(unselect, { status: 409, message: /can't stop syncing here/ });
+  assert.equal(f.s.volume(f.v.id).selected, 1);
+  assert.equal(f.s.videoFolder(f.v.id), true);
 });
 
 test("a replaced video starts from the beginning, and a mark meant for the old copy is refused", async (t) => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.4 — 2026-11-11
+
+- A folder the hub has stopped syncing here, or whose directory the hub cannot reach, can no longer be set up as a Movies & TV library; the dialog says what to do first. Before, the hub accepted it and its next hourly maintenance removed its only copy of that folder's files older than a day.
+
+Needs: hub redeploy
+
 ## 0.9.3 — 2026-11-11
 
 - If the hub goes back to an earlier state (its index or its disk restored from a copy), desktop and server replicas no longer replace their newer files with the hub's older ones. The folder says once that the hub went back and is then linked to it again as when it was first selected, which needs free space in the state directory of about the folder's size: files the hub no longer has upload, changed ones are kept as conflict copies or, when the hub still holds that version, moved to the Trash, and files deleted since come back.

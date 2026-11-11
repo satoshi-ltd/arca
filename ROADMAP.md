@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **VIDEO-MARK-UNSELECTED** — A hub folder without a working copy cannot become a Movies & TV library
-  `bug · agent · high`
-  `mark()` never checks `selected`, and garbage collection stops protecting the objects of a video folder, so marking a folder after Stop syncing here deletes the hub's only copy once the collection delay passes. Accept: `/v1/video/mark` answers 409 for a folder the hub does not hold in place, the interface says why, and a test sees no object of that folder collected.
 - **UX-CONNECT-ERROR** — A mistyped or unreachable hub address says what is wrong
   `bug · agent · high`
   `/v1/connect` fetches the hub's `/pair` with no catch, so a closed port or a wrong address answers 500 "Internal error" in the first-run wizard and in Connect to hub; Change address already answers "Could not reach a hub at …". Accept: `/v1/connect` against a closed port answers 503 with that sentence, and a DOM test sees it in the Connect dialog.
@@ -184,6 +181,12 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 - **MOB-HUB-ROLLBACK** — A phone reconciles with a hub that went back in time
   `feature · agent · normal`
   The phone skips hub rows older than its own, so nothing is replaced, but it then stays diverged: its newer files never upload and its later edits are refused as stale. Accept: the phone reads the catalog's `history` epoch and head, and on a changed epoch or a cursor ahead of the head relinks the folder as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub.
+- **VIDEO-UNSELECTED-REPAIR** — A Movies & TV library the hub is not syncing is reported, not left losing uploads
+  `bug · agent · normal`
+  Before 0.9.4 a hub could end with a video library and `selected=0`; every later upload to it is committed without a working file, lives only in `objects` and is collected, and the interface offers no way out because a library has no Hub working copy panel. Accept: such a folder shows Needs attention with Start syncing on the hub, uploads to it are refused meanwhile, and a test builds that state and sees nothing collected.
+- **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
+  `bug · agent · low`
+  `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
 - **SEC-HUB-IN-USE-OTHER** — Other hub changes to a file FFmpeg holds open wait instead of failing on Windows
   `bug · agent · low`
   The Windows in-use check covers `/v1/delete-file` and Delete movie or episode only. Gallery deletion, a replica's proposed deletion applied on the hub, hub rename, restore and a conflict choice can still record a change whose move then fails while a preview or probe holds the file. Accept: each path ends the hub's own work on the file or answers 409 before recording anything, with Windows-shaped tests.

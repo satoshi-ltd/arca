@@ -2350,6 +2350,12 @@ export async function start(home, options = {}) {
             return send(
               200,
               await authorizedWork(async () => {
+                // Checked again inside the queue: a library set up while this request waited must not lose its working copy.
+                if (s.streamOnly(b.id))
+                  fail(
+                    "A Movies & TV folder lives in this hub's folder; it can't stop syncing here.",
+                    409,
+                  );
                 const plan = b.deleteFiles ? s.syncedCopyPlan(b.id) : null;
                 if (config.role === "replica") {
                   s.forgetVolume(b.id);
