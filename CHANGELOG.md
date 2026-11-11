@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.20 — 2026-11-11
+
+- Stopping Arca, by docker stop, a service manager or the desktop updater on macOS and Linux, now finishes within a few seconds even while a film is paused or a download is open: open connections are cut after two seconds, the index is closed cleanly and the lock released, and the bundled Compose file waits 15 seconds before killing the container.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.19 — 2026-11-11
 
 - Release workflows run only pinned code: every action is pinned to a commit, the site deploy installs an exact wrangler and gives the Cloudflare credentials only to its check and deploy steps, and Dependabot proposes weekly grouped updates for actions, npm and cargo.

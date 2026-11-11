@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { issueWebCode } from "../daemon/web.js";
 import { init } from "../daemon/storage.js";
-import { start } from "../daemon/server.js";
+import { SHUTDOWN_MS, start } from "../daemon/server.js";
 import { recoverBackup } from "../daemon/recovery.js";
 
 const args = process.argv.slice(2);
@@ -35,7 +35,7 @@ const print = (value) =>
 try {
   if (!command || command === "help") {
     console.log(
-      `Arca 0.9.19 — personal drive\n\n  init --role hub|replica --name NAME --root PATH [--port 17831]\n  daemon [--setup] [--host 127.0.0.1] [--port PORT] [--private-network]\n  network | discover | network-mode standalone|tailscale\n  status | sync | pause | resume\n  pair NAME (one-time machine pairing code)\n  move-folder FOLDER_ID NEW_PATH\n  promotion-plan | promote --confirm\n  retention --days N --versions N [--confirmation PREVIEW_DIGEST]\n  web-code\n  backup enable EMPTY_FOLDER | backup disable\n  add-folder NAME [PATH]\n  invite NAME   (prints a secret once)\n  connect URL --token-file PATH [--private-network]\n  relocate URL [--private-network]   (the same hub at a new address)\n  disconnect [--force]   (--force when the hub cannot be reached)\n  catalog | select FOLDER_ID [LOCAL_PATH] | unselect FOLDER_ID\n  files FOLDER_ID | history FOLDER_ID FILE_PATH\n  restore FOLDER_ID FILE_PATH REVISION\n  revoke MACHINE_ID\n  recover-backup NEW_HOME (source backup is --home; both offline)\n\nAll commands accept --home PATH (default ~/.arca).\nUse --private-network for Tailscale, a TLS proxy, or a trusted LAN with HTTP explicitly enabled in hub Settings.\n`,
+      `Arca 0.9.20 — personal drive\n\n  init --role hub|replica --name NAME --root PATH [--port 17831]\n  daemon [--setup] [--host 127.0.0.1] [--port PORT] [--private-network]\n  network | discover | network-mode standalone|tailscale\n  status | sync | pause | resume\n  pair NAME (one-time machine pairing code)\n  move-folder FOLDER_ID NEW_PATH\n  promotion-plan | promote --confirm\n  retention --days N --versions N [--confirmation PREVIEW_DIGEST]\n  web-code\n  backup enable EMPTY_FOLDER | backup disable\n  add-folder NAME [PATH]\n  invite NAME   (prints a secret once)\n  connect URL --token-file PATH [--private-network]\n  relocate URL [--private-network]   (the same hub at a new address)\n  disconnect [--force]   (--force when the hub cannot be reached)\n  catalog | select FOLDER_ID [LOCAL_PATH] | unselect FOLDER_ID\n  files FOLDER_ID | history FOLDER_ID FILE_PATH\n  restore FOLDER_ID FILE_PATH REVISION\n  revoke MACHINE_ID\n  recover-backup NEW_HOME (source backup is --home; both offline)\n\nAll commands accept --home PATH (default ~/.arca).\nUse --private-network for Tailscale, a TLS proxy, or a trusted LAN with HTTP explicitly enabled in hub Settings.\n`,
     );
   } else if (command === "setup-info") {
     print(inspectSetupRoot(options.root, home));
@@ -71,7 +71,10 @@ try {
     const stop = async () => {
       if (stopping) return;
       stopping = true;
-      daemon.engine.interruptCycle();
+      setTimeout(() => {
+        console.error("Arca did not stop in time; exiting without a clean close");
+        process.exit(1);
+      }, SHUTDOWN_MS + 2000);
       await daemon.close();
       process.exit(0);
     };

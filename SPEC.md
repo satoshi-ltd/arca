@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.9.19 · Phase 1 release.**
+**v0.9.20 · Phase 1 release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -697,6 +697,8 @@ node packages/cli/arca.js status
 Commands accept `--home PATH` (default `~/.arca`): `init --role hub|replica --name NAME --root PATH`, `daemon [--setup]`, `network`, `discover`, `network-mode standalone|tailscale`, `status`, `sync`, `pause`, `resume`, `pair NAME` (one-time pairing code), `invite NAME` (prints a secret once), `connect URL --token-file PATH [--private-network] [--reconcile]`, `catalog`, `select FOLDER_ID [LOCAL_PATH]`, `unselect` (keeps files), `files`, `history`, `restore`, `revoke`, `add-folder NAME [PATH]`, `move-folder`, `retention`, `promotion-plan`, `promote --confirm`, `web-code`, `backup enable EMPTY_FOLDER | backup disable` and `recover-backup NEW_HOME`. HTTP to a verified Tailscale peer is accepted automatically; `--private-network` is for another explicitly trusted encrypted network, a TLS proxy or a LAN with HTTP enabled on the hub. Store invitation JSON privately.
 
 `ARCA_HOME=/path node scripts/install-service.js [--start]` writes an optional launchd (login LaunchAgent) or systemd user-service definition and prints activation steps; `--start` activates it. `ARCA_RUNTIME` points at a staged runtime that must stay in place. Stop any manual daemon first.
+
+SIGTERM and SIGINT stop the daemon within a fixed bound (`SHUTDOWN_MS`, 8 s, in `server.js`). It stops accepting connections, closes idle ones, interrupts the running sync step and, after a 2-second grace (`CONNECTION_GRACE_MS`), cuts open responses such as a paused film, a long download or an event poll. Every later stage (the network service, image work, video downloads, the engine's queued step) waits only until that deadline, whose timer keeps the process alive meanwhile; then the index is closed and the state lock is released. Closing the index normally checkpoints its WAL; when another connection (a scanner worker still ending) is open the checkpoint is left to the next start, which is safe because committed WAL data is durable. A step still running at the deadline is abandoned: its committed journal rows (`pending`) stay for the next start's recovery. As a backstop for a close that never returns despite those bounds (for example a synchronous call that blocks), the CLI exits with status 1 two seconds after the deadline. Compose gives the container `stop_grace_period: 15s`, so Docker waits for the clean close. On macOS and Linux the desktop updater sends SIGTERM and waits 30 s, which also covers it; on Windows it ends the daemon with `taskkill /T /F`, which skips the graceful path and relies on the journal.
 
 To recover a hub from a backup, stop the backup's daemon, preserve its state directory and run:
 

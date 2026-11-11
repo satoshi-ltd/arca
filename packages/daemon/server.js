@@ -109,6 +109,8 @@ const MUSIC_DOWNLOAD_ROUTES = [
   "/v1/music/download/cancel",
   "/v1/music/download/remove",
 ];
+export const CONNECTION_GRACE_MS = 2000;
+export const SHUTDOWN_MS = 8000;
 const heldLocks = new Set();
 function releaseLock(lock) {
   heldLocks.delete(lock);
@@ -3043,21 +3045,42 @@ export async function start(home, options = {}) {
     server,
     port: server.address().port,
     async close() {
-      stopping = true;
-      remoteEvents?.abort();
-      feed.close();
-      clearTimeout(changedTimer);
-      for (const w of watchers.values()) w.close();
-      flushEvents();
-      clearTimeout(timer);
-      await network.close();
-      await new Promise((resolve) => server.close(resolve));
-      await images.close();
-      await engine.videoDownloads.close();
-      videoSessions.close();
-      await engine.tail;
-      engine.close();
-      releaseLock(lock);
+      let deadline;
+      const expired = new Promise((resolve) => {
+        deadline = setTimeout(resolve, options.shutdownMs ?? SHUTDOWN_MS);
+      });
+      const bounded = (work) => Promise.race([work, expired]);
+      try {
+        await closeWithin(bounded);
+      } finally {
+        clearTimeout(deadline);
+      }
     },
   };
+  async function closeWithin(bounded) {
+    stopping = true;
+    engine.interruptCycle();
+    remoteEvents?.abort();
+    feed.close();
+    clearTimeout(changedTimer);
+    for (const w of watchers.values()) w.close();
+    flushEvents();
+    clearTimeout(timer);
+    await bounded(network.close());
+    const closed = new Promise((resolve) => server.close(resolve));
+    server.closeIdleConnections();
+    const grace = setTimeout(
+      () => server.closeAllConnections(),
+      options.connectionGraceMs ?? CONNECTION_GRACE_MS,
+    );
+    await bounded(closed);
+    clearTimeout(grace);
+    server.closeAllConnections();
+    await bounded(images.close());
+    await bounded(engine.videoDownloads.close());
+    videoSessions.close();
+    await bounded(engine.tail);
+    engine.close();
+    releaseLock(lock);
+  }
 }

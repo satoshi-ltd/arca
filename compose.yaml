@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile
     restart: unless-stopped
+    stop_grace_period: 15s
     init: true
     environment:
       ARCA_HOME: /data/state

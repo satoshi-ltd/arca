@@ -38,9 +38,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-FOLDER-BACKOFF** — A folder in error backs off alone
   `bug · agent · normal`
   Any folder error fails the whole cycle and sets one backoff of up to five minutes that watcher and hub events do not bypass, so a persistent error in one folder (a symlink, a reserved name, a case collision) delays every other folder on that device. Accept: with folder X failing every cycle, an edit in folder Y reaches the hub within the normal event latency and only X backs off; SPEC's replica cadence says so.
-- **DAEMON-SHUTDOWN** — SIGTERM ends the daemon within a bounded time
-  `bug · agent · normal`
-  `stop` awaits `close()` with no deadline, and `server.close` waits for open connections (a paused film, a long download) before the engine's tail; Compose sets no `stop_grace_period`, so Docker kills the process after 10 s, and the desktop updater gives up after 30 s. The journal makes the kill safe, but the graceful path is skipped. Accept: with a never-ending blob or media response and a stubbed long scan open, close exits within a fixed bound with the index openable and no pending row lost; Compose sets a matching `stop_grace_period`.
 
 ## In progress
 
