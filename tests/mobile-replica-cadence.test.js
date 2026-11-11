@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Replica, CHUNK, PROGRESS_MS } from "../apps/mobile/src/replica.js";
 import { ReplicaStore, TOTALS_WRITE } from "../apps/mobile/src/replica-store.js";
-import { createClient } from "../apps/mobile/src/client.js";
+import { HubError, createClient } from "../apps/mobile/src/client.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
@@ -373,6 +373,294 @@ test("a yielded download whose file was edited meanwhile keeps the edit as a con
   assert.ok(conflict, "the phone's edit is preserved");
   assert.equal(fs.readFileSync(path.join(path.dirname(f.work("episode.mp3")), conflict), "utf8"), "edited on the phone meanwhile");
   assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), update);
+});
+
+const sha = (data) => crypto.createHash("sha256").update(data).digest("hex");
+const partialOf = (f, hash) => f.files.partial(f.replica.scope, hash);
+const partials = (f) => {
+  const root = path.dirname(partialOf(f, "0".repeat(64)));
+  return fs.existsSync(root) ? fs.readdirSync(root) : [];
+};
+const yieldMidDownload = async (f) => {
+  const check = f.replica.checkTransferTurn.bind(f.replica);
+  yieldEvery(f.replica, 2);
+  await f.replica.cycle();
+  f.replica.checkTransferTurn = check;
+};
+
+test("Stop syncing in the middle of a download leaves no partial file behind", async (t) => {
+  const f = await phone(t);
+  const data = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), data);
+  fs.writeFileSync(path.join(f.volume.path, "keep.txt"), "kept");
+  await f.select();
+  await yieldMidDownload(f);
+  assert.deepEqual(partials(f), [sha(data)], "the download is in flight");
+  assert.ok(fs.statSync(partialOf(f, sha(data))).size >= CHUNK);
+  await f.replica.unselect(f.volume.id);
+  assert.deepEqual(partials(f), []);
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.deepEqual(partials(f), []);
+  assert.deepEqual(fs.readFileSync(path.join(f.volume.path, "episode.mp3")), data, "the hub keeps the file");
+  assert.equal(fs.readFileSync(path.join(f.volume.path, "keep.txt"), "utf8"), "kept");
+});
+
+test("Stop syncing one folder keeps the partial another folder is still downloading", async (t) => {
+  const f = await phone(t);
+  const data = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), data);
+  const other = f.daemon.engine.store.addVolume("Notes");
+  fs.writeFileSync(path.join(other.path, "episode-copy.mp3"), data);
+  await f.select();
+  await f.replica.select(f.client.state().catalog.volumes.find((v) => v.id === other.id));
+  await yieldMidDownload(f);
+  const kept = fs.statSync(partialOf(f, sha(data))).size;
+  assert.ok(kept >= CHUNK && kept < data.length);
+  assert.equal((await f.store.applying(f.replica.scope, other.id))[0]?.hash, sha(data), "the other folder is downloading the same content");
+  await f.replica.unselect(f.volume.id);
+  assert.equal(fs.statSync(partialOf(f, sha(data))).size, kept);
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.deepEqual(fs.readFileSync(f.files.work(f.replica.scope, other.id, "episode-copy.mp3")), data);
+  assert.deepEqual(partials(f), []);
+});
+
+test("a cycle keeps the partial of a yielded download and removes one that no row being applied references", async (t) => {
+  const f = await phone(t);
+  const data = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), data);
+  await f.select();
+  const partial = partialOf(f, sha(data));
+  const orphan = partialOf(f, "a".repeat(64));
+  fs.mkdirSync(path.dirname(orphan), { recursive: true });
+  fs.writeFileSync(orphan, "left by a download nothing waits for");
+  await yieldMidDownload(f);
+  assert.equal(fs.existsSync(orphan), false);
+  const kept = fs.statSync(partial).size;
+  assert.ok(kept >= CHUNK && kept < data.length, "the yielded download keeps what it fetched");
+  const write = f.files.write;
+  const offsets = [];
+  f.files.write = async (file, bytes, offset = 0) => {
+    if (file === partial) offsets.push(offset);
+    return write(file, bytes, offset);
+  };
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(Math.min(...offsets), kept, "and resumes after those bytes");
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), data);
+  assert.deepEqual(partials(f), []);
+});
+
+test("a partial is kept for a row being applied, not for a queued upload of the same content", async (t) => {
+  const f = await phone(t);
+  await f.select();
+  await f.replica.sync();
+  const scope = f.replica.scope;
+  const queued = "b".repeat(64);
+  const applying = "c".repeat(64);
+  fs.mkdirSync(path.dirname(partialOf(f, queued)), { recursive: true });
+  fs.mkdirSync(path.dirname(f.files.object(scope, queued)), { recursive: true });
+  for (const file of [partialOf(f, queued), partialOf(f, applying), f.files.object(scope, queued)])
+    fs.writeFileSync(file, "bytes");
+  await f.store.queue(scope, { volume: f.volume.id, path: "made-here.bin", base: 0, hash: queued, size: 5 });
+  await f.store.journal(scope, { volume: f.volume.id, path: "incoming.bin", rev: 9, hash: applying, size: 5 });
+  await f.replica.cleanTransferObjects(scope);
+  assert.deepEqual(partials(f), [applying]);
+  assert.equal(fs.existsSync(f.files.object(scope, queued)), true, "the upload keeps its object");
+});
+
+test("a yielded download the hub has replaced since is dropped instead of finished first", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), "first version");
+  await f.select();
+  await f.replica.sync();
+  const second = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), second);
+  await f.daemon.engine.cycle();
+  await yieldMidDownload(f);
+  assert.equal((await f.store.applying(f.replica.scope, f.volume.id)).length, 1);
+  assert.deepEqual(partials(f), [sha(second)]);
+  const third = crypto.randomBytes(CHUNK + 5);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), third);
+  await f.daemon.engine.cycle();
+  f.net.log.length = 0;
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(f.net.log.includes(`/v1/blobs/${sha(second)}`), false, "nothing more is fetched of the replaced revision");
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), third);
+  assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+  assert.deepEqual(partials(f), []);
+  await f.daemon.engine.cycle();
+  assert.deepEqual(fs.readdirSync(f.volume.path).filter((name) => name.includes("conflict")), []);
+  assert.deepEqual(fs.readFileSync(path.join(f.volume.path, "episode.mp3")), third);
+});
+
+test("a yielded download the hub has deleted since is dropped and the deletion applies", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), "first version");
+  fs.writeFileSync(path.join(f.volume.path, "keep.txt"), "kept");
+  await f.select();
+  await f.replica.sync();
+  const second = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), second);
+  await f.daemon.engine.cycle();
+  await yieldMidDownload(f);
+  assert.deepEqual(partials(f), [sha(second)]);
+  fs.rmSync(path.join(f.volume.path, "episode.mp3"));
+  await f.daemon.engine.cycle();
+  f.net.log.length = 0;
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(f.net.log.includes(`/v1/blobs/${sha(second)}`), false);
+  assert.equal(fs.existsSync(f.work("episode.mp3")), false);
+  assert.equal(fs.readFileSync(f.work("keep.txt"), "utf8"), "kept");
+  assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+  assert.deepEqual(partials(f), []);
+  await f.daemon.engine.cycle();
+  assert.equal(fs.readFileSync(path.join(f.volume.path, "keep.txt"), "utf8"), "kept");
+});
+
+const historyOf = (f, name) => {
+  const asked = [];
+  const api = f.replica.client.api;
+  let answer = null;
+  f.replica.client.api = (route, body) => {
+    if (route.startsWith("/v1/history?") && new URLSearchParams(route.split("?")[1]).get("path") === name) {
+      asked.push(route);
+      if (answer) return answer();
+    }
+    return api(route, body);
+  };
+  return { asked, answer: (fn) => (answer = fn) };
+};
+const yieldedUpdate = async (f, name = "episode.mp3") => {
+  fs.writeFileSync(path.join(f.volume.path, name), "first version");
+  await f.select();
+  await f.replica.sync();
+  const update = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, name), update);
+  await f.daemon.engine.cycle();
+  await yieldMidDownload(f);
+  assert.equal((await f.store.applying(f.replica.scope, f.volume.id)).length, 1);
+  return update;
+};
+
+test("downloads held back for lack of space never ask the hub whether they were replaced", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "keep.txt"), "kept");
+  await f.select();
+  await f.replica.sync();
+  for (const name of ["a.bin", "b.bin"]) fs.writeFileSync(path.join(f.volume.path, name), crypto.randomBytes(2048));
+  await f.daemon.engine.cycle();
+  f.files.free = async () => 0;
+  await f.replica.sync();
+  assert.match(f.replica.error || "", /Not enough storage/);
+  assert.equal((await f.store.applying(f.replica.scope, f.volume.id)).length, 2, "both wait for space");
+  const asked = [historyOf(f, "a.bin"), historyOf(f, "b.bin")];
+  await f.replica.sync();
+  await f.replica.sync();
+  assert.deepEqual(asked.map(({ asked }) => asked.length), [0, 0]);
+  assert.deepEqual(partials(f), []);
+});
+
+test("a malformed or refused answer about a newer revision leaves the yielded download to resume without a folder issue", async (t) => {
+  for (const refuse of [async () => ({}), async () => { throw new HubError("Bad request", 400); }]) {
+    const f = await phone(t);
+    const update = await yieldedUpdate(f);
+    const history = historyOf(f, "episode.mp3");
+    history.answer(refuse);
+    await f.replica.sync();
+    assert.equal(f.replica.error, null);
+    assert.equal(history.asked.length > 0, true, "the check was made");
+    assert.equal((await f.store.folders(f.replica.scope))[0].issue, null);
+    assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), update);
+    assert.deepEqual(partials(f), []);
+  }
+});
+
+test("a head with the same revision keeps the yielded download and resumes it from its partial", async (t) => {
+  const f = await phone(t);
+  const update = await yieldedUpdate(f);
+  const partial = partialOf(f, sha(update));
+  const kept = fs.statSync(partial).size;
+  const history = historyOf(f, "episode.mp3");
+  const write = f.files.write;
+  const offsets = [];
+  f.files.write = async (file, bytes, offset = 0) => {
+    if (file === partial) offsets.push(offset);
+    return write(file, bytes, offset);
+  };
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(history.asked.length, 1);
+  assert.equal(Math.min(...offsets), kept);
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), update);
+});
+
+test("a newer revision the hub has not published yet keeps the yielded download and resumes it from its partial", async (t) => {
+  const f = await phone(t);
+  const update = await yieldedUpdate(f);
+  const partial = partialOf(f, sha(update));
+  const kept = fs.statSync(partial).size;
+  const [row] = await f.store.applying(f.replica.scope, f.volume.id);
+  const history = historyOf(f, "episode.mp3");
+  history.answer(async () => ({ versions: [{ path: "episode.mp3", rev: row.rev + 50, deleted: 0, hash: "f".repeat(64), size: 9 }] }));
+  const discard = f.store.discard.bind(f.store);
+  const discarded = [];
+  f.store.discard = async (scope, dropped) => {
+    discarded.push(dropped.path);
+    return discard(scope, dropped);
+  };
+  const write = f.files.write;
+  const offsets = [];
+  f.files.write = async (file, bytes, offset = 0) => {
+    if (file === partial) offsets.push(offset);
+    return write(file, bytes, offset);
+  };
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(history.asked.length, 1);
+  assert.deepEqual(discarded, [], "the journal row is kept");
+  assert.equal(Math.min(...offsets), kept, "the download resumed from its partial");
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), update);
+});
+
+test("a first download interrupted in a folder's initial snapshot is not checked against newer revisions", async (t) => {
+  const f = await phone(t);
+  const first = crypto.randomBytes(CHUNK * 4 + 3);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), first);
+  await f.select();
+  await yieldMidDownload(f);
+  assert.ok(!(await f.store.folder(f.replica.scope, f.volume.id)).initialized, "the snapshot is still running");
+  assert.deepEqual(partials(f), [sha(first)]);
+  const newer = crypto.randomBytes(CHUNK + 5);
+  fs.writeFileSync(path.join(f.volume.path, "episode.mp3"), newer);
+  await f.daemon.engine.cycle();
+  const history = historyOf(f, "episode.mp3");
+  await f.replica.sync();
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(history.asked.length, 0, "the snapshot re-delivers the same revision, so asking saves nothing");
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), newer);
+  assert.deepEqual(partials(f), []);
+});
+
+test("a case-only rename on the hub during a yielded download keeps the download and makes no conflict copy", async (t) => {
+  const f = await phone(t);
+  const update = await yieldedUpdate(f, "Episode.mp3");
+  fs.renameSync(path.join(f.volume.path, "Episode.mp3"), path.join(f.volume.path, "episode.mp3"));
+  await f.daemon.engine.cycle();
+  await f.replica.sync();
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  await f.daemon.engine.cycle();
+  const phoneNames = fs.readdirSync(f.files.folder(f.replica.scope, f.volume.id));
+  assert.deepEqual(phoneNames.filter((name) => /conflict/.test(name)), []);
+  assert.deepEqual(fs.readdirSync(f.volume.path).filter((name) => /conflict/.test(name)), []);
+  assert.ok(phoneNames.includes("episode.mp3"));
+  assert.deepEqual(fs.readFileSync(f.work("episode.mp3")), update);
+  assert.deepEqual(fs.readFileSync(path.join(f.volume.path, "episode.mp3")), update);
 });
 
 function session() {

@@ -533,6 +533,13 @@ export class ReplicaStore {
     );
     return rows.map((row) => row.hash).filter(Boolean);
   }
+  async applyingHashes(scope) {
+    const rows = await this.db.getAllAsync(
+      "SELECT DISTINCT json_extract(row, '$.hash') AS hash FROM applying WHERE scope=?",
+      scope,
+    );
+    return rows.map((row) => row.hash).filter(Boolean);
+  }
   async issue(scope, id, message) {
     await this.db.runAsync(
       "UPDATE folders SET issue=? WHERE scope=? AND id=?",

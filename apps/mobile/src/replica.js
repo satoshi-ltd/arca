@@ -499,9 +499,6 @@ export class Replica {
       this.lastInventory.delete(id);
       this.inventoryDue.delete(id);
       await this.store.set(this.inventoryKey(id), 0);
-      const removedHashes = new Set(
-        (await this.store.rows(scope, id)).map((row) => row.hash),
-      );
       if (this.files.clearGalleryStage)
         await this.files.clearGalleryStage(scope, id);
       await this.files.removeFolder(scope, id);
@@ -509,7 +506,7 @@ export class Replica {
       await this.store.set(`journal:${scope}:${id}`, []);
       await this.store.set(removalKey, false);
       this.hashCache.clear();
-      await this.cleanTransferObjects(scope, removedHashes);
+      await this.cleanTransferObjects(scope);
       await publishMusic(this).catch(() => {});
     } catch (error) {
       if (await this.store.get(`removing:${this.scope}:${id}`, false))
@@ -526,8 +523,11 @@ export class Replica {
     }
   }
   // Working copies hold every file once; objects exist only while a transfer still needs them.
-  async cleanTransferObjects(scope, removedHashes = new Set()) {
-    const retained = new Set(await this.store.transferHashes(scope));
+  async cleanTransferObjects(scope) {
+    const retained = {
+      object: new Set(await this.store.transferHashes(scope)),
+      partial: new Set(await this.store.applyingHashes(scope)),
+    };
     for (const location of ["object", "partial"]) {
       const root = this.files.parent(
         this.files[location](scope, "0".repeat(64)),
@@ -536,8 +536,7 @@ export class Replica {
       for await (const entry of this.files.walk(root)) {
         if (
           /^[a-f0-9]{64}$/.test(entry.path) &&
-          !retained.has(entry.path) &&
-          (location === "object" || removedHashes.has(entry.path))
+          !retained[location].has(entry.path)
         ) {
           this.verified.delete(entry.uri);
           await this.files.remove(entry.uri);
@@ -1245,7 +1244,7 @@ export class Replica {
       throw error;
     }
   }
-  async recoverApplying(volume) {
+  async recoverApplying(volume, initialized) {
     const journaled = (await this.store.applying(this.scope, volume)).sort(
       (a, b) => b.path.localeCompare(a.path),
     );
@@ -1253,9 +1252,33 @@ export class Replica {
     const rows = await this.store.rows(this.scope, volume);
     let awaiting = false;
     for (const row of journaled)
-      if (await this.awaitsDownload(row, rows)) awaiting = true;
-      else await this.isolated(row, () => this.apply(row, true));
+      if (!(await this.awaitsDownload(row, rows)))
+        await this.isolated(row, () => this.apply(row, true));
+      else if (initialized && (await this.supersededOnHub(row)))
+        await this.store.discard(this.scope, row);
+      else awaiting = true;
     return awaiting;
+  }
+  async supersededOnHub(row) {
+    try {
+      if (!(await this.files.exists(this.files.partial(this.scope, row.hash))))
+        return false;
+      const { versions } = await this.client.api(
+        `/v1/history?${new URLSearchParams({ volume: row.volume, path: row.path, limit: "1" })}`,
+      );
+      const head = versions[0];
+      if (!(head?.rev > row.rev)) return false;
+      const { files } = await this.client.api(
+        `/v1/changes?${new URLSearchParams({ volume: row.volume, after: String(head.rev - 1), through: String(head.rev) })}`,
+      );
+      const published = files.find(
+        (other) => other.path === row.path && other.rev === head.rev,
+      );
+      return !!published && !(published.deleted && published.replacementPath);
+    } catch (error) {
+      if (isHubUnreachable(error) || this.syncAbort?.signal.aborted) throw error;
+      return false;
+    }
   }
   // Defer only when the working file still holds its acknowledged baseline, or is absent with no live row, so scan cannot propose an edit or deletion.
   async awaitsDownload(row, rows) {
@@ -1699,7 +1722,10 @@ export class Replica {
             });
           }
           this.policy = null;
-          const awaiting = await this.recoverApplying(folder.id);
+          const awaiting = await this.recoverApplying(
+            folder.id,
+            !!folder.initialized,
+          );
           await this.syncIgnore(folder);
           const journal = (await this.store.get(this.journalKey(folder.id), [])) || [];
           let scanned = false;

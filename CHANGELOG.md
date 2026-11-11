@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.17 — 2026-11-11
+
+- Stopping sync of a folder on the phone in the middle of a download no longer leaves the partly downloaded file taking up space until Erase, and a cycle removes any partial download nothing is resuming.
+- A download the hub has since replaced or deleted is abandoned instead of being finished before the newer version arrives.
+
+Needs: native build
+
 ## 0.9.16 — 2026-11-11
 
 - The tray popover no longer redraws itself every two seconds when nothing changed, so a failed Sync now, pause or Start service keeps its error on screen while the popover stays open, and keyboard focus stays on the control you were on.
