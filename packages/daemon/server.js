@@ -2902,7 +2902,7 @@ export async function start(home, options = {}) {
       if (engine.activity !== activity) lastActivity = Date.now();
     } catch (error) {
       engine.error = error.hubUnavailable ? HUB_UNAVAILABLE : error.message;
-      failures = Math.min(failures + 1, 5);
+      failures = error.folderOnly ? 0 : Math.min(failures + 1, 5);
       offline = !!(error.hubUnavailable || engine.hubUnavailable);
     } finally {
       running = false;
@@ -2937,10 +2937,22 @@ export async function start(home, options = {}) {
           !engine.paused &&
           s.db
             .prepare(
-              "SELECT 1 FROM sync_dirty d JOIN volumes v ON v.id=d.volume WHERE v.selected=1 LIMIT 1",
+              "SELECT DISTINCT d.volume FROM sync_dirty d JOIN volumes v ON v.id=d.volume WHERE v.selected=1",
             )
-            .get();
-        schedule(failures ? backoff : rerun || pending ? 1000 : normal);
+            .all()
+            .some(({ volume }) => !engine.folderBackoff.waiting(volume));
+        const due = engine.folderBackoff.due(
+          s.volumes().filter((v) => v.selected).map((v) => v.id),
+        );
+        schedule(
+          failures
+            ? backoff
+            : rerun || pending
+              ? 1000
+              : due
+                ? Math.min(normal, Math.max(1000, due - Date.now()))
+                : normal,
+        );
         rerun = false;
       }
     }
@@ -2969,6 +2981,7 @@ export async function start(home, options = {}) {
         res.once("finish", () => {
           if (res.statusCode < 300 && !stopping) {
             retryAt = 0;
+            engine.folderBackoff.clear();
             watchFolders();
             schedule(1000);
           }

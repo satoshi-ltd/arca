@@ -35,9 +35,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-UNREADABLE-FILE** — One file that cannot be read stops only itself
   `bug · agent · normal`
   A file held open exclusively on Windows, unreadable in Docker, changing during the scan or vanished mid-scan aborts the whole folder scan on every cycle, so nothing else in that folder syncs in either direction. Accept: a folder with one unreadable file syncs the others, reports that file, and never proposes it as deleted; an incomplete inventory is still never a deletion.
-- **SYNC-FOLDER-BACKOFF** — A folder in error backs off alone
-  `bug · agent · normal`
-  Any folder error fails the whole cycle and sets one backoff of up to five minutes that watcher and hub events do not bypass, so a persistent error in one folder (a symlink, a reserved name, a case collision) delays every other folder on that device. Accept: with folder X failing every cycle, an edit in folder Y reaches the hub within the normal event latency and only X backs off; SPEC's replica cadence says so.
 
 ## In progress
 

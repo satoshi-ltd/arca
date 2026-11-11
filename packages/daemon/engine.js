@@ -39,7 +39,7 @@ import {
   applyFolderRetention,
   releaseReplicaObjects,
 } from "./maintenance.js";
-import { ADDED_DATES_FEED, SyncWork, covers } from "./sync-work.js";
+import { ADDED_DATES_FEED, FolderBackoff, SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import { moveToTrash } from "./trash.js";
 import { fileHeld } from "./open-files.js";
@@ -120,6 +120,7 @@ export class Engine {
 
     this.scanner = new Scanner(this.store.home);
     this.work = new SyncWork(this.store);
+    this.folderBackoff = new FolderBackoff();
     this.activity = 0;
     this.folderStates = new Map();
     this.progress = null;
@@ -1022,6 +1023,7 @@ export class Engine {
       }
       const s = this.store;
       const folderErrors = [];
+      let deviceWide = false;
       if (this.config.role === "replica")
         for (const v of s.volumes().filter((v) => v.selected))
           try {
@@ -1115,6 +1117,11 @@ export class Engine {
               v.selected &&
               activeIds.has(v.id),
           )) {
+          const waiting = incremental && this.folderBackoff.waiting(v.id);
+          if (waiting) {
+            folderErrors.push(`${v.name}: ${waiting.message}`);
+            continue;
+          }
           try {
             this.folderStates.set(v.id, {
               state: "syncing",
@@ -1563,8 +1570,10 @@ export class Engine {
                     lastCompleted: new Date().toISOString(),
                   },
             );
-            if (issues.length)
+            if (issues.length) {
+              this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
               folderErrors.push(`${v.name}: ${this.folderStates.get(v.id).error}`);
+            } else this.folderBackoff.succeeded(v.id);
             const marker = this.config.catalog?.find(
               (folder) => folder.id === v.id,
             );
@@ -1579,6 +1588,7 @@ export class Engine {
               error: e.message,
               lastCompleted: v.last_sync,
             });
+            if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
             folderErrors.push(`${v.name}: ${e.message}`);
           }
         }
@@ -1670,7 +1680,10 @@ export class Engine {
       }
       if (folderErrors.length) {
         this.progress = null;
-        fail(folderErrors.join("; "), 409);
+        throw Object.assign(new Error(folderErrors.join("; ")), {
+          status: 409,
+          folderOnly: !deviceWide,
+        });
       }
       await warmHistory(this);
       this.warmViews?.();
@@ -2283,12 +2296,21 @@ export class Engine {
       // they target a different folder. Never commit a partial scan as deletions.
       this.checkSyncInterrupted();
     };
+    let deviceWide = false;
     for (const v of s
       .volumes()
       .filter((v) => v.selected && (!volume || v.id === volume))) {
       checkpoint();
+      const waiting = !volume && incremental && this.folderBackoff.waiting(v.id);
+      if (waiting) {
+        errors.push(`${v.name}: ${waiting.message}`);
+        continue;
+      }
       const plan = this.work.plan(v, incremental, paths);
-      if (plan.paths?.length === 0) continue;
+      if (plan.paths?.length === 0) {
+        if (!paths && !this.folderBackoff.waiting(v.id)) this.folderBackoff.succeeded(v.id);
+        continue;
+      }
       this.folderStates.set(v.id, {
         state: "scanning",
         lastCompleted: v.last_sync,
@@ -2363,6 +2385,8 @@ export class Engine {
               }
             : { state: "synced", lastCompleted: time },
         );
+        if (issues.length) this.folderBackoff.failed(v.id, { message: this.folderStates.get(v.id).error });
+        else if (!paths) this.folderBackoff.succeeded(v.id);
       } catch (e) {
         if (e.syncInterrupted) {
           this.folderStates.set(v.id, {
@@ -2376,10 +2400,15 @@ export class Engine {
           error: e.message,
           lastCompleted: v.last_sync,
         });
+        if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
         errors.push(`${v.name}: ${e.message}`);
       }
     }
-    if (errors.length) fail(errors.join("; "), 409);
+    if (errors.length)
+      throw Object.assign(new Error(errors.join("; ")), {
+        status: 409,
+        folderOnly: !deviceWide,
+      });
   }
   renameShare(id, name) {
     validPath(name);

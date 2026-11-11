@@ -638,7 +638,10 @@ test("missing marker or symlink stops scan without publishing deletions", async 
   await assert.rejects(hub.sync(), /Symlink/);
 });
 
-const incrementalCycle = (n) => n.engine.exclusive(() => n.engine.cycle({ incremental: true }));
+const incrementalCycle = (n) => {
+  n.engine.folderBackoff.clear();
+  return n.engine.exclusive(() => n.engine.cycle({ incremental: true }));
+};
 const linkAway = (n, v, name, root, as = name) => {
   const folder = n.engine.store.volume(v.id).path;
   const moved = path.join(root, `moved-${path.basename(name)}`);

@@ -134,3 +134,41 @@ export function normalDelay({ role, now, eventsAnsweredAt, unwatched, lastActivi
     ? IDLE_POLL_MS
     : ACTIVE_POLL_MS;
 }
+
+export const RETRY_MAX_MS = 300000;
+export const retryDelay = (failures) =>
+  Math.min(RETRY_MAX_MS, ACTIVE_POLL_MS * 2 ** failures);
+export const deviceWide = (error) =>
+  !!(
+    error?.hubUnavailable ||
+    error?.syncInterrupted ||
+    [401, 403, 412].includes(error?.status) ||
+    error?.code === "ENOSPC"
+  );
+export class FolderBackoff {
+  constructor() {
+    this.folders = new Map();
+  }
+  failed(id, error, message = error.message, now = Date.now()) {
+    if (deviceWide(error)) return false;
+    const failures = Math.min((this.folders.get(id)?.failures || 0) + 1, 5);
+    this.folders.set(id, { failures, message, at: now + retryDelay(failures) });
+    return true;
+  }
+  succeeded(id) {
+    this.folders.delete(id);
+  }
+  waiting(id, now = Date.now()) {
+    const entry = this.folders.get(id);
+    return entry && entry.at > now ? entry : null;
+  }
+  due(ids, now = Date.now()) {
+    const times = ids
+      .map((id) => this.folders.get(id)?.at)
+      .filter((at) => at > now);
+    return times.length ? Math.min(...times) : 0;
+  }
+  clear() {
+    this.folders.clear();
+  }
+}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.21 — 2026-11-11
+
+- A folder that keeps failing (a symlink, a reserved name, a case collision) now waits on its own before retrying, on the hub and on computers, so edits in your other folders still sync within seconds instead of waiting up to five minutes behind it. Sync now retries every folder at once.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.20 — 2026-11-11
 
 - Stopping Arca, by docker stop, a service manager or the desktop updater on macOS and Linux, now finishes within a few seconds even while a film is paused or a download is open: open connections are cut after two seconds, the index is closed cleanly and the lock released, and the bundled Compose file waits 15 seconds before killing the container.
