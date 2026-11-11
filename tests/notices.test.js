@@ -392,3 +392,16 @@ test("a pill leaves by itself, later when it has an action; a card with an actio
   const phone = fs.readFileSync(new URL("../apps/mobile/src/Notice.jsx", import.meta.url), "utf8");
   assert.match(phone, /createNoticeStore|noticeStore|noticeMetrics/, "the phone renders the shared contract");
 });
+
+test("a sentence that names an address stays readable, and only stack frames are tucked under Details", () => {
+  const sentence = "Could not reach a hub at http://casa:17831. Check the address and that the hub is running.";
+  const plain = errorNotice(sentence);
+  assert.equal(plain.title, "Could not complete action");
+  assert.equal(plain.body, sentence);
+  assert.ok(!plain.details);
+  for (const technical of ["boom\n    at Object.run (file:///app.js:1:1)", "RangeError: offset out of bounds", "POST /v1/connect refused"]) {
+    const hidden = errorNotice(technical);
+    assert.equal(hidden.body, "The operation stopped. Review the details and try again.", technical);
+    assert.ok(hidden.details, technical);
+  }
+});

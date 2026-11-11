@@ -642,6 +642,25 @@ test("the hub row offers Change address…, which saves the new address through 
   await until(() => /Hub address changed\. Syncing with Casa\./.test(ui.$("#notice").textContent));
 });
 
+test("Connect to hub… shows why an address could not be reached and keeps the dialog open", async (t) => {
+  const sentence = "Could not reach a hub at http://casa:17831. Check the address and that the hub is running.";
+  const ui = await boot(t, {
+    status: { ...replicaStatus(), hub: null, hubId: null, hubName: null, phase: "unlinked", volumes: [] },
+    answers: (path) => (path === "/v1/connect" ? failure(sentence, 503) : undefined),
+  });
+  await until(() => ui.$('[data-action="connect"]'));
+  await ui.click(ui.$('[data-action="connect"]'), () => ui.$("#dialog").open);
+  ui.$('#dialog [name="url"]').value = "http://casa:17831";
+  [..."123456"].forEach((digit, i) => (ui.$(`#dialog [data-code="pair"][data-digit="${i}"]`).value = digit));
+  ui.$("#submit-dialog").click();
+  await until(() => !ui.$("#dialog-error").hidden);
+  assert.equal(ui.$("#dialog-error .notice-content p").textContent, sentence, "the reason is the visible line, not hidden under Details");
+  assert.equal(ui.$("#dialog-error details"), null);
+  assert.ok(ui.$("#dialog").open, "the address and the code stay for another try");
+  assert.equal(ui.$('#dialog [name="url"]').value, "http://casa:17831");
+  assert.deepEqual(ui.posts.find(([path]) => path === "/v1/connect")[1], { url: "http://casa:17831", code: "123456", reconcile: false });
+});
+
 test("Disconnect… with the hub away, or when the hub does not answer, offers Disconnect anyway, which keeps local files", async (t) => {
   const away = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, route: "#/settings" });
   await until(() => hubRow(away));

@@ -8767,7 +8767,7 @@ test("the wizard sets up name and role on one page, says who each role is for an
   }
 });
 
-async function folderStep({ web = false, folders, setupFailures = 0, refuse = [] }) {
+async function folderStep({ web = false, folders, setupFailures = 0, refuse = [], connect = null }) {
   const gb = 1024 ** 3;
   const url = web ? "http://localhost" : "http://tauri.localhost";
   const w = new JSDOM(html, { runScripts: "outside-only", url }).window;
@@ -8778,7 +8778,7 @@ async function folderStep({ web = false, folders, setupFailures = 0, refuse = []
   let failures = setupFailures;
   const answer = async (route, body) => {
     if (route === "/v1/status") return { id: "mac", name: "studio", role: "replica", root: path.join("tmp", "arca"), hub: paired ? "http://casa" : null, needsSetup: !set, volumes: [] };
-    if (route === "/v1/connect") return (paired = true);
+    if (route === "/v1/connect") return connect ? connect(body) : (paired = true);
     if (route === "/v1/remote") return { name: "Casa", volumes: folders };
     if (route.startsWith("/v1/setup-info")) return { root: path.join("tmp", "arca"), freeBytes: 30 * gb };
     if (route === "/v1/setup" && body?.onboarding) return {};
@@ -8825,6 +8825,10 @@ async function folderStep({ web = false, folders, setupFailures = 0, refuse = []
   w.document.querySelector('[name="url"]').value = "http://casa";
   [..."123456"].forEach((digit, i) => (w.document.querySelector(`[data-code="onboarding"][data-digit="${i}"]`).value = digit));
   submit();
+  if (connect) {
+    await until(() => w.document.querySelector("#setup-error") && !w.document.querySelector("#setup-error").hidden && idle());
+    return { w };
+  }
   await until(() => w.document.querySelector("#setup-folders") && /free/.test(w.document.querySelector("#setup-space").textContent) && idle());
   const rows = () => [...w.document.querySelectorAll("#setup-folders .setting-row")];
   return {
@@ -8845,6 +8849,22 @@ const hubFolders = (gb) => [
   { id: "pho", name: "photos", gallery: true, files: 3598, bytes: 13.4 * gb },
   { id: "doc", name: "documents", files: 183, bytes: 0.2 * gb },
 ];
+
+test("the first-run wizard shows in place why a hub address could not be reached and keeps what was typed", async () => {
+  const sentence = "Could not reach a hub at http://casa. Check the address and that the hub is running.";
+  const ui = await folderStep({
+    folders: [],
+    connect: () => {
+      throw new Error(sentence);
+    },
+  });
+  const page = ui.w.document;
+  assert.equal(page.querySelector("#setup-error .notice-content p").textContent, sentence);
+  assert.equal(page.querySelector("#setup-error details"), null);
+  assert.equal(page.querySelector('[name="url"]').value, "http://casa");
+  assert.equal(page.querySelector("#setup-folders"), null, "the wizard stays on the hub step");
+  ui.w.close();
+});
 
 test("a replica's Folders step lists the hub's folders by kind, Audio kept and Movies & TV streamed by default, and starts the chosen ones", async () => {
   const ui = await folderStep({ folders: hubFolders(1024 ** 3) });

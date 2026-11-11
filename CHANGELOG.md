@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.5 — 2026-11-11
+
+- Connecting a computer to a hub with a mistyped address, or while the hub is off, now says “Could not reach a hub at <address>. Check the address and that the hub is running.” instead of “Internal error”, and an address that belongs to some other server says the same instead of blaming the pairing code.
+- Error messages that name an address, such as that one or Change address's, are shown as written on the desktop, the web and the phone; they used to be replaced by “The operation stopped. Review the details and try again.” with the reason folded under Details.
+
+Needs: desktop build · native build · hub redeploy · server replica redeploy
+
 ## 0.9.4 — 2026-11-11
 
 - A folder the hub has stopped syncing here, or whose directory the hub cannot reach, can no longer be set up as a Movies & TV library; the dialog says what to do first. Before, the hub accepted it and its next hourly maintenance removed its only copy of that folder's files older than a day.

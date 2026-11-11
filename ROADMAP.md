@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **UX-CONNECT-ERROR** — A mistyped or unreachable hub address says what is wrong
-  `bug · agent · high`
-  `/v1/connect` fetches the hub's `/pair` with no catch, so a closed port or a wrong address answers 500 "Internal error" in the first-run wizard and in Connect to hub; Change address already answers "Could not reach a hub at …". Accept: `/v1/connect` against a closed port answers 503 with that sentence, and a DOM test sees it in the Connect dialog.
 - **UX-DESK-DELETE-COPY** — Deleting photos on a computer no longer promises that originals stay in Photos
   `bug · agent · high`
   The desktop and web confirmation reuses the phone's sentence ("Originals stay in Photos"), which is false where the synced folder holds the originals, and says "photos" for videos, as does the result notice. Accept: the desktop confirmation states that the files leave every synced copy and how recovery depends on retention, counts videos as videos, and the kit pages draw the new text; a DOM test pins it.
@@ -341,6 +338,12 @@ No measurements: counts of statements and calls are traced, times are estimates.
 
 Defects against SPEC §9 first, then ideas that add or change a control and need the maintainer's yes (and a board when they are visible).
 
+- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
+  `bug · agent · normal`
+  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
+- **UX-WEB-401-LOGOUT** — A hub's refusal of a pairing code does not sign the web administrator out
+  `bug · agent · normal`
+  In the web UI of a server replica, a 401 passed through from `/v1/connect` (a wrong or used code, a refused credential) is taken for the browser session ending and shows the sign-in page. Traced, not run. Accept: only a 401 about the browser's own session shows sign-in; the hub's refusal appears in the Connect dialog, with a DOM test.
 - **UX-VIEWER-ERRORS** — Errors and "Needs the hub" explanations are visible in the photo viewer
   `bug · agent · normal`
   The viewer is the modal dialog at full height: an action's error is written below the window and its result notice lands under the modal layer and expires unseen. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's visible box, and a result notice is shown above the viewer, with DOM tests.
@@ -362,6 +365,9 @@ Defects against SPEC §9 first, then ideas that add or change a control and need
 - **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
   `bug · agent · low`
   Today the whole dialog scrolls and no dialog pins its action row. Accept: dialogs whose content outgrows the window (Choose folders, Add to playlist, the Erase path list, Pair a device, the conflict dialog) scroll their body while the title and the action row stay visible at the 620 px minimum height; a DOM test fills a dialog past the window height.
+- **UX-NOTICE-REDACTION** — Redacting credentials in a notice does not mangle host names
+  `bug · agent · low`
+  `safeDetails` treats `code:`, `token:`, `secret:` and `password:` as credential fields, so an address whose host ends in one of those words (`http://vscode:8080`) is shown as `[redacted]`. Accept: redaction applies to key and value pairs, not to a host and port, with a notice-contract test.
 - **UX-DESK-COPY** — Dialog titles and Restore follow the copy rules
   `bug · agent · low`
   "Create a shared folder on hub <name>" and "Path on <name>" use the hub's configured name; "Stop syncing on this hub?" does not name the folder; Connect stacks three hints under one field; Restore's title and prose say "rev" and "sha" and the full path. Accept: the three titles follow SPEC's rules, one hint per field, Restore reads `Restore “name”?` with no `rev` or `sha` in prose (the mono row value stays), and the kit pages match.

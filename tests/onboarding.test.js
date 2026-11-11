@@ -136,3 +136,101 @@ test("pairing expires and concurrent redemption issues only one credential", asy
     1,
   );
 });
+
+async function unpaired(t) {
+  const root = state(),
+    home = path.join(root, "state");
+  init(home, { role: "replica", port: 0, onboarding: true });
+  const replica = await start(home, { timer: false });
+  t.after(async () => {
+    await replica.close();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  return replica;
+}
+
+test("connecting to an address where nothing answers says the hub could not be reached", async (t) => {
+  const replica = await unpaired(t);
+  const closed = http.createServer();
+  await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${closed.address().port}`;
+  await new Promise((resolve) => closed.close(resolve));
+  for (const body of [
+    { url: origin, code: "001002" },
+    { url: origin, token: "a".repeat(64) },
+  ]) {
+    const response = await post(replica, "/v1/connect", body);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: `Could not reach a hub at ${origin}. Check the address and that the hub is running.`,
+    });
+  }
+  assert.ok(!replica.engine.config.hub, "nothing is saved");
+});
+
+test("connecting to another kind of server says the hub could not be reached, not that the code expired", async (t) => {
+  const replica = await unpaired(t);
+  for (const [status, text] of [
+    [404, "<html>Not found</html>"],
+    [200, "<html>Welcome</html>"],
+    [500, JSON.stringify({ message: "boom" })],
+  ]) {
+    const other = http.createServer((req, res) => {
+      res.statusCode = status;
+      res.end(text);
+    });
+    await new Promise((resolve) => other.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${other.address().port}`;
+    try {
+      const response = await post(replica, "/v1/connect", { url: origin, code: "001002" });
+      assert.equal(response.status, 503, `${status}`);
+      assert.equal((await response.json()).error, `Could not reach a hub at ${origin}. Check the address and that the hub is running.`);
+    } finally {
+      await new Promise((resolve) => other.close(resolve));
+    }
+  }
+});
+
+test("a hub that refuses the pairing code still gives its own reason", async (t) => {
+  const replica = await unpaired(t);
+  const hub = http.createServer((req, res) => {
+    res.statusCode = 401;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Pairing code expired, already used or refused" }));
+  });
+  await new Promise((resolve) => hub.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => hub.close(resolve)));
+  const response = await post(replica, "/v1/connect", { url: `http://127.0.0.1:${hub.address().port}`, code: "001002" });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "Pairing code expired, already used or refused");
+});
+
+test("a mistyped private address says the hub could not be reached, with the address as typed minus its slash", async (t) => {
+  const replica = await unpaired(t);
+  const real = globalThis.fetch;
+  globalThis.fetch = (input, init) =>
+    String(input).startsWith("http://192.168.77.9:17831")
+      ? Promise.reject(Object.assign(new TypeError("fetch failed"), { cause: { code: "EHOSTUNREACH" } }))
+      : real(input, init);
+  t.after(() => (globalThis.fetch = real));
+  const response = await post(replica, "/v1/connect", { url: "http://192.168.77.9:17831/", code: "001002" });
+  assert.equal(response.status, 503);
+  assert.equal(
+    (await response.json()).error,
+    "Could not reach a hub at http://192.168.77.9:17831. Check the address and that the hub is running.",
+  );
+});
+
+test("a refusal with an empty reason is not taken for a hub's answer", async (t) => {
+  const replica = await unpaired(t);
+  const other = http.createServer((req, res) => {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ error: "" }));
+  });
+  await new Promise((resolve) => other.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => other.close(resolve)));
+  const origin = `http://127.0.0.1:${other.address().port}`;
+  const response = await post(replica, "/v1/connect", { url: origin, code: "001002" });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, `Could not reach a hub at ${origin}. Check the address and that the hub is running.`);
+});

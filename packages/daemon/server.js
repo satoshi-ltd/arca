@@ -161,6 +161,21 @@ export async function start(home, options = {}) {
   }
   const webEnabled = config.installation !== "desktop";
   const network = new Network(engine, options.network);
+  const unreachable = (origin) =>
+    fail(`Could not reach a hub at ${origin}. Check the address and that the hub is running.`, 503);
+  const reach = async (address, work) => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error.status) throw error;
+      let origin = address;
+      try {
+        origin = new URL(address).origin;
+      } catch {}
+      console.error(`Hub at ${origin} not reached: ${error.cause?.code || error.name}`);
+      unreachable(origin);
+    }
+  };
   const hubAddress = async (b) => {
     let remote;
     try {
@@ -2503,16 +2518,6 @@ export async function start(home, options = {}) {
             fail("Only a device connected to a hub can change its address", 409);
           if (b.confirmed !== true) fail("Confirm the new hub address first", 400);
           engine.interruptCycle();
-          const unreachable = (origin) =>
-            fail(`Could not reach a hub at ${origin}. Check the address and that the hub is running.`, 503);
-          const reach = async (origin, work) => {
-            try {
-              return await work();
-            } catch (error) {
-              if (error.status) throw error;
-              unreachable(origin);
-            }
-          };
           const remote = await reach(b.url, () => hubAddress(b));
           const hub = config.hub;
           const older = (name) =>
@@ -2581,24 +2586,23 @@ export async function start(home, options = {}) {
               "Use replacement-hub reconciliation to preserve existing folders",
               409,
             );
-          const remote = await hubAddress(b);
+          const remote = await reach(b.url, () => hubAddress(b));
           if (b.code) {
-            const paired = await fetch(`${remote.origin}/pair`, {
-              redirect: "error",
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: b.code, name: config.name }),
-              signal: AbortSignal.timeout(10000),
-            });
-            if (!paired.ok) {
-              const failure = await paired.json().catch(() => ({}));
-              fail(
-                failure.error ||
-                  "Pairing code expired, already used or refused",
-                paired.status,
-              );
-            }
-            const issued = await paired.json();
+            const paired = await reach(remote.origin, () =>
+              fetch(`${remote.origin}/pair`, {
+                redirect: "error",
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code: b.code, name: config.name }),
+                signal: AbortSignal.timeout(10000),
+              }),
+            );
+            const answer = await paired.json().catch(() => null);
+            // Every answer of a hub's /pair is JSON, and its refusals carry an error: anything else is another server.
+            if (!answer || (!paired.ok && (typeof answer.error !== "string" || !answer.error)))
+              unreachable(remote.origin);
+            if (!paired.ok) fail(answer.error, paired.status);
+            const issued = answer;
             if (
               !/^[a-f0-9]{64}$/.test(issued.token || "") ||
               typeof issued.hubId !== "string"
@@ -2620,7 +2624,7 @@ export async function start(home, options = {}) {
           }
           if (!/^[a-f0-9]{64}$/.test(b.token || ""))
             fail("Invalid device token");
-          const catalog = await hubCatalog(remote.origin, b.token);
+          const catalog = await reach(remote.origin, () => hubCatalog(remote.origin, b.token));
           await authorizedWork(() => {
             const prior = config.hub || config.disconnectedHub;
             if (

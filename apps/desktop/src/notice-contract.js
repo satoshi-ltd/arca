@@ -1,4 +1,6 @@
 // Platform-neutral notice data. Renderers own interaction and OS presentation.
+// The stack-frame form only: prose such as “a hub at http://…” must stay readable in the notice body.
+const TECHNICAL = /Error:|E_[A-Z_]+|\bGET |\bPOST |^\s+at \S/m;
 export const noticeMetrics = Object.freeze({
   width: 360,
   icon: 16,
@@ -109,7 +111,7 @@ export function errorNotice(
   const storage = /not enough storage|no space left on device|\bENOSPC\b/i.test(
     details,
   );
-  const technical = /Error:|E_[A-Z_]+|\bGET |\bPOST |\bat /m.test(details);
+  const technical = TECHNICAL.test(details);
   return {
     id,
     kind: "error",
@@ -143,7 +145,7 @@ export function errorNotice(
       offline ||
       revoked ||
       forbidden ||
-      /Error:|E_[A-Z_]+|\bGET |\bPOST |\bat /m.test(details)
+      TECHNICAL.test(details)
         ? details
         : message && message !== details
           ? details
