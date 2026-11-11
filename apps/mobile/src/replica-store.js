@@ -799,6 +799,15 @@ export class ReplicaStore {
     );
     return found ? JSON.parse(found.row) : null;
   }
+  async holdsFiles(scope, volume) {
+    return !!(await this.db.getFirstAsync(
+      `SELECT 1 FROM files WHERE scope=? AND volume=?
+         AND COALESCE(json_extract(row, '$.deleted'), 0)=0
+         AND COALESCE(json_extract(row, '$.unapplied'), 0)=0 LIMIT 1`,
+      scope,
+      volume,
+    ));
+  }
   async rows(scope, volume) {
     return (
       await this.db.getAllAsync(

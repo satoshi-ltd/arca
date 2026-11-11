@@ -460,10 +460,11 @@ test("selecting a folder needs its size plus headroom free, not twice its size",
   const selected = [];
   const phone = (free) => ({
     scope: "hub",
-    files: { free: async () => free, mkdir: async () => {}, folder: () => "/f" },
-    store: { get: async () => false, selectionBytes: async () => [], select: async (scope, volume) => selected.push(volume.id) },
+    files: { free: async () => free, mkdir: async () => {}, exists: async () => false, folder: () => "/f" },
+    store: { get: async () => false, selectionBytes: async () => [], holdsFiles: async () => false, select: async (scope, volume) => selected.push(volume.id) },
     client: { state: () => ({ catalog: { volumes: [] } }) },
     requireActiveReplica: async () => {},
+    requireRoot: Replica.prototype.requireRoot,
     space: Replica.prototype.space,
     changed() {},
   });

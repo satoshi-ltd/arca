@@ -657,3 +657,180 @@ test("a playlist written on the phone makes its folder's inventory due, in memor
   assert.equal(f.replica.lastInventory.has(f.volume.id), false);
   assert.equal(await f.store.get(key, 0), 0);
 });
+
+const hubFiles = (f) =>
+  fs.readdirSync(f.volume.path).filter((name) => !name.startsWith(".arca")).sort();
+
+const vanished = async (t) => {
+  const f = await phone(t);
+  for (const name of ["a.txt", "b.txt", "c.txt"]) fs.writeFileSync(path.join(f.volume.path, name), name);
+  await f.select();
+  await f.replica.sync(true);
+  assert.equal(f.replica.error, null);
+  const root = f.files.folder(f.replica.scope, f.volume.id);
+  fs.rmSync(root, { recursive: true, force: true });
+  return { f, root };
+};
+
+test("a folder whose directory vanished stops with its reason instead of pulling into a new one and deleting the rest", async (t) => {
+  const { f, root } = await vanished(t);
+  fs.writeFileSync(path.join(f.volume.path, "new.txt"), "new");
+  await f.daemon.engine.cycle();
+  await f.replica.sync(false, { scheduled: true });
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false, "the pull did not recreate the directory");
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt", "new.txt"]);
+});
+
+test("saving a file into a folder whose directory vanished is refused and deletes nothing on the hub", async (t) => {
+  const { f, root } = await vanished(t);
+  const source = path.join(path.dirname(f.volume.path), "incoming.bin");
+  fs.writeFileSync(source, "shared from another app");
+  await assert.rejects(f.replica.importFile(f.volume.id, "shared.txt", source), /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt"]);
+});
+
+test("a playlist edit in a folder whose directory vanished is refused and deletes nothing on the hub", async (t) => {
+  const { f, root } = await vanished(t);
+  await fetch(`http://127.0.0.1:${f.daemon.port}/v1/music/mark`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${f.daemon.engine.config.adminToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ volume: f.volume.id }),
+  });
+  await f.client.refresh();
+  f.files.staged = (target) => path.join(path.dirname(target), `.arca-copy-${crypto.randomUUID()}`);
+  await assert.rejects(f.replica.createPlaylist(f.volume.id, "Road trip", "a.txt"), /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt"]);
+});
+
+test("a folder that holds no files yet gets its missing directory back and syncs", async (t) => {
+  const f = await phone(t);
+  await f.select();
+  await f.replica.sync(true);
+  const root = f.files.folder(f.replica.scope, f.volume.id);
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.writeFileSync(path.join(f.volume.path, "first.txt"), "first");
+  await f.daemon.engine.cycle();
+  await f.replica.sync(true);
+  assert.equal(f.replica.error, null);
+  assert.equal(fs.readFileSync(f.work("first.txt"), "utf8"), "first");
+});
+
+test("a directory that vanishes in the middle of a pull is not recreated by the files that follow", async (t) => {
+  const f = await phone(t);
+  for (const name of ["a.txt", "b.txt", "c.txt"]) fs.writeFileSync(path.join(f.volume.path, name), name);
+  await f.select();
+  await f.replica.sync(true);
+  const root = f.files.folder(f.replica.scope, f.volume.id);
+  fs.writeFileSync(path.join(f.volume.path, "new1.txt"), "new one");
+  fs.writeFileSync(path.join(f.volume.path, "new2.txt"), "new two");
+  await f.daemon.engine.cycle();
+  const download = f.replica.download.bind(f.replica);
+  let removed = false;
+  f.replica.download = async (...args) => {
+    const object = await download(...args);
+    if (!removed) {
+      removed = true;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+    return object;
+  };
+  await f.replica.sync(false, { scheduled: true });
+  assert.equal(removed, true);
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.doesNotMatch(f.replica.error, /Could not sync/, "the folder stops as a whole, not file by file");
+  assert.equal(fs.existsSync(root), false);
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.equal(fs.existsSync(root), false);
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt", "new1.txt", "new2.txt"]);
+});
+
+test("an album-linked folder that never finished its first sync does not get a vanished directory back while it holds files", async (t) => {
+  const { f, root } = await vanished(t);
+  await f.store.setGallery(f.replica.scope, f.volume.id, { mode: "source", enabled: false, albums: [] });
+  await f.store.db.runAsync("UPDATE folders SET initialized=0 WHERE id=?", f.volume.id);
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt"]);
+});
+
+test("selecting again a folder whose directory vanished is refused, and Stop syncing then Start syncing downloads it again", async (t) => {
+  const { f, root } = await vanished(t);
+  const offered = () => f.client.state().catalog.volumes.find((v) => v.id === f.volume.id);
+  await assert.rejects(f.replica.select(offered()), /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  await f.replica.unselect(f.volume.id);
+  await f.replica.select(offered());
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.equal(f.replica.error, null);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => /\.txt$/.test(name)).sort(), ["a.txt", "b.txt", "c.txt"]);
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt"]);
+});
+
+test("a folder whose directory vanished does not stop another folder from syncing", async (t) => {
+  const { f } = await vanished(t);
+  const other = f.daemon.engine.store.addVolume("Notes");
+  fs.writeFileSync(path.join(other.path, "note.txt"), "note");
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  await f.replica.select(f.client.state().catalog.volumes.find((v) => v.id === other.id));
+  await f.replica.sync(true);
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, other.id, "note.txt"), "utf8"), "note");
+});
+
+test("a directory that vanishes between a file's check and its own subdirectory is not recreated by that file", async (t) => {
+  const f = await phone(t);
+  for (const name of ["a.txt", "b.txt", "c.txt"]) fs.writeFileSync(path.join(f.volume.path, name), name);
+  await f.select();
+  await f.replica.sync(true);
+  const root = f.files.folder(f.replica.scope, f.volume.id);
+  fs.mkdirSync(path.join(f.volume.path, "sub"));
+  fs.writeFileSync(path.join(f.volume.path, "sub", "deep.txt"), "deep");
+  await f.daemon.engine.cycle();
+  const current = f.store.current.bind(f.store);
+  f.store.current = async (scope, volume, name) => {
+    if (name === "sub/deep.txt") fs.rmSync(root, { recursive: true, force: true });
+    return current(scope, volume, name);
+  };
+  await f.replica.sync(false, { scheduled: true });
+  f.store.current = current;
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.equal(fs.existsSync(root), false);
+  assert.deepEqual(hubFiles(f), ["a.txt", "b.txt", "c.txt", "sub"]);
+});
+
+test("a folder whose index holds only its .arcaignore still stops when its directory vanished", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), "*.tmp\n");
+  await f.select();
+  await f.replica.sync(true);
+  assert.equal(f.replica.error, null);
+  const root = f.files.folder(f.replica.scope, f.volume.id);
+  fs.rmSync(root, { recursive: true, force: true });
+  await f.replica.sync(true);
+  await f.daemon.engine.cycle();
+  assert.match(f.replica.error, /Local folder is unavailable/);
+  assert.equal(fs.existsSync(root), false);
+  assert.equal(fs.readFileSync(path.join(f.volume.path, ".arcaignore"), "utf8"), "*.tmp\n");
+});

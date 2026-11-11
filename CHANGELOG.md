@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 — 2026-11-11
+
+- On the phone, a synced folder whose directory disappears (for example, removed in the iPhone's Files app) now stops with “Local folder is unavailable. Stop syncing this folder and start it again to download it.” Before, the next download or shared file recreated it empty, and every file it had held was then deleted on the hub and on every other device.
+
+Needs: native build
+
 ## 0.9.0 — 2026-11-11
 
 - A file saved to Arca on the phone from another app now uploads on the next sync even when you went back to the other app right away or the hub was away; before, it could stay on the phone for up to six hours. The same holds for files and photos you add, rename or delete on the phone and for playlist edits.

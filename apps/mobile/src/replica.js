@@ -43,6 +43,11 @@ export const VERIFY_MS = 3000;
 export const OFFLINE_HOLD_MS = 5 * 60000;
 export const PROGRESS_MS = 1000;
 const WEEK = 7 * 86400000;
+const missingRoot = () =>
+  Object.assign(
+    new Error("Local folder is unavailable. Stop syncing this folder and start it again to download it."),
+    { code: "MISSING_ROOT" },
+  );
 export const reverifyAfter = (hash) =>
   WEEK + ((parseInt(String(hash).slice(0, 8), 16) || 0) % WEEK);
 const blockTimeout = (length) => 15000 + Math.ceil(length / 32768) * 1000;
@@ -114,6 +119,18 @@ export class Replica {
   }
   inventoryKey(folderId) {
     return `inventory:${this.scope}:${folderId}`;
+  }
+  // Recreating the root of a folder that holds indexed files would let the next scan propose them all as deleted.
+  async requireRoot(volume) {
+    const root = this.files.folder(this.scope, volume);
+    if (await this.files.exists(root)) return;
+    if (await this.store.holdsFiles(this.scope, volume)) throw missingRoot();
+    await this.files.mkdir(root);
+  }
+  // Recursive mkdir would recreate a vanished root: check it in the same step as every creation below it.
+  async mkdirInside(volume, directory) {
+    if (!(await this.files.exists(this.files.folder(this.scope, volume)))) throw missingRoot();
+    await this.files.mkdir(directory);
   }
   // Call before the local write: a process killed between the two must still scan on its next cycle.
   async inventoryNow(volume) {
@@ -334,7 +351,7 @@ export class Replica {
       const folders = await this.store.selectionBytes(this.scope);
       const required = neededBytes(volume, folders, this.client.state().catalog?.volumes || []);
       await this.space(required);
-      await this.files.mkdir(this.files.folder(this.scope, volume.id));
+      await this.requireRoot(volume.id);
       await this.store.select(this.scope, volume);
       const modes = await videoModes(this);
       if (modes[volume.id]) {
@@ -814,8 +831,7 @@ export class Replica {
     const excluded = (name) =>
       builtinExcluded(name) || (name !== ".arcaignore" && policy.ignores(name));
     // A missing root is not a deletion of every file.
-    if (!(await this.files.exists(root)))
-      throw new Error("Local folder is unavailable");
+    if (!(await this.files.exists(root))) throw missingRoot();
     const sweep = this.force || !this.swept.has(folder.id);
     const included = [];
     const tombstoned = [];
@@ -1028,6 +1044,7 @@ export class Replica {
       this.policy?.ignores(row.path + (row.directory ? "/" : ""))
     )
       return;
+    if (!(await this.files.exists(this.files.folder(this.scope, row.volume)))) throw missingRoot();
     const current = await this.store.current(this.scope, row.volume, row.path);
     // Resumed snapshots predate rows pushed since; the change feed after `through` delivers them.
     if (current && row.rev < current.rev) {
@@ -1062,7 +1079,7 @@ export class Replica {
               `Both spellings exist: ${alias.path} and ${row.path}. Rename one before retrying.`,
             );
           if (oldExact) {
-            await this.files.mkdir(this.files.parent(target));
+            await this.mkdirInside(row.volume, this.files.parent(target));
             await this.files.move(source, target);
             this.touch(row.volume);
           }
@@ -1101,7 +1118,7 @@ export class Replica {
       if (row.deleted) {
         if (exists && (await this.removeDirectory(target))) this.touch(row.volume);
       } else {
-        await this.files.mkdir(target);
+        await this.mkdirInside(row.volume, target);
         if (!exists) this.touch(row.volume);
       }
       await this.store.applied(this.scope, row);
@@ -1132,7 +1149,7 @@ export class Replica {
     try {
       if (staged) {
         const pulling = this.pulling;
-        await this.files.mkdir(this.files.parent(target));
+        await this.mkdirInside(row.volume, this.files.parent(target));
         await this.files.remove(temp);
         const placed = pulling?.placed.get(row.hash);
         const source =
@@ -1260,7 +1277,7 @@ export class Replica {
       await work();
     } catch (error) {
       if (
-        ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED"].includes(
+        ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED", "MISSING_ROOT"].includes(
           error?.code,
         ) ||
         isHubUnreachable(error) ||
@@ -1656,9 +1673,9 @@ export class Replica {
           if (remote.policyError) throw new Error(remote.policyError);
           const album = galleryConfig(folder);
           if (album?.mode === "damaged") throw new Error(album.issue);
-          if (album && (!folder.initialized || album.mode === "converting"))
+          if (album?.mode !== "converting") await this.requireRoot(folder.id);
+          else {
             await this.files.mkdir(this.files.folder(this.scope, folder.id));
-          if (album?.mode === "converting") {
             // Recover an interrupted removal from the previous build before scanning:
             // missing working files must not be proposed as shared deletions.
             for (const row of await this.store.rows(this.scope, folder.id))
@@ -1823,6 +1840,7 @@ export class Replica {
     }
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Start syncing this folder first");
+    await this.requireRoot(volume);
     const size = (await this.files.stat(source)).size;
     await this.space(size * 2);
     const incoming = await this.fingerprint(source, volume);
@@ -1851,7 +1869,7 @@ export class Replica {
       throw new Error("Too many conflicting copies of this file already exist.");
     await this.inventoryNow(volume);
     await this.files.clearStaged(this.files.parent(destination));
-    await this.files.mkdir(this.files.parent(destination));
+    await this.mkdirInside(volume, this.files.parent(destination));
     await this.files.copy(source, destination);
     this.changed();
   }
@@ -1956,7 +1974,7 @@ export class Replica {
     const target = this.files.work(this.scope, volume, path);
     const staged = this.files.staged(target);
     await this.inventoryNow(volume);
-    await this.files.mkdir(this.files.parent(target));
+    await this.mkdirInside(volume, this.files.parent(target));
     try {
       await this.files.write(staged, new TextEncoder().encode(text));
       await this.files.replace(staged, target);
@@ -1982,6 +2000,7 @@ export class Replica {
       if (!folder?.selected) throw new Error("Start syncing this folder first");
       if (!isMusicFolder(this.client.state().catalog, volume))
         throw new Error("Playlists belong to music folders.");
+      await this.requireRoot(volume);
       if ((await folderExclusion(this, volume))(path))
         throw new Error("Excluded files cannot be edited here.");
       const result = await work();

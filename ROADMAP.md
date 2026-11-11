@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **MOB-ROOT-VANISHED** — A phone folder whose directory vanished is never read as every file deleted
-  `bug · agent · high`
-  The inventory refuses a missing root, but `apply`, `importFile`, `writePlaylist` and the album branch recreate it first, after which the scan proposes every indexed file as deleted. Reproduced with scratch tests: one pulled file, or one share into the vanished folder, emptied the hub's copy. Accept: a folder with index rows and no root reports "Local folder is unavailable" before recovery, pull, import or playlist writes, nothing recreates the root, and both reproductions leave the hub's files intact.
 - **SYNC-SYMLINK-SCOPED** — A synced path that becomes a symlink stops the folder instead of deleting it everywhere
   `bug · agent · high`
   An incremental scan reads a symlinked path as absent (`hasExactPath`), so the hub tombstones every row under it and a replica proposes the deletions, while a full scan stops with "Symlink requires attention". Moving a synced directory to another disk and leaving a link deletes it on every device. Accept: replacing a synced file and a synced directory with a symlink, then an incremental cycle on a hub and on a replica, records no tombstone or deletion proposal and reports the same error as the full scan.
@@ -126,7 +123,7 @@ Each carries a recommendation; a yes or no is enough.
   Today folders without a stored choice default to 30 days, galleries included; Movies & TV has no history. Off removes the only backstop for a false deletion or overwrite, so decide it after the Data safety tasks below, or prefer a short non-zero default. If changed: every existing folder first gets its effective retention written explicitly, new folders, the catalog and settings apply the new default, tests cover implicit and explicit policies, and SPEC is updated.
 - **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
   `decision · maintainer · normal`
-  `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit, show app-owned state JSON, and let a person delete a synced folder's directory (the trigger of MOB-ROOT-VANISHED). Keep and document, or disable.
+  `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit, show app-owned state JSON, and let a person delete a synced folder's directory, which stops that folder with “Local folder is unavailable” until it is started again. Keep and document, or disable.
 - **DEC-IOS-KEYCHAIN** — May iPhone background sync read the hub credential while the phone is locked?
   `decision · maintainer · normal`
   The credential is stored `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so a background task that starts on a locked phone cannot load it and ends as failed. Recommendation: after-first-unlock, this device only, re-saved once, with a test pinning the option; NAT-IOS-BACKGROUND-DOWNLOAD needs it.
@@ -175,6 +172,9 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 
 ### Data safety
 
+- **MOB-CONVERTING-RECONFIG** — Changing an album during an interrupted repair keeps the repair
+  `bug · agent · normal`
+  `gallery.js` writes `mode: damaged ? "converting" : "source"`, so saving Change album… while the record is already `converting` flips it to `source` before the missing indexed files were restored, and the next scan proposes them as deleted. Traced, not reproduced. Accept: a save while the mode is `converting` keeps `converting`, with a test that interrupts the repair, changes the album and sees every indexed file restored and no deletion proposed.
 - **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
   `bug · agent · normal`
   The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT), where a same-timestamp edit is legitimate, keep today's behaviour unless the maintainer says otherwise at approval.
