@@ -258,6 +258,10 @@ export function syncDirectory(directory) {
     fs.closeSync(fd);
   }
 }
+const scopeTerms = (requested) => {
+  const scope = validPath(requested);
+  return [scope, scope.toLowerCase(), scope.replace(/[!%_]/g, (c) => "!" + c) + "/%"];
+};
 export function atomic(file, data, mode = 0o600) {
   if (!fs.existsSync(path.dirname(file)))
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -516,6 +520,9 @@ export class Store {
       this.db.exec("ALTER TABLE pending ADD COLUMN side TEXT");
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
+    );
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS local_files_volume_path_key ON local_files(volume,path_key)",
     );
   }
   forgetDevice(id) {
@@ -1205,17 +1212,20 @@ export class Store {
     const excluded = this.ignoreRules(v);
     const names = new Map();
     const unicodeNames = new Map();
-    // Include indexed names outside a partial scan to detect portable collisions.
-    if (scopes !== null)
-      for (const row of this.db
-        .prepare("SELECT path FROM files WHERE volume=? AND deleted=0")
-        .all(v.id)) {
-        const parts = row.path.split("/");
-        for (let i = 1; i <= parts.length; i++) {
-          const name = parts.slice(0, i).join("/");
-          names.set(name.toLowerCase(), name);
-        }
-      }
+    const indexedExact = this.db.prepare(
+      "SELECT path FROM files WHERE volume=? AND deleted=0 AND path_key=? LIMIT 1",
+    );
+    const indexedBelow = this.db.prepare(
+      "SELECT path FROM files WHERE volume=? AND deleted=0 AND path_key>=? AND path_key<? LIMIT 1",
+    );
+    // A partial scan must still meet indexed names outside its scope.
+    const indexedName = (folded) => {
+      if (scopes === null) return undefined;
+      const row = indexedExact.get(v.id, folded);
+      if (row) return row.path;
+      const child = indexedBelow.get(v.id, folded + "/", folded + "0");
+      return child?.path.split("/").slice(0, folded.split("/").length).join("/");
+    };
     const visit = (name, entry) => {
       checkpoint();
       if (excluded(name, entry.isDirectory())) return;
@@ -1240,13 +1250,10 @@ export class Store {
         );
       unicodeNames.set(name, original);
       const folded = name.toLowerCase();
-      if (
-        names.has(folded) &&
-        names.get(folded) !== name &&
-        this.hasExactPath(v, names.get(folded))
-      )
+      const other = names.get(folded) ?? indexedName(folded);
+      if (other !== undefined && other !== name && this.hasExactPath(v, other))
         fail(
-          `Folder scan stopped: "${names.get(folded)}" and "${name}" differ only by letter case. These names cannot coexist on a case-insensitive disk. Rename one of them to a distinct name, then retry. Files have not been changed.`,
+          `Folder scan stopped: "${other}" and "${name}" differ only by letter case. These names cannot coexist on a case-insensitive disk. Rename one of them to a distinct name, then retry. Files have not been changed.`,
           409,
         );
       names.set(folded, name);
@@ -1313,13 +1320,17 @@ export class Store {
   rowsInScope(id, scopes) {
     if (scopes === null) return this.rows(id);
     const result = new Map();
-    const query = this.db.prepare(
-      "SELECT * FROM files WHERE volume=? AND (path=? COLLATE NOCASE OR path LIKE ? ESCAPE '!')",
+    // path_key finds the rows through the index; the path terms keep the match to ASCII letter case, as a scope has always meant.
+    const exact = this.db.prepare(
+      "SELECT * FROM files WHERE volume=? AND path_key=? AND path=? COLLATE NOCASE",
+    );
+    const below = this.db.prepare(
+      "SELECT * FROM files WHERE volume=? AND path_key>=? AND path_key<? AND path LIKE ? ESCAPE '!'",
     );
     for (const requested of scopes) {
-      const scope = validPath(requested);
-      const prefix = scope.replace(/[!%_]/g, (c) => "!" + c) + "/%";
-      for (const row of query.all(id, scope, prefix)) result.set(row.path, row);
+      const [scope, key, prefix] = scopeTerms(requested);
+      for (const row of exact.all(id, key, scope)) result.set(row.path, row);
+      for (const row of below.all(id, key + "/", key + "0", prefix)) result.set(row.path, row);
     }
     return [...result.values()];
   }
@@ -1380,12 +1391,16 @@ export class Store {
       this.db.prepare("DELETE FROM local_files WHERE volume=?").run(id);
       return;
     }
-    const remove = this.db.prepare(
-      "DELETE FROM local_files WHERE volume=? AND (path=? COLLATE NOCASE OR path LIKE ? ESCAPE '!')",
+    const exact = this.db.prepare(
+      "DELETE FROM local_files WHERE volume=? AND path_key=? AND path=? COLLATE NOCASE",
+    );
+    const below = this.db.prepare(
+      "DELETE FROM local_files WHERE volume=? AND path_key>=? AND path_key<? AND path LIKE ? ESCAPE '!'",
     );
     for (const requested of scopes) {
-      const scope = validPath(requested);
-      remove.run(id, scope, scope.replace(/[!%_]/g, (c) => "!" + c) + "/%");
+      const [scope, key, prefix] = scopeTerms(requested);
+      exact.run(id, key, scope);
+      below.run(id, key + "/", key + "0", prefix);
     }
   }
   setFile(row) {

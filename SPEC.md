@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.9.7 · Phase 1 release.**
+**v0.9.8 · Phase 1 release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -229,6 +229,7 @@ The UI status loop and Tailscale discovery are separate from file synchronizatio
 - **Backups** keep their own permanent store (see [Backup](#backup)). Hub history cleanup forgets only the scan signatures of removed objects. Promotion clears the scan cache so the new hub captures every file into its store.
 - Materialization never overwrites in place: it writes a fsynced `.arca-<uuid>` temporary beside the target, moves whatever the target holds aside atomically (to `<name>.conflict-local-<id>`), renames the temporary in and only then hashes the displaced bytes, deleting them when they match the scanned or incoming version and otherwise keeping them as a visible conflict copy, so an edit made while a version is applied is never lost. The side name is journaled in the pending row (`pending.side`) before the move; the next attempt, before the folder's rules are applied, and recovery dropping a row a newer head superseded, put the side copy back when the target is missing (a crash between the move and the rename) or settle it against the known versions, so a crash never leaves a spurious conflict copy to upload. A failed write removes its temporary; recovery sweeps transfer temporaries from journaled directories, and full scans remove ones older than an hour. `.arca-volume` is never touched.
 - Hardlinks and reflinks are not used: a hardlink to an externally editable working file would break object immutability, and two copies on one disk are not disaster recovery.
+- **Scoped work costs its scope.** An incremental scan, the index rows read for its paths and the local view cleared after it go through the case-folded path key (`files(volume,path_key)`, `local_files(volume,path_key)`): a path, and everything below it, whatever its ASCII letter case, found by an equality and a range on the key and never by a scan of the folder. A partial scan looks up each name it visits in the index, by itself or through the files below it, instead of loading the folder's names to detect case collisions.
 - Seven-day abandoned-partial cleanup and a 16 MiB free-space margin apply; there is no quota or reservation against concurrent external writers. Local scan maps grow with folder size and some materialization and relocation I/O is synchronous.
 
 ### Directories

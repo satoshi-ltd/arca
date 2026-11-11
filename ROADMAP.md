@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **PERF-SCOPED-READS** — A scoped scan or index read costs the scope, not the folder
-  `feature · agent · high`
-  `rowsInScope` and `clearLocal` match `path=? COLLATE NOCASE OR path LIKE ?`, which no index serves, once per scope, and every scoped scan lists the whole folder to build its name map. That runs on every `/v1/propose` and every watcher batch: a phone backing up 30,000 photos costs the hub on the order of 10⁹ row visits. Accept: scopes are read through `files_volume_path_key` (an equality and a range), the query plan shows a search and no scan, and a one-path scan in a 5,000-row folder returns at most 10 rows in total.
 - **PERF-MOB-SYNC-REFRESH** — A sync of many small files refreshes the screen once a second
   `feature · agent · high`
   The progress throttle skips ticks where `bytesDone === bytesTotal`, so every small file fires `changed()`, a bridge call and a full snapshot read, up to ten a second; and `folders()` caches on a counter that every write bumps, settings and view caches included, so the aggregate over every file row runs on nearly every one of those refreshes. Accept: completion ticks are throttled and the last tick of a run is always shown (50 completions in one second cause at most two `changed()` calls); the folders cache is invalidated only by methods that touch files, folders or gallery sources, with a test listing every mutating method.
@@ -154,6 +151,9 @@ Findings of the source audit of 2026-11-11 plus what remained from earlier ones.
 
 ### Data safety
 
+- **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
+  `bug · agent · high`
+  A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file or folder with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. On a case-sensitive disk, creating and removing `notes.txt` beside a synced `Notes.txt` triggers it. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
 - **MOB-CONVERTING-RECONFIG** — Changing an album during an interrupted repair keeps the repair
   `bug · agent · normal`
   `gallery.js` writes `mode: damaged ? "converting" : "source"`, so saving Change album… while the record is already `converting` flips it to `source` before the missing indexed files were restored, and the next scan proposes them as deleted. Traced, not reproduced. Accept: a save while the mode is `converting` keeps `converting`, with a test that interrupts the repair, changes the album and sees every indexed file restored and no deletion proposed.

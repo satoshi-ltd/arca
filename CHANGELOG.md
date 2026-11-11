@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.8 — 2026-11-11
+
+- In large folders the hub and desktop or server replicas do far less work for each changed file: accepting an upload or noticing a local change reads only the affected paths from the index instead of going through the whole folder several times, which matters most while a phone backs up a big photo library.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.7 — 2026-11-11
 
 - With TalkBack or VoiceOver on, the phone's film player keeps its controls on screen instead of hiding them after three seconds, so pausing, seeking and closing no longer race a timer; the area that shows and hides them is announced as a button.
