@@ -231,8 +231,10 @@ test("a replica relays live web-approval requests and never replays a saved one 
     [created.id],
   );
   assert.equal(live.offline, undefined);
+  assert.equal((await replica.api("/v1/status")).webApprovals, 1, "the window's poll refreshes the tray's count");
   await replica.api("/v1/web-approvals", { id: created.id, decision: "deny" });
   assert.deepEqual((await replica.api("/v1/web-approvals")).requests, []);
+  assert.equal((await replica.api("/v1/status")).webApprovals, 0);
   const create = async () =>
     (
       await fetch(base + "/auth/approval", {
@@ -292,6 +294,107 @@ test("a replica relays live web-approval requests and never replays a saved one 
       },
     ),
   );
+});
+
+test("a replica's status counts the hub's web sign-in requests it may approve, refreshed by the hub's events", async (t) => {
+  const { hub, connect } = await setup(t);
+  const replica = await connect("tray-approver", { timer: true, eventRetryMs: 100 });
+  await waitFor(() => replica.engine.status().phase === "idle" && replica.engine.lastSync, 20000);
+  const base = `http://127.0.0.1:${hub.port}`;
+  const create = async () =>
+    (
+      await fetch(base + "/auth/approval", {
+        method: "POST",
+        headers: { Origin: base, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create" }),
+      })
+    ).json();
+  const count = async () => (await replica.api("/v1/status")).webApprovals;
+  let relays = 0,
+    failing = 0;
+  const request = replica.engine.request.bind(replica.engine);
+  replica.engine.request = (route, ...rest) => {
+    if (route === "/v1/web-approvals") {
+      relays++;
+      if (failing > 0) {
+        failing--;
+        return Promise.reject(Object.assign(new Error("hub hiccup"), { hubUnavailable: true }));
+      }
+    }
+    return request(route, ...rest);
+  };
+  hub.engine.config.webApprovers = [hub.engine.config.id];
+  await create();
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  assert.equal(await count(), 0, "a replica without approval authority counts nothing");
+  assert.equal(relays, 0, "and never asks the hub for requests");
+  await hub.api("/v1/web-approvers", { id: replica.invite.id, enabled: true });
+  await waitFor(async () => (await count()) === 1, 10000);
+  const second = await create();
+  await waitFor(async () => (await count()) === 2, 10000);
+  await hub.api("/v1/web-approvals", { id: second.id, decision: "deny" });
+  await waitFor(async () => (await count()) === 1, 10000);
+  failing = 1;
+  const before = relays;
+  await create();
+  await waitFor(() => relays > before && failing === 0, 10000);
+  assert.equal(await count(), 1, "a failed relay keeps the last count instead of hiding it");
+  await waitFor(async () => (await count()) === 2, 15000);
+  assert.doesNotMatch(JSON.stringify(await replica.api("/v1/status")), new RegExp(`${second.id}|${second.reference}`));
+  await hub.api("/v1/web-approvers", { id: replica.invite.id, enabled: false });
+  await waitFor(async () => (await count()) === 0, 10000);
+  await hub.api("/v1/web-approvers", { id: replica.invite.id, enabled: true });
+  await waitFor(async () => (await count()) === 2, 10000);
+  const linked = replica.engine.config.hub.id;
+  replica.engine.config.hub.id = "relinked";
+  assert.equal(await count(), 0, "a count read from another hub is never shown");
+  replica.engine.config.hub.id = linked;
+  await replica.api("/v1/pause", { paused: true });
+  assert.equal(await count(), 0, "a paused replica stops watching, so it shows nothing it cannot keep current");
+});
+
+test("a replica's web sign-in count follows a hub restart that brings the request count back to the same number", async (t) => {
+  const { root, hub, connect } = await setup(t);
+  const replica = await connect("restart-approver", { timer: true, eventRetryMs: 100 });
+  await waitFor(() => replica.engine.status().phase === "idle" && replica.engine.lastSync, 20000);
+  await hub.api("/v1/web-approvers", { id: replica.invite.id, enabled: true });
+  const base = `http://127.0.0.1:${hub.port}`;
+  const create = async () =>
+    (
+      await fetch(base + "/auth/approval", {
+        method: "POST",
+        headers: { Origin: base, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create" }),
+      })
+    ).json();
+  const count = async () => (await replica.api("/v1/status")).webApprovals;
+  await create();
+  const denied = await create();
+  await hub.api("/v1/web-approvals", { id: denied.id, decision: "deny" });
+  await waitFor(async () => (await count()) === 1, 10000);
+  let open;
+  const gate = new Promise((resolve) => (open = resolve));
+  const request = replica.engine.request.bind(replica.engine);
+  replica.engine.request = async (route, ...rest) => {
+    if (route.startsWith("/v1/events")) await gate;
+    return request(route, ...rest);
+  };
+  const close = hub.close;
+  hub.close = async () => {};
+  await close();
+  const again = await start(path.join(root, "hub"), { timer: false, port: hub.port });
+  try {
+    let created = 0;
+    await waitFor(async () => {
+      created += await create().then(() => 1, () => 0);
+      return created === 3;
+    }, 5000);
+    open();
+    await waitFor(async () => (await count()) === 3, 20000);
+  } finally {
+    await replica.api("/v1/pause", { paused: true });
+    await again.close();
+  }
 });
 
 test("a hub that accepts connections but never answers marks the replica offline within seconds", async (t) => {

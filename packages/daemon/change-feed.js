@@ -2,11 +2,11 @@
 export class ChangeFeed {
   constructor(read) {
     this.read = read;
-    this.waiters = new Set();
+    this.waiters = new Map();
   }
-  wait(after, signal, duration = 10000) {
+  wait(after, signal, duration = 10000, moved = () => false) {
     const current = this.read();
-    if (current !== after || signal.aborted) return Promise.resolve(current);
+    if (current !== after || moved() || signal.aborted) return Promise.resolve(current);
     return new Promise((resolve) => {
       let timer;
       const finish = (value) => {
@@ -20,18 +20,18 @@ export class ChangeFeed {
         resolve(value);
       };
       const cancel = () => finish(current);
-      this.waiters.add(finish);
+      this.waiters.set(finish, { current, moved });
       signal.addEventListener("abort", cancel, { once: true });
       timer = setTimeout(() => finish(this.read()), duration);
       if (!this.timer)
         this.timer = setInterval(() => {
           const next = this.read();
-          if (next !== current)
-            for (const done of [...this.waiters]) done(next);
+          for (const [done, waiter] of [...this.waiters])
+            if (next !== waiter.current || waiter.moved()) done(next);
         }, 500);
     });
   }
   close() {
-    for (const finish of [...this.waiters]) finish(null);
+    for (const finish of [...this.waiters.keys()]) finish(null);
   }
 }

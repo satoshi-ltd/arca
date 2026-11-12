@@ -120,10 +120,20 @@ export class Web {
     this.requests = new Map();
     this.requestAttempts = new Attempts();
     this.attempts = new Attempts();
+    this.changes = 0;
+    this.boot = token().slice(0, 16);
+  }
+  drop(id) {
+    if (this.requests.get(id)?.state === "pending") this.changes++;
+    this.requests.delete(id);
+  }
+  generation() {
+    this.pending();
+    return `${this.boot}:${this.changes}`;
   }
   pending() {
     for (const [id, request] of this.requests)
-      if (request.expires <= Date.now()) this.requests.delete(id);
+      if (request.expires <= Date.now()) this.drop(id);
     return [...this.requests.values()]
       .filter((r) => r.state === "pending")
       .map(({ secret, reference, ...r }) => r);
@@ -134,9 +144,10 @@ export class Web {
     if (!r || r.state !== "pending") fail("This request has ended", 409);
     if (!["allow", "deny"].includes(decision)) fail("Invalid decision", 400);
     if (decision === "allow" && normalizeCode(reference) !== r.reference) {
-      this.requests.delete(id);
+      this.drop(id);
       fail(REFERENCE_MISMATCH, 422);
     }
+    this.changes++;
     r.state = decision === "allow" ? "approved" : "denied";
     r.approver = approver;
     return { state: r.state };
@@ -145,7 +156,7 @@ export class Web {
     for (const [key, entry] of this.sessions)
       if (entry.approver === id) this.sessions.delete(key);
     for (const [key, request] of this.requests)
-      if (request.approver === id) this.requests.delete(key);
+      if (request.approver === id) this.drop(key);
   }
   grant(req, res, approver) {
     const session = token();
@@ -242,6 +253,7 @@ export class Web {
         };
         r.browser = browserLabel(r.agent);
         this.requests.set(id, r);
+        this.changes++;
         return (
           reply({ id, secret, reference: r.reference, expires: r.expires }),
           true
@@ -255,7 +267,7 @@ export class Web {
       )
         return (reply({ state: "ended" }), true);
       if (input.action === "cancel") {
-        this.requests.delete(r.id);
+        this.drop(r.id);
         return (reply({ state: "cancelled" }), true);
       }
       if (input.action !== "poll") fail("Invalid request", 400);

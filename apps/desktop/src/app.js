@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.43";
+const APP_VERSION = "0.9.44";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -12044,8 +12044,8 @@ function requestRemaining(expires) {
 const REFERENCE_MISMATCH = "That number belongs to a different request.";
 let approvalModal = null;
 let checkingApprovals = false;
-async function checkWebApprovals() {
-  if (!ready || checkingApprovals || document.visibilityState === "hidden")
+async function checkWebApprovals(asked = false) {
+  if (!ready || checkingApprovals || (!asked && document.visibilityState === "hidden"))
     return;
   checkingApprovals = true;
   try {
@@ -12992,6 +12992,7 @@ if (native && window.__TAURI__.event) {
       }
     }),
   );
+  window.__TAURI__.event.listen("web-approval", () => void checkWebApprovals(true));
   window.__TAURI__.event.listen("open-folder-detail", (event) =>
     action(async () => {
       view = "folders";

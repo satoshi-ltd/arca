@@ -745,3 +745,42 @@ test("a folder holding missing files is listed under Needs attention while it st
   assert.deepEqual(rows.map((el) => [el.dataset.folder, el.querySelector("small").textContent]), [["photos", "Needs attention"]]);
   assert.ok(rows[0].matches(".tray-tone-error"));
 });
+
+test("a pending web sign-in takes the warning heading and a Review row above the folders that opens the prompt, and leaves when it ends", async (t) => {
+  const volumes = [folder("scans", { sync: { state: "error", error: "EACCES" } }), folder("documents", { conflicts: 2 })];
+  const ui = await tray(t, { role: "replica", hubName: "casa", phase: "idle", lastSync: LAST, webApprovals: 1, volumes });
+  const heading = ui.$(".tray-heading");
+  assert.ok(heading.classList.contains("tray-warn"));
+  assert.equal(heading.querySelector("strong").textContent, "Needs your approval");
+  assert.equal(heading.querySelector("p").textContent, "A browser is asking to open casa");
+  const rows = ui.$$(".tray-folders > button");
+  assert.deepEqual(rows.map((el) => el.querySelector(".tray-folder-name").textContent), ["Web sign-in request", "scans", "documents"]);
+  assert.ok(rows[0].matches(".tray-tone-conflict") && rows[0].querySelector('[data-lucide="log-in"]'));
+  assert.equal(rows[0].querySelector("small").textContent, "Review");
+  rows[0].click();
+  await settle();
+  const shown = ui.calls.findIndex(({ command }) => command === "show_main");
+  assert.ok(shown >= 0);
+  assert.deepEqual({ ...ui.calls[shown].args }, { folder: null });
+  assert.equal(ui.emitted.at(-1)[0], "web-approval", "the main window is asked to show the prompt");
+  ui.status = { role: "replica", hubName: "casa", phase: "idle", lastSync: LAST, webApprovals: 0, volumes };
+  await ui.w.refreshTray();
+  assert.equal(ui.$(".tray-heading strong").textContent, "Needs attention");
+  assert.deepEqual(ui.$$(".tray-folders > button").map((el) => el.querySelector(".tray-folder-name").textContent), ["scans", "documents"]);
+  const hub = await tray(t, { role: "hub", phase: "idle", lastSync: LAST, webApprovals: 2, volumes: [folder("a")] });
+  assert.equal(hub.$(".tray-heading p").textContent, "A browser is asking to open this hub");
+  assert.equal(hub.$$(".tray-folders > button").length, 1, "one row however many requests wait");
+  for (const phase of ["paused", "needs-folder"]) {
+    const held = await tray(t, { role: "hub", phase, pauseUntil: null, lastSync: LAST, webApprovals: 1, volumes: [folder("a", { conflicts: 1 })] });
+    assert.equal(held.$(".tray-heading strong").textContent, "Needs your approval", phase);
+    assert.ok(held.$(".tray-heading.tray-warn"), phase);
+    assert.deepEqual(held.$$(".tray-folders > button").map((el) => el.dataset.action), ["approval"], `${phase} keeps only the approval row, matching the alert icon`);
+  }
+});
+
+test("the native tray takes its attention icon while a web sign-in waits", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(source, /fn tray_state\(status: &serde_json::Value\) -> &str \{\s*if awaiting_approval\(status\) \{ return "alert"; \}/);
+  assert.match(source, /status\["webApprovals"\]\.as_u64\(\)\.unwrap_or\(0\) > 0/);
+  assert.match(source, /fn a_pending_web_sign_in_raises_the_alert_until_it_ends\(\)/, "the Rust test exists");
+});

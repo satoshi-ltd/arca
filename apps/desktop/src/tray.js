@@ -81,8 +81,11 @@ function untilTomorrow(now = new Date()) {
   return Math.max(1, Math.min(86399, 86399 - shift, Math.ceil((next - now) / 1000)));
 }
 function attentionRows(state) {
-  if (state.hubUnavailable || ["paused", "unlinked", "needs-folder"].includes(state.phase)) return [];
-  const rows = [];
+  const rows =
+    state.webApprovals > 0
+      ? [{ rank: -1, action: "approval", name: "Web sign-in request", tone: "conflict", glyph: "log-in", label: "Review" }]
+      : [];
+  if (state.hubUnavailable || ["paused", "unlinked", "needs-folder"].includes(state.phase)) return rows;
   for (const v of state.volumes.filter((item) => item.selected)) {
     if (v.sync?.state === "error" || v.sync?.held)
       rows.push({ rank: 0, folder: v.id, name: v.name, tone: "error", glyph: "circle-alert", label: "Needs attention" });
@@ -99,6 +102,12 @@ function summary(state, rows = attentionRows(state)) {
   const selected = state.volumes.filter((v) => v.selected);
   const last = state.lastSync ? `Last completed ${clockTime(state.lastSync)}` : "Not yet verified";
   const lower = last[0].toLowerCase() + last.slice(1);
+  if (state.webApprovals > 0)
+    return {
+      title: "Needs your approval",
+      line: `A browser is asking to open ${state.role === "hub" ? "this hub" : state.hubName || "the hub"}`,
+      ink: "warn",
+    };
   if (state.phase === "unlinked") return { title: "Disconnected", line: last };
   if (state.phase === "needs-folder") return { title: "Choose a shared folder", line: last };
   if (state.phase === "paused")
@@ -257,6 +266,10 @@ async function run(action) {
   if (action === "more") return setMore(!more);
   if (action === "open") await invoke("show_main", { folder: null });
   if (action === "update") await events?.emit("install-update");
+  if (action === "approval") {
+    await invoke("show_main", { folder: null });
+    await events?.emit("web-approval");
+  }
   if (action === "backup") {
     await events?.emit("notice-action", { action: "backup" });
     await invoke("show_main", { folder: null });

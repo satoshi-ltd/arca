@@ -5544,6 +5544,67 @@ test("web approval uses the shared confirmation and closes after another machine
   }
 });
 
+test("the tray's web sign-in row shows the approval prompt in a window that was hidden", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-approval-tray-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  const timers = [];
+  w.setInterval = (fn, ms) => {
+    if (ms === 3000) timers.push(fn);
+    return 0;
+  };
+  let visibility = "hidden";
+  Object.defineProperty(w.document, "visibilityState", { get: () => visibility });
+  const listeners = {};
+  const request = { id: "request", browser: "Safari on macOS", created: Date.now(), expires: Date.now() + 600000, agent: "Safari", ip: "100.1.2.3", host: "casa:17831" };
+  const polls = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command !== "api") return {};
+        if (args.route === "/v1/status") return daemon.engine.status();
+        if (args.route === "/v1/web-approvals") {
+          polls.push(visibility);
+          return { requests: [request] };
+        }
+        throw new Error("Unexpected route " + args.route);
+      },
+    },
+    event: {
+      listen: async (name, handler) => {
+        listeners[name] = handler;
+        return () => {};
+      },
+      emit: async () => {},
+    },
+  };
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+    this.dispatchEvent(new w.Event("close"));
+  };
+  t.after(async () => {
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  timers[0]();
+  await settle();
+  assert.deepEqual(polls, [], "a hidden window does not poll on its own");
+  assert.equal(w.document.querySelector("#dialog").open, false);
+  listeners["web-approval"]();
+  await until(() => w.document.querySelector("#dialog").open);
+  assert.equal(w.document.querySelector("#dialog").dataset.approval, "request");
+  assert.ok(w.document.querySelector("#dialog.approval-dialog"));
+});
+
 for (const role of ["hub", "replica"])
   test(
     "unconfigured web opens onboarding before authentication: " + role,

@@ -350,3 +350,96 @@ test("trusted hosts are IP literals, single labels, .local names and the configu
     assert.equal(trustedHost(host), false, host);
   assert.equal(trustedHost("casa.tail1234.ts.net:17831", ["casa.tail1234.ts.net"]), true);
 });
+
+test("the hub counts pending web sign-in requests and tells only approvers, apart from the sync cursor, when one starts or ends", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-approval-feed-"));
+  init(home, { port: 0 });
+  const d = await start(home, { timer: false });
+  t.after(async () => {
+    await d.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const approver = token(),
+    bystander = token();
+  const insert = d.engine.store.db.prepare("INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,'replica')");
+  insert.run("device", "Mac", digest(approver));
+  insert.run("other", "Laptop", digest(bystander));
+  d.engine.config.webApprovers = [d.engine.config.id, "device"];
+  const base = `http://127.0.0.1:${d.port}`;
+  const call = async (route, body, key = d.engine.config.adminToken, signal) =>
+    (
+      await fetch(base + route, {
+        method: body ? "POST" : "GET",
+        signal,
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Arca-Directories": "1", "X-Arca-Path-Transitions": "1" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      })
+    ).json();
+  const auth = async (body) =>
+    (
+      await fetch(base + "/auth/approval", {
+        method: "POST",
+        headers: { Origin: base, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    ).json();
+  const events = (key, query = {}, signal) => call(`/v1/events?${new URLSearchParams(query)}`, undefined, key, signal);
+  assert.equal((await call("/v1/status")).webApprovals, 0);
+  const { cursor, approvals } = await events(approver);
+  assert.match(approvals, /^[0-9a-f]+:\d+$/);
+  assert.equal((await events(bystander)).approvals, undefined, "a device that may not approve never sees the field");
+  const waiting = events(approver, { after: cursor, approvals });
+  const idle = new AbortController();
+  let bystanderWoke = false;
+  events(bystander, { after: cursor, approvals: "" }, idle.signal).then(() => (bystanderWoke = true), () => {});
+  const first = await auth({ action: "create" });
+  const second = await auth({ action: "create" });
+  const woke = await waiting;
+  assert.equal(woke.cursor, cursor, "a sign-in request never moves the sync cursor");
+  assert.notEqual(woke.approvals, approvals, "but wakes an approver waiting on it");
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  idle.abort();
+  assert.equal(bystanderWoke, false, "a device that may not approve keeps waiting");
+  const counted = await call("/v1/status");
+  assert.equal(counted.webApprovals, 2);
+  for (const key of ["requests", "reference", "browser", "approvals"])
+    assert.equal(counted[key], undefined, `status carries no ${key}`);
+  assert.doesNotMatch(JSON.stringify(counted), new RegExp(`${first.reference}|${second.reference}|${first.id}|${second.id}`));
+  let before = (await events(approver)).approvals;
+  await call("/v1/web-approvals", { id: first.id, decision: "deny" }, approver);
+  let after = await events(approver, { after: cursor, approvals: before });
+  assert.equal(after.cursor, cursor);
+  assert.notEqual(after.approvals, before, "a decision ends the request");
+  assert.equal((await call("/v1/status")).webApprovals, 1);
+  before = after.approvals;
+  await auth({ ...second, action: "cancel" });
+  after = await events(approver);
+  assert.notEqual(after.approvals, before, "a cancel ends it too");
+  assert.equal((await call("/v1/status")).webApprovals, 0);
+  before = after.approvals;
+  await auth({ ...second, action: "cancel" });
+  assert.equal((await events(approver)).approvals, before, "a request that already ended changes nothing");
+  const revoked = events(approver, { after: cursor, approvals: before });
+  await call("/v1/web-approvers", { id: "device", enabled: false });
+  const answer = await revoked;
+  assert.equal(answer.cursor, cursor);
+  assert.equal(answer.approvals, undefined, "losing the authority wakes the device and drops the field");
+});
+
+test("a request that expires or is ended by a wrong number counts as ended", () => {
+  const web = new Web("/unused");
+  web.requests.set("old", { id: "old", state: "pending", expires: Date.now() + 1000 });
+  web.requests.set("typo", { id: "typo", state: "pending", reference: "123456", expires: Date.now() + 600000 });
+  const [boot, first] = web.generation().split(":");
+  assert.throws(() => web.decide("typo", "allow", "device", "654321"));
+  assert.equal(web.generation(), `${boot}:${Number(first) + 1}`);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 2000;
+  try {
+    assert.equal(web.generation(), `${boot}:${Number(first) + 2}`);
+    assert.deepEqual(web.pending(), []);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.notEqual(new Web("/unused").generation().split(":")[0], boot, "every hub process counts from its own start");
+});

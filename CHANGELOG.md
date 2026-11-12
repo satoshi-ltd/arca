@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.44 — 2026-11-11
+
+- A web sign-in waiting for this desktop's approval now shows in the tray even while the window is closed: the heading reads Needs your approval, a Review row opens Arca on the prompt, and the menu-bar icon takes its alert badge until the request is decided or expires.
+- Approval changes reach only the devices that may approve and no longer start a sync on other devices; the hub and the computers need this version for it.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.43 — 2026-11-12
 
 - Erase this hub and Erase this device now check the typed name on the server too, so an older app, a script or a direct API call cannot erase a hub or device without its exact name; an erase that outlasts the app's wait still completes in the window.

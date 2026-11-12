@@ -28,9 +28,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
-- **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
-  `feature · agent · normal`
-  Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
 
 
 

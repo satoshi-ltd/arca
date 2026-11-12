@@ -543,7 +543,11 @@ fn quit_app(app: tauri::AppHandle) {app.exit(0);}
 fn hub_offline(status: &serde_json::Value) -> bool {
     status["phase"] == "offline" || (status["phase"] == "checking" && status["hubUnavailable"] == true)
 }
+fn awaiting_approval(status: &serde_json::Value) -> bool {
+    status["webApprovals"].as_u64().unwrap_or(0) > 0
+}
 fn tray_state(status: &serde_json::Value) -> &str {
+    if awaiting_approval(status) { return "alert"; }
     let offline = hub_offline(status);
     if status["phase"] != "paused" && (
         status["phase"] == "error" || (!offline && status["error"].as_str().is_some())
@@ -571,6 +575,7 @@ fn tray_state(status: &serde_json::Value) -> &str {
 }
 
 fn tray_text(status: &serde_json::Value) -> &'static str {
+    if awaiting_approval(status) { return "Arca · needs your approval"; }
     match status["phase"].as_str().unwrap_or("") {
         "idle" if tray_state(status) == "synced" => "Arca · up to date",
         "idle" => "Arca · not yet verified",
@@ -941,6 +946,21 @@ mod tray_tests {
         s["volumes"][0]["conflicts"] = json!(1);
         assert_eq!(tray_state(&s), "alert");
         assert_eq!(tray_text(&s), "Arca · needs attention");
+    }
+    #[test]
+    fn a_pending_web_sign_in_raises_the_alert_until_it_ends() {
+        let mut s = json!({"phase":"idle", "lastSync":"2026-09-07", "webApprovals":0, "volumes":[{"selected":true,"conflicts":0,"sync":{"state":"synced"}}]});
+        assert_eq!(tray_state(&s), "synced");
+        s["webApprovals"] = json!(1);
+        assert_eq!(tray_state(&s), "alert");
+        assert_eq!(tray_text(&s), "Arca · needs your approval");
+        s["phase"] = json!("syncing");
+        assert_eq!(tray_state(&s), "alert");
+        s["webApprovals"] = json!(0);
+        assert_eq!(tray_state(&s), "syncing");
+        s["phase"] = json!("idle");
+        assert_eq!(tray_state(&s), "synced");
+        assert_eq!(tray_text(&s), "Arca · up to date");
     }
     fn area(x: f64, y: f64, width: f64, height: f64) -> ScreenRect {
         ScreenRect { x, y, width, height }

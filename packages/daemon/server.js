@@ -337,6 +337,39 @@ export async function start(home, options = {}) {
       ]),
     );
   });
+  let approvalExpiries = [],
+    approvalHub = null,
+    approvalsStale = true,
+    approvalReads = 0;
+  const noteApprovals = (expiries) => {
+    approvalReads++;
+    approvalExpiries = expiries;
+    approvalHub = config.hub?.id ?? null;
+    approvalsStale = false;
+  };
+  const relayApprovals = async () => {
+    const read = ++approvalReads;
+    try {
+      const response = await engine.request("/v1/web-approvals", {
+        signal: AbortSignal.timeout(3000),
+        trackConnection: false,
+      });
+      const { requests = [] } = await response.json().catch((error) => {
+        throw engine.connectionLost(error);
+      });
+      if (read === approvalReads) noteApprovals(requests.map((r) => r.expires));
+      return requests.filter((r) => !(r.expires <= Date.now()));
+    } catch (error) {
+      if (read === approvalReads) approvalsStale = true;
+      throw error;
+    }
+  };
+  const webApprovals = () =>
+    config.role === "hub"
+      ? web?.pending().length || 0
+      : !config.hub || config.hub.id !== approvalHub || engine.paused || engine.hubUnavailable
+        ? 0
+        : approvalExpiries.filter((expires) => expires > Date.now()).length;
   // Remote-only views have a short deadline and retain their last successful data.
   s.db.exec(
     "CREATE TABLE IF NOT EXISTS remote_views(key TEXT PRIMARY KEY, value TEXT NOT NULL, used INTEGER NOT NULL)",
@@ -819,16 +852,7 @@ export async function start(home, options = {}) {
           if (engine.hubUnavailable)
             return send(200, { requests: [], offline: true });
           try {
-            const response = await engine.request(route, {
-              signal: AbortSignal.timeout(3000),
-              trackConnection: false,
-            });
-            const { requests = [] } = await response.json().catch((error) => {
-              throw engine.connectionLost(error);
-            });
-            return send(200, {
-              requests: requests.filter((r) => !(r.expires <= Date.now())),
-            });
+            return send(200, { requests: await relayApprovals() });
           } catch (error) {
             if (!error.hubUnavailable) throw error;
             return send(200, { requests: [], offline: true });
@@ -894,6 +918,7 @@ export async function start(home, options = {}) {
         return send(200, {
           ...status,
           webApprovers: config.webApprovers || [],
+          webApprovals: webApprovals(),
           notices: conditionNotices(status),
         });
       }
@@ -1356,9 +1381,13 @@ export async function start(home, options = {}) {
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
         try {
+          const approvals = () => (web && canApprove(device.id) ? web.generation() : "");
+          const seen = url.searchParams.get("approvals");
           const cursor = await feed.wait(
             url.searchParams.get("after"),
             controller.signal,
+            10000,
+            () => seen !== null && approvals() !== seen,
           );
           if (res.destroyed) return;
           if (browserSession && !web.session(req)) fail("Unauthorized", 401);
@@ -1373,7 +1402,8 @@ export async function start(home, options = {}) {
             fail("Unauthorized", 401);
           if (!browserSession && untrustedHttp && !(config.role === "hub" && config.network?.allowLanHttp === true))
             fail("LAN access disabled", 412);
-          return send(200, { cursor });
+          const generation = approvals();
+          return send(200, { cursor, ...(generation ? { approvals: generation } : {}) });
         } finally {
           res.off("close", disconnect);
           const left = (eventWaiters.get(device.id) || 1) - 1;
@@ -3010,7 +3040,8 @@ export async function start(home, options = {}) {
       : null;
   if (remoteEvents)
     void (async () => {
-      let cursor = null;
+      let cursor = null,
+        approvalsSeen = "";
       const pause = (ms) =>
         new Promise((resolve) => {
           const done = () => {
@@ -3028,7 +3059,7 @@ export async function start(home, options = {}) {
           if (!config.hub || engine.paused)
             throw new Error("Waiting for connection");
           const response = await engine.request(
-            `/v1/events?${new URLSearchParams(cursor && !probing ? { after: cursor } : {})}`,
+            `/v1/events?${new URLSearchParams(cursor && !probing ? { after: cursor, approvals: approvalsSeen } : {})}`,
             {
               trackConnection: false,
               signal: AbortSignal.any([
@@ -3039,8 +3070,15 @@ export async function start(home, options = {}) {
               ]),
             },
           );
-          const next = (await response.json()).cursor;
+          const answer = await response.json();
+          const next = answer.cursor;
           if (!probing) eventsAnsweredAt = Date.now();
+          const approvals = answer.approvals || "";
+          if (!approvals) {
+            if (approvalsSeen) noteApprovals([]);
+          } else if (approvals !== approvalsSeen || approvalsStale || approvalHub !== config.hub?.id)
+            relayApprovals().catch(() => {});
+          approvalsSeen = approvals;
           if (engine.hubUnavailable || (failures && offline)) {
             failures = 0;
             retryAt = 0;
@@ -3053,6 +3091,7 @@ export async function start(home, options = {}) {
           // A probe is answered at once; pace it until a cycle clears the offline state.
           if (probing) await pause(options.eventRetryMs ?? 5000);
         } catch (error) {
+          if (config.hub && !engine.paused) approvalsStale = true;
           // Events never decide connectivity; only a transport failure asks the cycle to check the hub now.
           if (
             config.hub &&
