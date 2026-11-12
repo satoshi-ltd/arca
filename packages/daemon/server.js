@@ -2482,8 +2482,8 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/destroy-replica" || route === "/v1/destroy-hub") {
           requireAdmin();
-          if (b.confirmed !== true)
-            fail("Confirm erasing first", 400);
+          if (typeof b.confirmedName !== "string" || b.confirmedName !== config.name)
+            fail(`Type the ${route === "/v1/destroy-hub" ? "hub" : "device"} name to confirm erasing`, 400);
           images.cancel();
           await images.task;
           const result = await (route === "/v1/destroy-hub"

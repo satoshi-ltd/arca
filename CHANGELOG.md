@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.43 — 2026-11-12
+
+- Erase this hub and Erase this device now check the typed name on the server too, so an older app, a script or a direct API call cannot erase a hub or device without its exact name; an erase that outlasts the app's wait still completes in the window.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.42 — 2026-11-12
 
 - When every folder chosen during phone onboarding streams and the phone is short of space, the warning now says that Arca needs 256 MB free instead of reading "0 B to download".

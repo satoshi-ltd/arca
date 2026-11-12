@@ -84,7 +84,7 @@ test("Erase revokes an already issued loopback HLS session", async (t) => {
   assert.equal((await get(f, answer.url)).status, 200);
   const sessions = f.daemon.engine.videoSessions;
   const sequence = sessions.next("pending-playback");
-  await f.call("/v1/destroy-hub", { confirmed: true });
+  await f.call("/v1/destroy-hub", { confirmedName: f.daemon.engine.config.name });
   assert.equal(sessions.sessions.size, 0);
   assert.equal(sessions.current("pending-playback", sequence), false);
   assert.equal((await get(f, answer.url)).status, 401);

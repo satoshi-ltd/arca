@@ -26,7 +26,7 @@ test("TMDB answers arriving after Erase never recreate metadata or retry state",
       const tmdb = f.daemon.engine.video.tmdb;
       const resolving = tmdb.resolve({ kind: "movie", id: 949, key: "movie:949" }).catch(() => {});
       await ready;
-      await f.call("/v1/destroy-hub", { confirmed: true });
+      await f.call("/v1/destroy-hub", { confirmedName: f.daemon.engine.config.name });
       assert.equal(f.s.db.prepare("SELECT count(*) AS n FROM video_meta").get().n, 0);
       answer(outcome === "network" ? new Error("Connection closed") : new Response(
         outcome === "unreadable" ? "{broken" : JSON.stringify({ id: 949, title: "Heat", overview: "Old library metadata" }),

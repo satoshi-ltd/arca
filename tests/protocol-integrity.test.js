@@ -690,13 +690,17 @@ test("destroy replica requires confirmation, removes local data and hub registra
   fs.writeFileSync(path.join(previews, "cached.jpg"), "private derivative");
   const oldToken = r.engine.config.adminToken;
   const oldId = r.engine.config.id;
-  await assert.rejects(r.api("/v1/destroy-replica", {}), /Confirm/);
+  for (const body of [{}, { confirmed: true }, { confirmedName: "wrong" }, { confirmedName: r.engine.config.name.toUpperCase() }, { confirmedName: ` ${r.engine.config.name}` }, { confirmedName: [r.engine.config.name] }])
+    await assert.rejects(r.api("/v1/destroy-replica", body), { status: 400, message: /Type the device name to confirm/ });
+  assert.ok(fs.existsSync(v.path));
+  assert.equal(r.engine.config.adminToken, oldToken);
+  assert.equal(r.engine.config.destroyPending, undefined);
   await assert.rejects(
-    f.hub.api("/v1/destroy-replica", { confirmed: true }),
+    f.hub.api("/v1/destroy-replica", { confirmedName: f.hub.engine.config.name }),
     /Only a device/,
   );
   assert.ok(fs.existsSync(v.path));
-  await r.api("/v1/destroy-replica", { confirmed: true });
+  await r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name });
   assert.equal(fs.existsSync(v.path), false);
   assert.equal(fs.existsSync(previews), false);
   assert.equal(
@@ -751,7 +755,7 @@ test("desktop destruction can resume after filesystem failure and rejects swappe
   };
   try {
     await assert.rejects(
-      r.api("/v1/destroy-replica", { confirmed: true }),
+      r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }),
       /Internal error/,
     );
   } finally {
@@ -765,7 +769,7 @@ test("desktop destruction can resume after filesystem failure and rejects swappe
   fs.mkdirSync(folder);
   fs.writeFileSync(path.join(folder, "unrelated.txt"), "keep");
   await assert.rejects(
-    r.api("/v1/destroy-replica", { confirmed: true }),
+    r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }),
     /changed during destruction/,
   );
   assert.equal(
@@ -774,7 +778,7 @@ test("desktop destruction can resume after filesystem failure and rejects swappe
   );
   fs.renameSync(folder, folder + "-unrelated");
   fs.renameSync(moved, folder);
-  await r.api("/v1/destroy-replica", { confirmed: true });
+  await r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name });
   assert.equal(fs.existsSync(folder), false);
   assert.equal(r.engine.config.needsSetup, true);
 });
@@ -794,7 +798,7 @@ test("destroy after disconnect deletes replica folders and configured backup but
   r.engine.store.saveConfig();
   await r.api("/v1/disconnect", { confirmed: true });
   assert.ok(fs.existsSync(folder));
-  await r.api("/v1/destroy-replica", { confirmed: true });
+  await r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name });
   assert.equal(fs.existsSync(folder), false);
   assert.equal(fs.existsSync(backup), false);
   assert.equal(fs.readFileSync(unrelated, "utf8"), "keep");
@@ -839,13 +843,13 @@ test("failed destruction journal write preserves files and permits a durable ret
     throw new Error("configuration disk full");
   };
   await assert.rejects(
-    r.api("/v1/destroy-replica", { confirmed: true }),
+    r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }),
     /Internal error/,
   );
   assert.equal(r.engine.config.destroyPending, undefined);
   assert.ok(fs.existsSync(folder));
   r.engine.store.saveConfig = save;
-  await r.api("/v1/destroy-replica", { confirmed: true });
+  await r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name });
   assert.equal(fs.existsSync(folder), false);
 });
 
@@ -878,7 +882,7 @@ test("confirmed desktop destruction works with an unreachable hub and preserves 
   t.after(() => fs.closeSync(log));
   fs.writeFileSync(path.join(home, "unrelated.tmp"), "keep");
   replica.engine.config.hub.url = "http://127.0.0.1:1";
-  await replica.api("/v1/destroy-replica", { confirmed: true });
+  await replica.api("/v1/destroy-replica", { confirmedName: replica.engine.config.name });
   assert.equal(
     fs.readFileSync(databaseFile).includes(Buffer.from(marker)),
     false,
@@ -918,11 +922,11 @@ test("desktop erase refuses hardlinked logs without changing external files", as
   const logfile = path.join(home, "daemon.log");
   fs.writeFileSync(external, "keep outside Arca state");
   fs.linkSync(external, logfile);
-  await assert.rejects(replica.api("/v1/destroy-replica", { confirmed: true }), /Log location changed/);
+  await assert.rejects(replica.api("/v1/destroy-replica", { confirmedName: replica.engine.config.name }), /Log location changed/);
   assert.equal(fs.readFileSync(external, "utf8"), "keep outside Arca state");
   assert.ok(replica.engine.config.destroyPending);
   fs.unlinkSync(logfile);
-  await replica.api("/v1/destroy-replica", { confirmed: true });
+  await replica.api("/v1/destroy-replica", { confirmedName: replica.engine.config.name });
   assert.equal(replica.engine.config.needsSetup, true);
   assert.equal(fs.readFileSync(external, "utf8"), "keep outside Arca state");
 });
@@ -939,13 +943,17 @@ test("destroy hub deletes its files/history and returns to setup without deletin
   await second.sync();
   const oldId = hub.engine.config.id;
   const oldAdmin = hub.engine.config.adminToken;
-  await assert.rejects(hub.api("/v1/destroy-hub", {}), /Confirm/);
+  for (const body of [{}, { confirmed: true }, { confirmedName: first.engine.config.name }, { confirmedName: hub.engine.config.name.toUpperCase() }])
+    await assert.rejects(hub.api("/v1/destroy-hub", body), { status: 400, message: /Type the hub name to confirm/ });
+  assert.ok(fs.existsSync(volume.path));
+  assert.equal(hub.engine.config.role, "hub");
+  assert.equal(hub.engine.config.destroyPending, undefined);
   await assert.rejects(
-    hub.api("/v1/destroy-hub", { confirmed: true }, first.invite.token),
+    hub.api("/v1/destroy-hub", { confirmedName: hub.engine.config.name }, first.invite.token),
     { status: 403 },
   );
   await assert.rejects(
-    first.api("/v1/destroy-hub", { confirmed: true }),
+    first.api("/v1/destroy-hub", { confirmedName: first.engine.config.name }),
     /Only a hub/,
   );
   assert.ok(fs.existsSync(volume.path));
@@ -955,7 +963,7 @@ test("destroy hub deletes its files/history and returns to setup without deletin
   const downloads = path.join(hub.engine.store.home, "video-downloads");
   fs.mkdirSync(downloads, { recursive: true });
   fs.writeFileSync(path.join(downloads, `${"b".repeat(32)}.mkv`), "film");
-  await hub.api("/v1/destroy-hub", { confirmed: true });
+  await hub.api("/v1/destroy-hub", { confirmedName: hub.engine.config.name });
   assert.equal(fs.existsSync(downloads), false, "erasing removes downloaded videos");
   assert.equal(fs.existsSync(volume.path), false);
   assert.equal(fs.existsSync(path.join(covers, `${"a".repeat(64)}-360.jpg`)), false, "erasing the hub removes music covers");
@@ -995,7 +1003,7 @@ test("interrupted hub destruction blocks catalog reads until a safe retry", asyn
   };
   try {
     await assert.rejects(
-      hub.api("/v1/destroy-hub", { confirmed: true }),
+      hub.api("/v1/destroy-hub", { confirmedName: hub.engine.config.name }),
       /Internal error/,
     );
     assert.ok(hub.engine.config.destroyPending);
@@ -1004,7 +1012,7 @@ test("interrupted hub destruction blocks catalog reads until a safe retry", asyn
   } finally {
     fs.rmSync = remove;
   }
-  await hub.api("/v1/destroy-hub", { confirmed: true });
+  await hub.api("/v1/destroy-hub", { confirmedName: hub.engine.config.name });
   assert.equal(fs.existsSync(volume.path), false);
   assert.equal(hub.engine.config.needsSetup, true);
 });
@@ -1332,7 +1340,7 @@ test("Erase and folder placement never reach the state directory, inside it or a
   await assert.rejects(r.api("/v1/select", { id: other.id, path: path.join(home, "objects") }), { status: 409, message: /State and volume paths overlap/ });
   await assert.rejects(r.api("/v1/path-check", { id: other.id, path: path.join(home, "objects") }), { status: 409, message: /State and volume paths overlap/ });
   r.engine.store.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(ancestor, f.volume.id);
-  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), /overlaps the state directory/);
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }), /overlaps the state directory/);
   r.engine.config.destroyPending = { targets: [{ path: ancestor, dev: fs.statSync(ancestor).dev, ino: fs.statSync(ancestor).ino }] };
   assert.throws(() => finishInstallationReset(r.engine.store), /changed during destruction/, "a journal naming an ancestor is refused when it runs");
   delete r.engine.config.destroyPending;
@@ -1342,7 +1350,7 @@ test("Erase and folder placement never reach the state directory, inside it or a
   assert.equal(withinPath(home, swapped), true, "a case-insensitive disk compares without case");
   await assert.rejects(r.api("/v1/select", { id: other.id, path: swapped }), { status: 409, message: /State and volume paths overlap/ });
   r.engine.store.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(swapped, f.volume.id);
-  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), /overlaps the state directory/);
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }), /overlaps the state directory/);
   assert.ok(fs.existsSync(path.join(ancestor, "hub")), "nothing beside the state directory is touched");
 });
 
@@ -1366,7 +1374,7 @@ test("Erase deletes only directories that still carry Arca's marker or backup st
   hub.engine.config.backup = { path: backup, enabled: false };
   hub.engine.store.saveConfig();
   const marked = await hub.api("/v1/volumes", { name: "Marked" });
-  await hub.api("/v1/destroy-hub", { confirmed: true });
+  await hub.api("/v1/destroy-hub", { confirmedName: hub.engine.config.name });
   assert.equal(fs.readFileSync(path.join(folder, "unrelated.txt"), "utf8"), "someone else's", "a folder recreated without the marker survives");
   assert.ok(fs.existsSync(kept), "a folder whose marker names another volume survives");
   assert.equal(fs.readFileSync(path.join(backup, "photo.jpg"), "utf8"), "mine", "a backup path without backup state survives");
@@ -1412,7 +1420,7 @@ test("erase empties a folder the system refuses to delete, leaves it in place an
   };
   t.mock.method(fs, "rmSync", refuse(fs.rmSync));
   t.mock.method(fs, "rmdirSync", refuse(fs.rmdirSync));
-  const result = await r.api("/v1/destroy-replica", { confirmed: true });
+  const result = await r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name });
   assert.ok(attempts[0]?.maxRetries > 0, "a briefly locked file gets retried before the folder is kept");
   assert.deepEqual(result.kept, [folder]);
   assert.deepEqual(fs.readdirSync(folder), [], "everything Arca may delete is gone, its marker included");
@@ -1430,7 +1438,7 @@ test("erase still stops on a failure that is not a refused permission", async (t
     if (path.resolve(String(target)) === folder) throw Object.assign(new Error("I/O error"), { code: "EIO" });
     return original(target, ...rest);
   });
-  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), { status: 500 });
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmedName: r.engine.config.name }), { status: 500 });
   assert.ok(r.engine.config.destroyPending, "the erase stays retryable");
   assert.ok(fs.existsSync(folder));
 });

@@ -716,7 +716,7 @@ test("Erase removes the TMDB token and the video art", async (t) => {
   await f.call("/v1/video/settings", { tmdbToken: "secret-token-value" });
   fs.mkdirSync(path.join(f.home, "video-art"), { recursive: true });
   fs.writeFileSync(path.join(f.home, "video-art", `${"a".repeat(64)}-small.jpg`), "x");
-  await f.call("/v1/destroy-hub", { confirmed: true });
+  await f.call("/v1/destroy-hub", { confirmedName: f.daemon.engine.config.name });
   assert.equal(fs.existsSync(path.join(f.home, "video-art")), false);
   const config = fs.readFileSync(path.join(f.home, "config.json"), "utf8");
   assert.ok(!config.includes("secret-token-value"));
@@ -728,7 +728,7 @@ test("a picture still rendering when Erase runs never writes into the erased ins
   let release;
   const input = new Promise((resolve) => (release = resolve));
   const rendering = video.renderArt("b".repeat(64), "poster", () => input);
-  await f.call("/v1/destroy-hub", { confirmed: true });
+  await f.call("/v1/destroy-hub", { confirmedName: f.daemon.engine.config.name });
   release(await image("#204060"));
   assert.equal(await rendering, null);
   assert.equal(fs.existsSync(path.join(f.home, "video-art")), false);

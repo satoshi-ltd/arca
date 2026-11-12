@@ -340,7 +340,7 @@ test("Erase removes the history file and the next hub starts a new history", asy
   const store = f.hub().engine.store;
   const file = path.join(f.hub().home, "history.json");
   const { epoch } = store.historyEpoch({ flush: true });
-  await f.hub().api("/v1/destroy-hub", { confirmed: true });
+  await f.hub().api("/v1/destroy-hub", { confirmedName: f.hub().engine.config.name });
   assert.equal(fs.existsSync(file), false);
   assert.equal(store.savedHistory, null);
   assert.notEqual(store.historyEpoch().epoch, epoch);

@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.42";
+const APP_VERSION = "0.9.43";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -11223,6 +11223,7 @@ async function handle(name, id, control) {
   ) {
     const destroyingHub = status.role === "hub";
     const erasedName = status.name;
+    let erased = null;
     const paths = [
       ...new Set(
         [
@@ -11240,16 +11241,24 @@ async function handle(name, id, control) {
         "trash-2",
       ) +
         `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place."} An interrupted cleanup can be retried.</p><label for="confirm-device-name">Type the ${destroyingHub ? "hub" : "device"} name to confirm</label><input id="confirm-device-name" name="confirmedName" autocomplete="off" required>`,
-      async () => {
+      async (f) => {
         try {
           localStorage.setItem("arca-erase-pending", "true");
         } catch {
           /* A blocked retry marker must not prevent confirmed file erasure.
              Interface cleanup below still reports inaccessible storage. */
         }
-        const { kept = [] } = await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
-          confirmed: true,
-        });
+        if (!erased)
+          try {
+            erased = await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
+              confirmedName: f.get("confirmedName"),
+            });
+          } catch (error) {
+            const after = await api("/v1/status").catch(() => null);
+            if (!after?.needsSetup || after.destroyPending) throw error;
+            erased = { kept: [] };
+          }
+        const { kept = [] } = erased;
         ready = false;
         detailId = null;
         onboarding = null;

@@ -5673,7 +5673,8 @@ test("configured server hides unavailable machine approval and displays the chos
   assert.equal(w.document.querySelector("#access-code").hidden, false);
 });
 
-test("hub danger zone cancels safely and returns to onboarding after local destruction", async (t) => {
+for (const timedOut of [false, true])
+test(`hub danger zone cancels safely and returns to onboarding after local destruction${timedOut ? " when the erase outlasts the request timeout" : ""}`, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
   const nodes = [];
   for (const role of ["hub", "replica"]) {
@@ -5711,16 +5712,19 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
   w.HTMLDialogElement.prototype.close = function () {
     this.removeAttribute("open");
   };
+  const erased = [];
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
         if (command === "bootstrap") return { setup: false };
         if (command !== "api") return null;
+        if (args.route === "/v1/destroy-hub") erased.push(args.body);
         const r = await request(
           hub,
           args.route,
           args.method === "POST" ? args.body : undefined,
         );
+        if (timedOut && args.route === "/v1/destroy-hub") throw "Request timed out";
         const b = await r.json();
         if (!r.ok) throw new Error(b.error);
         return b;
@@ -5768,6 +5772,7 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
       w.document.querySelector("#setup-form") &&
       w.document.body.getAttribute("aria-busy") === "false",
   );
+  assert.equal(JSON.stringify(erased), JSON.stringify([{ confirmedName: "hub" }]));
   assert.equal(fs.existsSync(destination), false);
   assert.equal(hub.engine.config.needsSetup, true);
   assert.match(
