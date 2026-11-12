@@ -64,6 +64,7 @@ import {
   VIDEO_TABS,
 } from "./video-library.js";
 import { favoriteOrder, nameOrder } from "./favorite-order.js";
+import { clockTime, pauseEnd } from "./clock-time.js";
 import {
   createNoticeStore,
   errorNotice,
@@ -154,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.35";
+const APP_VERSION = "0.9.36";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -233,6 +234,7 @@ function refreshRelative() {
   for (const el of document.querySelectorAll("[data-relative]")) {
     const text = (el.dataset.prefix || "") + relative(el.dataset.relative);
     if (el.textContent !== text) el.textContent = text;
+    if (el.hasAttribute("title") && el.title !== text) el.title = text;
   }
 }
 const relative = (value) => {
@@ -258,12 +260,6 @@ function dayLabel(value, now = new Date()) {
     ...(day.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
 }
-const clockTime = (value) =>
-  new Date(value).toLocaleTimeString("en", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  });
 function seenLabel(value, now = new Date()) {
   const day = dayLabel(value, now);
   return `Seen ${day === "Today" ? "" : `${day === "Yesterday" ? "yesterday" : day} `}at ${clockTime(value)}`;
@@ -2051,20 +2047,24 @@ function updateShell() {
   const role = status.role === "hub" ? "Hub" : "Replica";
   const device = $("#status-device");
   device.innerHTML = `${icon(managedGlyph())}<b id="managed-name">${escape(status.name)}</b><span id="managed-role" class="machine-role">${role}</span><span class="status-dot ${color}" aria-hidden="true"></span>`;
-  device.title = `${status.name} · ${role} · ${label}`;
+  const until = label === "Paused" && status.pauseUntil ? pauseEnd(status.pauseUntil) : "";
+  const spoken = until ? `Paused until ${until}` : label;
+  device.title = `${status.name} · ${role} · ${spoken}`;
   device.hidden = false;
   const card = device.closest(".status-card");
-  card.setAttribute("aria-label", `${status.name}, ${role}, ${label}`);
+  card.setAttribute("aria-label", `${status.name}, ${role}, ${spoken}`);
   card.hidden = false;
-  $("#last-sync").textContent =
+  const synced =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this device"
       : status.lastSync
         ? `Last sync ${relative(status.lastSync)}`
         : "Not synced yet";
+  $("#last-sync").textContent = until ? `Until ${until} · ${synced[0].toLowerCase()}${synced.slice(1)}` : synced;
   const lastSync = $("#last-sync");
+  lastSync.title = lastSync.textContent;
   if (status.role === "hub" || status.hub) {
-    lastSync.dataset.prefix = "Last sync ";
+    lastSync.dataset.prefix = until ? `Until ${until} · last sync ` : "Last sync ";
     if (status.lastSync) lastSync.dataset.relative = status.lastSync;
     else delete lastSync.dataset.relative;
   } else {

@@ -51,7 +51,9 @@ async function tray(t, status, { api = null, update = { available: false }, cove
     },
     window: { getCurrentWindow: () => ({ isVisible: () => ui.shown() }) },
   };
-  await w.eval(`(async () => {${read("tray.js")}\nwindow.refreshTray = refresh;})()`);
+  const shared = read("clock-time.js").replace(/export /g, "");
+  const own = read("tray.js").replace(/^import \{ clockTime \} from "\.\/clock-time\.js";\r?\n/, "");
+  await w.eval(`(async () => {${shared}\n${own}\nwindow.refreshTray = refresh;})()`);
   await settle();
   ui.$ = (selector) => w.document.querySelector(selector);
   ui.$$ = (selector) => [...w.document.querySelectorAll(selector)];

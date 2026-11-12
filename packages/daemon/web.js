@@ -330,6 +330,7 @@ export class Web {
       "/music-library.js": "music-library.js",
       "/video-library.js": "video-library.js",
       "/favorite-order.js": "favorite-order.js",
+      "/clock-time.js": "clock-time.js",
       "/gallery-timeline-layout.js": "gallery-timeline-layout.js",
       "/photo-zoom.js": "photo-zoom.js",
       "/style.css": "style.css",

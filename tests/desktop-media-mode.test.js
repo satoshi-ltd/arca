@@ -13,6 +13,7 @@ const script = [
   source("music-library.js").replace(/export /g, ""),
   source("video-library.js").replace(/export /g, ""),
   source("favorite-order.js").replace(/export /g, ""),
+  source("clock-time.js").replace(/export /g, ""),
   source("notice-contract.js").replace(/export /g, ""),
   source("app.js")
     .replace(/\r?\n/g, "\r\n")

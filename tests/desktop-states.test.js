@@ -11,6 +11,7 @@ const script = [
   source("file-icons.js").replace(/export /g, ""),
   source("music-library.js").replace(/export /g, ""),
   source("favorite-order.js").replace(/export /g, ""),
+  source("clock-time.js").replace(/export /g, ""),
   source("notice-contract.js").replace(/export /g, ""),
   source("app.js")
     .replace(/\r?\n/g, "\r\n")
@@ -220,6 +221,62 @@ test("a replica checking its hub after a launch says so in the sidebar, without 
   const app = source("app.js");
   assert.equal(app.split("Checking hub…").length - 1, 1, "one definition of the words");
   assert.equal(app.split("checking: CHECKING_HUB,").length - 1, 1, "the sidebar card owns it; Devices rows carry no sync state");
+});
+
+test("a timed pause leads the status card's second line with its end, and names it in the card and the rail tooltip", async (t) => {
+  const last = new Date(Date.now() - 120000).toISOString();
+  const clock = (value) => new Date(value).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const replica = (pauseUntil) => ({
+    id: "mac",
+    name: "macbook-pro",
+    role: "replica",
+    phase: "paused",
+    pauseUntil,
+    hub: "http://casa:17831",
+    hubName: "casa",
+    lastSync: last,
+    volumes: [{ ...base, id: "docs", name: "documents" }],
+  });
+  const open = async (pauseUntil) => {
+    const w = await boot(t, replica(pauseUntil), { "/v1/remote": () => ({ volumes: [] }) });
+    const q = (selector) => w.document.querySelector(selector);
+    await until(() => q("#connection")?.textContent === "Paused" && !q("#status-device").hidden);
+    return q;
+  };
+  const end = new Date();
+  end.setHours(23, 59, 0, 0);
+  const timed = await open(end.getTime());
+  assert.equal(timed("#last-sync").textContent, "Until 23:59 · last sync 2 min ago");
+  assert.equal(timed("#last-sync").hidden, false);
+  assert.equal(timed("#last-sync").title, "Until 23:59 · last sync 2 min ago", "the tooltip reads the whole line");
+  assert.equal(timed("#last-sync").dataset.prefix, "Until 23:59 · last sync ");
+  assert.equal(timed(".status-card").getAttribute("aria-label"), "macbook-pro, Replica, Paused until 23:59");
+  assert.equal(timed("#status-device").title, "macbook-pro · Replica · Paused until 23:59");
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(8, 0, 0, 0);
+  const day = tomorrow.toLocaleDateString("en", { weekday: "short" });
+  const later = await open(tomorrow.getTime());
+  assert.equal(later("#last-sync").textContent, `Until ${day} ${clock(tomorrow)} · last sync 2 min ago`);
+  assert.equal(later(".status-card").getAttribute("aria-label"), `macbook-pro, Replica, Paused until ${day} 08:00`);
+  const forever = await open(null);
+  assert.equal(forever("#last-sync").textContent, "Last sync 2 min ago");
+  assert.equal(forever("#last-sync").title, "Last sync 2 min ago");
+  assert.equal(forever(".status-card").getAttribute("aria-label"), "macbook-pro, Replica, Paused");
+  assert.equal(forever("#status-device").title, "macbook-pro · Replica · Paused");
+});
+
+test("the end of a pause shows the day only when it is not today, and the tray shares the clock", async () => {
+  const { clockTime, pauseEnd } = await import("../apps/desktop/src/clock-time.js");
+  const now = new Date(2026, 10, 12, 10, 0);
+  assert.equal(pauseEnd(new Date(2026, 10, 12, 15, 30).getTime(), now), "15:30");
+  assert.equal(pauseEnd(new Date(2026, 10, 13, 8, 0).getTime(), now), "Fri 08:00");
+  assert.equal(clockTime(new Date(2026, 10, 12, 7, 5)), "07:05");
+  assert.match(source("tray.js"), /^import \{ clockTime \} from "\.\/clock-time\.js";/);
+  assert.doesNotMatch(source("app.js"), /const clockTime =/);
+  const css = source("style.css").replace(/\r\n/g, "\n");
+  assert.match(css, /\n#last-sync \{\s*grid-column: 1 \/ -1;\s*min-width: 0;\s*\}/, "the base rule lets the line wrap under 760 px");
+  assert.match(css, /\n@media \(min-width: 761px\) \{\s*#last-sync \{\s*white-space: nowrap;\s*overflow: hidden;\s*text-overflow: ellipsis;\s*\}\s*\}/, "the second line stays on one line at the full sidebar's width");
 });
 
 function stoppedBoot(t, { upAfter = Infinity, stopped = "", startError = "", hold = false } = {}) {

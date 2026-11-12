@@ -58,6 +58,9 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
     await favoriteOrder.text(),
     fs.readFileSync(new URL("../apps/desktop/src/favorite-order.js", import.meta.url), "utf8"),
   );
+  const clockTime = await fetch(url + "/clock-time.js");
+  assert.equal(clockTime.status, 200);
+  assert.equal(await clockTime.text(), fs.readFileSync(new URL("../apps/desktop/src/clock-time.js", import.meta.url), "utf8"));
   assert.equal((await fetch(url + "/v1/status")).status, 401);
   assert.equal(
     (await (await fetch(url + "/.well-known/arca")).json()).apiPort,

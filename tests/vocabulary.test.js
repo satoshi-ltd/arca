@@ -234,7 +234,8 @@ test("every list that grows says Show more", () => {
 test("History heads each day group and tells each row's clock time the same way on desktop and phone", async () => {
   const source = fs.readFileSync(path.join(root, "apps/desktop/src/app.js"), "utf8");
   const code = source.slice(source.indexOf("function dayLabel("), source.indexOf("const icon = (name)"));
-  const desktop = vm.runInNewContext(`${code}\n({ dayLabel, clockTime })`, {});
+  const shared = fs.readFileSync(path.join(root, "apps/desktop/src/clock-time.js"), "utf8").replace(/export /g, "");
+  const desktop = vm.runInNewContext(`${shared}\n${code}\n({ dayLabel, clockTime })`, {});
   const phone = await import("../apps/mobile/src/history-days.js");
   const now = new Date(2026, 9, 4, 15, 30);
   const at = (year, month, day, hour = 9, minute = 5) => new Date(year, month, day, hour, minute);

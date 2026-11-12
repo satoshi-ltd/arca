@@ -1,3 +1,4 @@
+import { clockTime } from "./clock-time.js";
 const invoke = window.__TAURI__.core.invoke;
 const escape = (value) =>
   String(value ?? "").replace(
@@ -65,8 +66,6 @@ const coverMarkup = (cover) =>
   cover
     ? `<img alt="" src="${escape(cover)}">`
     : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>';
-const clock = (value) =>
-  new Date(value).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 const ROWS_SHOWN = 4;
 let more = false,
@@ -98,13 +97,13 @@ function attentionRows(state) {
 }
 function summary(state, rows = attentionRows(state)) {
   const selected = state.volumes.filter((v) => v.selected);
-  const last = state.lastSync ? `Last completed ${clock(state.lastSync)}` : "Not yet verified";
+  const last = state.lastSync ? `Last completed ${clockTime(state.lastSync)}` : "Not yet verified";
   const lower = last[0].toLowerCase() + last.slice(1);
   if (state.phase === "unlinked") return { title: "Disconnected", line: last };
   if (state.phase === "needs-folder") return { title: "Choose a shared folder", line: last };
   if (state.phase === "paused")
     return state.pauseUntil
-      ? { title: `Paused until ${clock(state.pauseUntil)}`, line: `Sync resumes on its own · ${lower}`, ink: "warn", resume: true }
+      ? { title: `Paused until ${clockTime(state.pauseUntil)}`, line: `Sync resumes on its own · ${lower}`, ink: "warn", resume: true }
       : { title: "Paused", line: last, ink: "warn", resume: true };
   if (state.hubUnavailable)
     return { title: "Offline", line: `Cannot reach ${state.hubName || "the hub"} · ${lower}`, ink: "warn" };

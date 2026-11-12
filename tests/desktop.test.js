@@ -41,6 +41,8 @@ const script =
     )
     .replace(/export /g, "") +
   "\n" +
+  fs.readFileSync(new URL("../apps/desktop/src/clock-time.js", import.meta.url), "utf8").replace(/export /g, "") +
+  "\n" +
   fs
     .readFileSync(
       new URL("../apps/desktop/src/notice-contract.js", import.meta.url),

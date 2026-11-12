@@ -11,6 +11,7 @@ const script = [
   source("file-icons.js").replace(/export /g, ""),
   source("music-library.js").replace(/export /g, ""),
   source("favorite-order.js").replace(/export /g, ""),
+  source("clock-time.js").replace(/export /g, ""),
   source("notice-contract.js").replace(/export /g, ""),
   source("app.js")
     .replace(/\r?\n/g, "\r\n")
@@ -231,6 +232,7 @@ test("a folder not yet counted reads Not counted yet, sizes reach TB and dates b
   assert.equal(ui.q('.folder-card[data-id="huge"] .meta').textContent, "3 files · 2.0 TB");
   assert.equal(ui.q('.folder-card[data-id="fresh"] .meta').textContent, "Not counted yet");
   assert.match(ui.q("#last-sync").textContent, /^Last sync .*\b\d{4}\b/);
+  assert.equal(ui.q("#last-sync").title, ui.q("#last-sync").textContent);
 });
 
 test("relative times re-render on the one-minute tick", async (t) => {
@@ -241,6 +243,7 @@ test("relative times re-render on the one-minute tick", async (t) => {
   assert.ok(tick, "a quiet timer re-renders relative times");
   tick.run();
   assert.equal(ui.q("#last-sync").textContent, "Last sync 5 min ago");
+  assert.equal(ui.q("#last-sync").title, "Last sync 5 min ago", "the tooltip keeps the whole line when it is cut");
 });
 
 test("a Devices load failure shows one notice with Retry and a hint naming the missing source", async (t) => {

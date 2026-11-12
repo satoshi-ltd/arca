@@ -4712,7 +4712,17 @@ dialog.photo-viewer {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#last-sync { grid-column: 1 / -1; }
+#last-sync {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+@media (min-width: 761px) {
+  #last-sync {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 #sync-controls {
   grid-column: 2;
   grid-row: 2;

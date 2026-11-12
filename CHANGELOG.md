@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.36 — 2026-11-11
+
+- The main window says when a timed pause ends: the status card reads "Until 15:30 · last sync …" under Paused, adding the day when it ends tomorrow.
+
+Needs: desktop build · hub redeploy
+
 ## 0.9.35 — 2026-11-11
 
 - Android Auto now says "No music on this phone yet" (or "Nothing downloaded on this phone" while a streamed library's hub is away) and to open Arca on the phone, instead of showing empty tabs.
