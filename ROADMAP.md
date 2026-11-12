@@ -28,6 +28,36 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
+- **SEC-WEB-APPROVAL-REF** — A web sign-in is never approved without matching its reference
+  `bug · agent · high`
+  `decide` takes no reference and the prompt shows the oldest pending request, which anyone who can reach the web port may create and keep alive; one Allow on the wrong prompt gives a 24-hour administrator session. Accept: the pending list omits the reference, Allow must carry it, a wrong or missing one is refused and ends the request, and tests cover both and two concurrent requests. The interface follows board UI-SEC-WEB-APPROVAL-REF on desktop and web and UI-SEC-WEB-APPROVAL-REF-MOB on the phone: the number is typed, never shown.
+- **SYNC-MASS-DELETE** — A sudden mass disappearance waits for a decision before it is deleted everywhere
+  `bug · agent · high`
+  Decided by the maintainer (was DEC-MASS-DELETE): the folder marker is checked only at the root and a scan tombstones every indexed row it did not see, so a subfolder that is its own mount and comes back empty after a reboot, or a folder emptied in Finder, is deleted on every device; Movies & TV has no older version to restore. Accept: a hub or replica scan that would delete at least 50 files and more than a quarter of a folder's files, or everything under a directory that lives on a different device than the folder's root, records nothing for those paths and puts the folder in an attention state until a person confirms the deletion or the files return (Check again rescans); smaller deletions propagate as today; the hub and every replica apply the same rule; tests cover the threshold, the mount case, confirming and the files coming back. The interface follows board UI-MASS-DELETE.
+- **UI-PAUSE-UNTIL** — The window says when a timed pause ends
+  `ui · agent · normal`
+  accept: the board (desktop and web).
+- **UX-ERASE-CONFIRM** — Erase asks for more than one click
+  `feature · agent · normal`
+  Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
+- **UI-MOB-SELECT-LIMIT** — Selecting a 101st photo says why nothing happened
+  `ui · agent · normal`
+  accept: the board (phone and Fold).
+- **UI-MOB-LIMITED-ACCESS** — Limited photo access offers the way to allow more
+  `ui · agent · normal`
+  accept: the board (phone and Fold).
+- **UI-MOB-ONBOARD-SPACE** — Onboarding warns before the button when the chosen folders do not fit
+  `ui · agent · normal`
+  accept: the board (phone and Fold).
+- **UI-MOB-PLAYER-LEGIBLE** — The film's progress line and times stay readable over a bright picture
+  `ui · agent · normal`
+  accept: the board (phone, desktop and web).
+- **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
+  `feature · agent · normal`
+  Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
+- **UX-AUTO-EMPTY** — The car says what to do when the library is empty
+  `feature · agent · normal · native`
+  Idea. An empty or unsynced library returns three empty tabs with no message. Accept: the Android Auto service returns a message and a resolution label ("Open Arca on your phone to sync music"), with JVM tests; the interface follows board UI-UX-AUTO-EMPTY.
 
 
 
@@ -47,9 +77,6 @@ Each carries a recommendation; a yes or no is enough.
 - **DEC-FFMPEG-SOURCE** — Where does the desktop's FFmpeg come from?
   `decision · maintainer · high`
   The desktop bundles `ffmpeg-static` 5.3.0, which is FFmpeg 6.1.1 (December 2023) downloaded without a checksum, and runs it unsandboxed on every probe, thumbnail, subtitle extraction and stream of files that arrive by sync. Docker uses Debian's patched package as a non-root user. Options: a maintained static build pinned by checksum, building FFmpeg in the release pipeline, or the system FFmpeg where one exists. Recommendation: a pinned maintained build, then SEC-RUNTIME-CHECKSUMS enforces it.
-- **DEC-MASS-DELETE** — Should a sudden mass disappearance pause instead of propagating?
-  `decision · maintainer · normal`
-  The folder marker is checked only at the root and a scan tombstones every indexed row it did not see, with no proportion or count limit. A subfolder that is its own mount and comes back empty after a reboot, or a folder emptied in Finder, is deleted on every device; Movies & TV has no older version to restore. If yes: a scan that would delete more than a threshold of a folder's files, or everything under a directory on a different device than the root, records nothing and raises an attention state until confirmed. Recommendation: yes; board UI-MASS-DELETE draws the attention state and the confirmation, and the threshold is part of the answer.
 - **DEC-ERASE-SCOPE** — What may Erase delete outside the state directory?
   `decision · maintainer · normal`
   `addVolume` accepts any existing directory (a mount point such as `/Volumes/Disk`, or `~/Documents`) and writes the marker; Erase later removes it wholesale, including files Arca never synced; a server web session can also place a share, a moved folder or a backup at any absolute server path. Choose between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's). Erase already names the folders the OS refused to delete; folders skipped because they lost their marker are still unreported and should be named in the same result.
@@ -188,9 +215,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 - **MOB-ALBUM-UNAVAILABLE** — The Photo uploads sheet says how to get Save changes back when an album disappeared
   `bug · agent · normal`
   Save is disabled with no reason while a selected album is missing, and the form row shows the album's name with no sign that it is gone. Accept: the row reads "Unavailable" and the button carries its reason, through a pure helper tested beside `gallerySettingsChanged`.
-- **UX-ERASE-CONFIRM** — Erase asks for more than one click
-  `feature · agent · normal`
-  Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
 
 ### Normal priority — medium effort
 
@@ -215,9 +239,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 - **SEC-FORM-ACTION** — Injected markup cannot submit a form, and hub-supplied IDs and revisions never reach HTML raw
   `bug · agent · normal`
   Neither content security policy sets `form-action`; a folder ID from the hub's catalog becomes an element `id` unvalidated on refresh, and `rev` values are rendered raw in History. Reaching them needs a malicious hub. Accept: `form-action 'self'` on the web and `'none'` in Tauri, the catalog refresh validates IDs as `hubCatalog` does, `rev` renders through a number, with DOM tests for a hostile ID and a string `rev`.
-- **SEC-WEB-APPROVAL-REF** — A web sign-in is never approved without matching its reference
-  `bug · agent · normal`
-  `decide` takes no reference and the prompt shows the oldest pending request, which anyone who can reach the web port may create and keep alive; one Allow on the wrong prompt gives a 24-hour administrator session. Accept: the pending list omits the reference, Allow must carry it, a wrong or missing one is refused and ends the request, and tests cover both and two concurrent requests. The interface follows board UI-SEC-WEB-APPROVAL-REF on desktop and web and UI-SEC-WEB-APPROVAL-REF-MOB on the phone: the number is typed, never shown.
 - **SEC-DEPS** — Dependency advisories are checked in CI
   `chore · agent · normal`
   accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
@@ -377,12 +398,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 - **UX-PHOTO-RANGE** — Shift-click selects a range of photos
   `feature · agent · low`
   Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Arrow extend the selection from the last toggled tile, and the bar downloads the selected originals, with DOM tests; the interface follows board UI-UX-PHOTO-RANGE.
-- **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
-  `feature · agent · low`
-  Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
-- **UX-AUTO-EMPTY** — The car says what to do when the library is empty
-  `feature · agent · low · native`
-  Idea. An empty or unsynced library returns three empty tabs with no message. Accept: the Android Auto service returns a message and a resolution label ("Open Arca on your phone to sync music"), with JVM tests; the interface follows board UI-UX-AUTO-EMPTY.
 
 ### Low priority — large effort
 
