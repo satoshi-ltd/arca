@@ -1204,6 +1204,37 @@ test("mobile receives removed ignore policy before scanning newly included conte
   );
 });
 
+test("mobile takes a hub .arcaignore deleted and created again unless the phone edited its own", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  const policy = f.files.work(r.scope, f.volume.id, ".arcaignore");
+  const recreate = async (local, rules) => {
+    fs.unlinkSync(path.join(f.volume.path, ".arcaignore"));
+    await f.daemon.engine.cycle();
+    await sync(f);
+    assert.equal((await f.store.current(r.scope, f.volume.id, ".arcaignore")).deleted, 1);
+    assert.equal(fs.existsSync(policy), false);
+    if (local !== null) fs.writeFileSync(policy, local);
+    fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), rules);
+    await f.daemon.engine.cycle();
+    await r.sync();
+  };
+  fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), "first/\n");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  await recreate(null, "absent/\n");
+  assert.equal(r.error, null);
+  assert.equal(fs.readFileSync(policy, "utf8"), "absent/\n");
+  await recreate("", "empty/\n");
+  assert.equal(r.error, null);
+  assert.equal(fs.readFileSync(policy, "utf8"), "empty/\n");
+  await recreate("mine/\n", "hub/\n");
+  assert.match(r.error, /arcaignore differs/);
+  assert.equal(fs.readFileSync(policy, "utf8"), "mine/\n");
+  assert.equal(fs.readFileSync(path.join(f.volume.path, ".arcaignore"), "utf8"), "hub/\n");
+});
+
 test("mobile forgets newly excluded rows and keeps their local copies", async (t) => {
   const f = await fixture(t),
     r = f.replica;

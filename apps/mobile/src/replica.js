@@ -680,7 +680,9 @@ export class Replica {
         throw new Error("Remote .arcaignore exceeds 64 KiB");
       if (
         present &&
-        (known ? local !== known.hash : (await this.files.stat(file)).size > 0)
+        (known && !known.deleted
+          ? local !== known.hash
+          : (await this.files.stat(file)).size > 0)
       )
         throw new Error(
           ".arcaignore differs from the hub. Use the same rules before syncing.",

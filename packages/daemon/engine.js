@@ -2633,13 +2633,14 @@ export class Engine {
     const localText = readIgnore(v.path);
     const localHash = digest(localText);
     const known = s.current(v.id, IGNORE_FILE);
-    if (known?.hash === remote.hash || localHash === remote.hash) {
+    const present = fs.existsSync(path.join(v.path, IGNORE_FILE));
+    if (known?.hash === remote.hash || (present && localHash === remote.hash)) {
       if (localHash === remote.hash) s.setFile(remote);
       return;
     }
     // Policy conflicts must stop before scanning or transferring ordinary files.
     if (
-      known
+      known && !known.deleted
         ? localHash !== known.hash
         : localText !== DEFAULT_IGNORE && localText !== ""
     )

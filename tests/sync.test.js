@@ -1946,6 +1946,71 @@ test("stale ignore proposals are rejected without creating conflict files", asyn
   );
 });
 
+test("an empty hub .arcaignore is written to a replica that has none and is never proposed as deleted", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, ".arcaignore", "");
+  await hub.sync();
+  const first = await connect("first");
+  await first.sync();
+  await first.sync();
+  await hub.sync();
+  const policy = path.join(first.engine.store.volume(volume.id).path, ".arcaignore");
+  assert.equal(fs.readFileSync(policy, "utf8"), "", "a replica linking to an empty policy gets the empty file");
+  assert.equal(hub.engine.store.current(volume.id, ".arcaignore").deleted, 0);
+  assert.ok(fs.existsSync(path.join(volume.path, ".arcaignore")));
+
+  fs.rmSync(path.join(volume.path, ".arcaignore"));
+  await hub.sync();
+  await first.sync();
+  assert.equal(fs.existsSync(policy), false);
+  write(hub, volume, ".arcaignore", "");
+  await hub.sync();
+  await first.sync();
+  await first.sync();
+  await hub.sync();
+  assert.equal(fs.readFileSync(policy, "utf8"), "", "an empty policy recreated on the hub is written again");
+  assert.equal(hub.engine.store.current(volume.id, ".arcaignore").deleted, 0, "and the hub keeps it");
+  assert.ok(fs.existsSync(path.join(volume.path, ".arcaignore")));
+});
+
+test("a hub .arcaignore deleted and created again reaches replicas without an empty or absent local policy stopping them", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  await hub.sync();
+  const absent = await connect("absent-policy");
+  const empty = await connect("empty-policy");
+  const edited = await connect("edited-policy");
+  const replicas = [absent, empty, edited];
+  for (const replica of replicas) await replica.sync();
+  fs.unlinkSync(path.join(volume.path, ".arcaignore"));
+  write(hub, volume, "kept.txt", "content");
+  await hub.sync();
+  for (const replica of replicas) {
+    await replica.sync();
+    assert.equal(replica.engine.error, null);
+    assert.equal(replica.engine.store.current(volume.id, ".arcaignore").deleted, 1);
+    assert.equal(fs.existsSync(path.join(replica.engine.store.volume(volume.id).path, ".arcaignore")), false);
+  }
+  write(empty, volume, ".arcaignore", "");
+  write(edited, volume, ".arcaignore", "mine/\n");
+  write(hub, volume, ".arcaignore", "private/\n");
+  write(hub, volume, "private/secret.txt", "hub only");
+  await hub.sync();
+  for (const replica of [absent, empty]) {
+    await replica.sync();
+    assert.equal(replica.engine.error, null);
+    assert.equal(read(replica, volume, ".arcaignore"), "private/\n");
+    assert.equal(
+      replica.engine.store.current(volume.id, ".arcaignore").hash,
+      hub.engine.store.current(volume.id, ".arcaignore").hash,
+    );
+    assert.equal(fs.existsSync(path.join(replica.engine.store.volume(volume.id).path, "private", "secret.txt")), false);
+  }
+  await assert.rejects(edited.sync(), /arcaignore differs/);
+  assert.match(edited.engine.error, /arcaignore differs/);
+  assert.equal(read(edited, volume, ".arcaignore"), "mine/\n");
+  assert.equal(read(hub, volume, ".arcaignore"), "private/\n");
+});
+
 test("hub deletion removes only its catalog, preserves files and lets replicas detach and reuse destinations", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "keep.txt", "original");

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.25 — 2026-11-11
+
+- Recreating a folder's .arcaignore on the hub after deleting it no longer pauses desktop replicas and phones with “.arcaignore differs between this device and the hub”: a device with no rules of its own takes the hub's, and rules edited on the device still stop it until they agree.
+- An empty .arcaignore on the hub is now written to a replica that has none, instead of the replica proposing its deletion and removing it from the hub.
+
+Needs: native build · desktop build · server replica redeploy
+
 ## 0.9.24 — 2026-11-11
 
 - Changing an album on the phone while it is still restoring files from an interrupted repair keeps the repair going, so every file it indexed comes back and none is proposed as deleted.
