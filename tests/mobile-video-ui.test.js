@@ -121,7 +121,7 @@ test("the player streams with the token in a header, saves positions and plays U
   assert.match(player, /\{session && source\?\.key === key \? \(/, "a new episode never mounts with the previous episode's stream");
   assert.match(player, /watchNetwork\?\.\(current, \(\) => \{[\s\S]*?send\(\{ type: "pause", position \}\);\s+player\.replaceAsync\(null\)/, "leaving Wi-Fi saves the position and drops the stream");
   assert.match(app, /watchPrivateNetwork\(source, \(listener\) => \{/);
-  assert.match(player, /accessibilityActions=\{\[\s+\{ name: "increment", label: "Forward 30 seconds" \},\s+\{ name: "decrement", label: "Back 10 seconds" \},/);
+  assert.match(player, /accessibilityActions: \[\s+\{ name: "increment", label: "Forward 30 seconds" \},\s+\{ name: "decrement", label: "Back 10 seconds" \},/);
   assert.match(player, /animationType="none"/);
 });
 

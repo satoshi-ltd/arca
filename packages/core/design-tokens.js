@@ -191,6 +191,7 @@ export const geometry = {
   iconStroke: 1.75,
   touchHeight: 44,
   touchControlHeight: 48,
+  scrubKnob: 16,
 };
 
 export const motion = {

@@ -117,7 +117,7 @@ test("the controls leave after three idle seconds of playback, and never while a
   const screen = fs.readFileSync(new URL("../apps/mobile/src/VideoPlayer.jsx", import.meta.url), "utf8");
   assert.match(
     screen,
-    /if \(controlsLeave\(\{ playing: player\.playing, idle: Date\.now\(\) - touched\.current, screenReader: reader\.current \}\)\) setControls\(false\);/,
+    /if \(controlsLeave\(\{ playing: player\.playing, idle: Date\.now\(\) - touched\.current, screenReader: reader\.current, dragging: scrubbing\.current \}\)\) setControls\(false\);/,
     "the player hides its controls only through the rule",
   );
   assert.doesNotMatch(screen, /CONTROLS_HIDE/);
@@ -133,5 +133,6 @@ test("the controls leave after three idle seconds of playback, and never while a
     /<Pressable accessibilityRole="button" accessibilityLabel=\{panel \? \(panel === "audio" \? "Close Audio" : "Close Subtitles"\) : controls \? "Hide controls" : "Show controls"\}/,
     "the tap area says it is a button and what it will do",
   );
-  assert.match(screen, /<View\s+accessible\s+accessibilityRole="adjustable"\s+accessibilityLabel="Position"/, "VoiceOver can land on the scrubber");
+  assert.match(screen, /accessibility=\{\{\s+accessibilityRole: "adjustable",\s+accessibilityLabel: "Position"/, "VoiceOver can land on the scrubber");
+  assert.match(fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8"), /<View accessible \{\.\.\.accessibility\}/);
 });

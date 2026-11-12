@@ -29,12 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
-  `feature · agent · normal`
-  The video scrubber is 32 dp and seeks only on release with no thumb; the Now Playing track has no thumb or drag; the sleep chip is 32 dp; segments, switches and breadcrumbs are 44 dp with no slop; the Now Playing artist and album links, the "Using local Wi-Fi?" link and the viewer bar buttons are under the touch height. Accept: both scrubbers get a visible thumb, drag seeking and a hit area of at least the touch height, and the listed targets reach 48 dp on Android; component tests check the hit areas; the interface follows board UI-MOB-MEDIA-TARGETS.
-- **UI-MOB-MEDIA-TARGETS** — Both players show where you are and let you drag there
-  `ui · agent · normal`
-  accept: the board (phone and Fold).
 
 ## In progress
 

@@ -22,13 +22,16 @@ import React, {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import {
   Animated,
+  I18nManager,
   Image,
   PanResponder,
+  Platform,
   StyleSheet,
   View,
   Pressable,
@@ -39,6 +42,8 @@ import {
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { draggedDown } from "./sheet-dismiss.js";
+import { SCRUB_SETTLE_MS, scrubGrant, scrubHeld, scrubMove, scrubPercent, scrubShown, scrubTarget } from "./scrub.js";
+import { touchSlop } from "./touch-target.js";
 import Svg, {
   Path,
   Rect,
@@ -828,6 +833,7 @@ export function Toggle({
         accessibilityLabel={label}
         accessibilityState={{ checked: value, disabled }}
         disabled={disabled}
+        hitSlop={touchSlop(Platform.OS, g.touchHeight, g.touchHeight)}
         onPress={() => onChange(!value)}
         style={[s.switchTarget, disabled && s.disabled]}
       >
@@ -844,6 +850,70 @@ export function Toggle({
     </View>
   );
 }
+export function Scrub({ position, duration, seek, near, onActive, onDragging, accessibility, strip, track, fill, knob, times }) {
+  const [width, setWidth] = useState(0);
+  const [drag, setDrag] = useState(null);
+  const [, settle] = useState(0);
+  const live = useRef(null);
+  live.current = { width, duration, seek, onActive, onDragging };
+  const dragRef = useRef(null);
+  const held = useRef(null);
+  const timer = useRef(null);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (dragRef.current) live.current.onDragging?.(false);
+    },
+    [],
+  );
+  const show = (next) => {
+    dragRef.current = next;
+    setDrag(next);
+    live.current.onDragging?.(!!next);
+    if (next) live.current.onActive?.();
+  };
+  const handlers = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => !dragRef.current,
+        onPanResponderGrant: (event) => show(scrubGrant(event.nativeEvent.locationX, live.current.width, I18nManager.isRTL)),
+        onPanResponderMove: (_, gesture) => dragRef.current && show(scrubMove(dragRef.current, gesture.dx, gesture.dy)),
+        onPanResponderRelease: () => {
+          const target = scrubTarget(dragRef.current, live.current.duration);
+          if (target != null) {
+            held.current = { target, at: Date.now() };
+            clearTimeout(timer.current);
+            timer.current = setTimeout(() => {
+              held.current = null;
+              settle((n) => n + 1);
+            }, SCRUB_SETTLE_MS);
+          }
+          show(null);
+          if (target != null) live.current.seek(target);
+        },
+        onPanResponderTerminate: () => show(null),
+      }).panHandlers,
+    [],
+  );
+  const landing = scrubHeld(held.current, position, Date.now(), near);
+  if (landing == null) held.current = null;
+  const shown = scrubShown(drag, landing ?? position, duration);
+  const percent = scrubPercent(shown, duration);
+  return (
+    <>
+      <View accessible {...accessibility} onLayout={(event) => setWidth(event.nativeEvent.layout.width)} {...handlers} style={strip}>
+        <View pointerEvents="none" style={track}>
+          <View style={[fill, { width: percent }]} />
+        </View>
+        <View pointerEvents="none" style={[knob, { left: percent }]} />
+      </View>
+      {times(shown)}
+    </>
+  );
+}
+
 export function Breadcrumbs({ name, directory, onChange }) {
   const { s, c } = useDesign();
   const parts = directory.split("/").filter(Boolean);
@@ -1837,6 +1907,7 @@ export function SegmentedControl({ options, value, onChange, scroll = false, fit
           accessibilityRole="button"
           accessibilityState={{ selected: value === option.value }}
           accessibilityHint={clearable && value === option.value ? "Tap again to clear" : undefined}
+          hitSlop={touchSlop(Platform.OS, g.touchHeight)}
           onPress={() => onChange(option.value)}
           onLayout={({ nativeEvent: { layout } }) =>
             setBoxes((boxes) => {

@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { Text } from "./Text";
 import { useDesign, Field, CodeInput, Button } from "./components";
+import { geometry as g } from "./design-tokens.js";
+import { touchSlop } from "./touch-target.js";
 
 export function PairingForm({
   name,
@@ -45,6 +47,7 @@ export function PairingForm({
         accessibilityRole="button"
         accessibilityLabel="Using local Wi-Fi?"
         accessibilityState={{ expanded: details }}
+        hitSlop={touchSlop(Platform.OS, g.touchCaptionLine)}
         onPress={() => setDetails((value) => !value)}
       >
         <Text style={[s.caption, s.active]}>Using local Wi-Fi?</Text>

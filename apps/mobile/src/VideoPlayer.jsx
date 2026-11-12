@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
 import { requireOptionalNativeModule, useEvent } from "expo";
-import { Busy, Button, Icon, useDesign } from "./components";
+import { Busy, Button, Icon, Scrub, useDesign } from "./components";
 import { useMotion, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { episodeCode, playerTitles } from "./video-library.js";
@@ -19,34 +19,40 @@ const TICK = 1000;
 const remembered = new Map();
 const rememberedLanguage = new Map();
 
-function Scrubber({ position, duration, seek }) {
+function Scrubber({ position, duration, seek, onActive, onDragging }) {
   const { s } = useDesign();
-  const [width, setWidth] = useState(0);
-  const value = duration > 0 ? Math.min(1, position / duration) : 0;
-  const at = (x) => width > 0 && duration > 0 && seek(Math.max(0, Math.min(1, x / width)) * duration);
   return (
-    <View
-      accessible
-      accessibilityRole="adjustable"
-      accessibilityLabel="Position"
-      accessibilityValue={{ text: `${clock(position)} of ${clock(duration)}` }}
-      accessibilityActions={[
-        { name: "increment", label: "Forward 30 seconds" },
-        { name: "decrement", label: "Back 10 seconds" },
-      ]}
-      onAccessibilityAction={({ nativeEvent }) => {
-        const target = scrubAction(nativeEvent.actionName, position, duration);
-        if (target != null) seek(target);
+    <Scrub
+      position={position}
+      duration={duration}
+      seek={seek}
+      near={1}
+      onActive={onActive}
+      onDragging={onDragging}
+      accessibility={{
+        accessibilityRole: "adjustable",
+        accessibilityLabel: "Position",
+        accessibilityValue: { text: `${clock(position)} of ${clock(duration)}` },
+        accessibilityActions: [
+          { name: "increment", label: "Forward 30 seconds" },
+          { name: "decrement", label: "Back 10 seconds" },
+        ],
+        onAccessibilityAction: ({ nativeEvent }) => {
+          const target = scrubAction(nativeEvent.actionName, position, duration);
+          if (target != null) seek(target);
+        },
       }}
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-      onStartShouldSetResponder={() => true}
-      onResponderRelease={(event) => at(event.nativeEvent.locationX)}
-      style={s.videoScrub}
-    >
-      <View style={s.videoScrubTrack}>
-        <View style={[s.videoScrubFill, { width: `${Math.round(value * 1000) / 10}%` }]} />
-      </View>
-    </View>
+      strip={s.videoScrub}
+      track={s.videoScrubTrack}
+      fill={s.videoScrubFill}
+      knob={s.videoScrubKnob}
+      times={(shown) => (
+        <View style={s.videoTimes}>
+          <Text style={s.videoTime}>{clock(shown)}</Text>
+          <Text style={s.videoTime}>{`−${clock(Math.max(0, duration - shown))}`}</Text>
+        </View>
+      )}
+    />
   );
 }
 
@@ -74,6 +80,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   currentRef.current = current;
   const [reopening, setReopening] = useState(false);
   const holding = useRef(false);
+  const scrubbing = useRef(false);
   const produced = useRef(0);
   const switching = useRef(false);
   const fellBack = useRef(!!source.compatible);
@@ -309,7 +316,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
           duration: fullDuration(currentRef.current, session.item, player.duration),
           playing: player.playing,
         });
-      if (controlsLeave({ playing: player.playing, idle: Date.now() - touched.current, screenReader: reader.current })) setControls(false);
+      if (controlsLeave({ playing: player.playing, idle: Date.now() - touched.current, screenReader: reader.current, dragging: scrubbing.current })) setControls(false);
     }, TICK);
     const ended = player.addListener("playToEnd", () => send({ type: "ended" }));
     return () => {
@@ -424,11 +431,9 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
             position={position}
             duration={duration}
             seek={seekTo}
+            onActive={wake}
+            onDragging={(on) => (scrubbing.current = on)}
           />
-          <View style={s.videoTimes}>
-            <Text style={s.videoTime}>{clock(position)}</Text>
-            <Text style={s.videoTime}>{`−${clock(Math.max(0, duration - position))}`}</Text>
-          </View>
         </Animated.View>
       )}
       {!!cue && !failed && (

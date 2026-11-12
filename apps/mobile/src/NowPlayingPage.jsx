@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Modal, PanResponder, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { Animated, Modal, PanResponder, Platform, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState, Eyebrow, Icon, InlineMessage, PressScale, Sheet, useDesign } from "./components";
+import { EmptyState, Eyebrow, Icon, InlineMessage, PressScale, Scrub, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
 import { artistFor, episodeCaption, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
 import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
@@ -13,6 +13,7 @@ import { savedPosition } from "./audio-positions.js";
 import { sleepLabel, sleepOptions } from "./sleep-timer.js";
 import { useNow } from "./audio-session.js";
 import { count } from "./format";
+import { ANDROID_TOUCH, touchSlop } from "./touch-target.js";
 
 const isPlaying = (state) => !!state && (state.playing || (state.playWhenReady && !state.ended && !state.error));
 const clock = (ms) =>
@@ -56,7 +57,7 @@ function SleepButton({ sleep, podcast, onPress }) {
     );
   const label = sleepLabel(sleep, now, podcast);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Sleep timer, ${label}`} onPress={onPress} style={s.sleepChip}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Sleep timer, ${label}`} hitSlop={touchSlop(Platform.OS, g.buttonSmallHeight)} onPress={onPress} style={s.sleepChip}>
       <Icon name="moon" size={g.pillIcon} color={c.ink} />
       <Text style={s.sleepChipText}>{label}</Text>
     </Pressable>
@@ -105,7 +106,6 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const { duration: ms, easing } = useMotion();
   const twoPane = wide;
   const [state] = useMusicPlayer(visible);
-  const [trackWidth, setTrackWidth] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
   const [shownQueue, releaseQueue] = useRetained(queueOpen);
   const [sleepOpen, setSleepOpen] = useState(false);
@@ -149,12 +149,13 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const playing = isPlaying(state);
   const total = state?.duration || (track?.duration ? track.duration * 1000 : 0);
   const position = Math.min(state?.position || 0, total || Infinity);
-  const progress = total ? Math.max(0, Math.min(1, position / total)) : 0;
   const artist = artistFor(library, track);
   const podcast = !!track?.podcast;
   const seek = (ms) => {
     command("seek", Math.max(0, Math.min(total || Infinity, ms)));
   };
+  const bothLinks = !podcast && !!(track?.artist || state?.artist) && !!(track?.album || state?.album);
+  const linkSlop = (edge) => touchSlop(Platform.OS, g.touchBodyLine, ANDROID_TOUCH, bothLinks ? { [edge]: 1 } : {});
   const control = (label, icon, onPress, active = false, primary = false) => (
     <Pressable
       accessibilityRole="button"
@@ -206,21 +207,21 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
         </Text>
         <View style={s.nowLinks}>
           {podcast && (
-            <Pressable accessibilityRole="link" accessibilityLabel={`Show ${track.artist}`} onPress={() => openShow(track)}>
+            <Pressable accessibilityRole="link" accessibilityLabel={`Show ${track.artist}`} hitSlop={linkSlop()} onPress={() => openShow(track)}>
               <Text numberOfLines={1} style={s.text}>
                 {[track.artist, formatDay(track.date)].filter(Boolean).join(" · ")}
               </Text>
             </Pressable>
           )}
           {!podcast && !!(track?.artist || state.artist) && (
-            <Pressable accessibilityRole="link" accessibilityLabel={`Artist ${track?.artist || state.artist}`} disabled={!artist} onPress={() => artist && openArtist(artist)}>
+            <Pressable accessibilityRole="link" accessibilityLabel={`Artist ${track?.artist || state.artist}`} disabled={!artist} onPress={() => artist && openArtist(artist)} hitSlop={linkSlop("bottom")}>
               <Text numberOfLines={1} style={s.text}>
                 {track?.artist || state.artist}
               </Text>
             </Pressable>
           )}
           {!podcast && !!(track?.album || state.album) && (
-            <Pressable accessibilityRole="link" accessibilityLabel={`Album ${track?.album || state.album}`} disabled={!track} onPress={() => track && openAlbum(track)}>
+            <Pressable accessibilityRole="link" accessibilityLabel={`Album ${track?.album || state.album}`} disabled={!track} onPress={() => track && openAlbum(track)} hitSlop={linkSlop("top")}>
               <Text numberOfLines={1} style={s.text}>
                 {track?.album || state.album}
               </Text>
@@ -230,26 +231,30 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
         {!!state.error && <InlineMessage tone="error">{state.error}</InlineMessage>}
       </View>
       <View style={s.playerProgressArea}>
-        <Pressable
-          accessibilityRole="adjustable"
-          accessibilityLabel="Position"
-          accessibilityValue={{ min: 0, max: Math.round(total / 1000), now: Math.round(position / 1000), text: `${formatDuration(position / 1000) || "0:00"} of ${formatDuration(total / 1000) || "unknown"}` }}
-          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-          onAccessibilityAction={(event) =>
-            seek(position + (event.nativeEvent.actionName === "increment" ? 15000 : -15000))
-          }
-          onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
-          onPress={(event) => total && trackWidth && seek((event.nativeEvent.locationX / trackWidth) * total)}
-          style={s.playerTrackArea}
-        >
-          <View style={s.playerTrack}>
-            <View style={[s.playerFill, { width: `${progress * 100}%` }]} />
-          </View>
-        </Pressable>
-        <View style={s.playerTimes}>
-          <Text style={s.mono}>{formatDuration(position / 1000) || "0:00"}</Text>
-          <Text style={s.mono}>{formatDuration(total / 1000) || "—"}</Text>
-        </View>
+        <Scrub
+          key={state.id}
+          position={position}
+          duration={total}
+          seek={seek}
+          near={1000}
+          accessibility={{
+            accessibilityRole: "adjustable",
+            accessibilityLabel: "Position",
+            accessibilityValue: { min: 0, max: Math.round(total / 1000), now: Math.round(position / 1000), text: `${formatDuration(position / 1000) || "0:00"} of ${formatDuration(total / 1000) || "unknown"}` },
+            accessibilityActions: [{ name: "increment" }, { name: "decrement" }],
+            onAccessibilityAction: (event) => seek(position + (event.nativeEvent.actionName === "increment" ? 15000 : -15000)),
+          }}
+          strip={s.playerTrackArea}
+          track={s.playerTrack}
+          fill={s.playerFill}
+          knob={s.playerKnob}
+          times={(shown) => (
+            <View style={s.playerTimes}>
+              <Text style={s.mono}>{formatDuration(shown / 1000) || "0:00"}</Text>
+              <Text style={s.mono}>{formatDuration(total / 1000) || "—"}</Text>
+            </View>
+          )}
+        />
       </View>
       <View style={s.playerControls}>
         {podcast

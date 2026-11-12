@@ -532,9 +532,10 @@ export function styles(
     videoRound: { width: 56, height: 56, borderRadius: r.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.mediaControl },
     videoRoundBig: { width: 72, height: 72, borderRadius: r.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.mediaControl },
     videoBottom: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: sp[6], paddingBottom: sp[4], paddingTop: sp[2], backgroundColor: c.mediaBar },
-    videoScrub: { height: 32, justifyContent: "center" },
+    videoScrub: { height: g.touchControlHeight, justifyContent: "center" },
     videoScrubTrack: { height: 4, borderRadius: r.pill, backgroundColor: c.mediaGlyph, overflow: "hidden" },
     videoScrubFill: { height: "100%", backgroundColor: c.onMedia },
+    videoScrubKnob: { position: "absolute", top: (g.touchControlHeight - g.scrubKnob) / 2, width: g.scrubKnob, height: g.scrubKnob, marginLeft: -g.scrubKnob / 2, borderRadius: r.pill, backgroundColor: c.onMedia },
     videoTimes: { flexDirection: "row", justifyContent: "space-between" },
     videoTime: { color: c.onMedia, fontFamily: "FragmentMono_400Regular", fontSize: g.touchCaptionFont },
     videoPanel: {
@@ -734,7 +735,7 @@ export function styles(
     nowPlaying: { alignItems: "center", gap: sp[5], paddingBottom: sp[2] },
     nowPlayingText: { alignSelf: "stretch", alignItems: "center" },
     playerProgressArea: { alignSelf: "stretch", gap: sp[2] },
-    playerTrackArea: { minHeight: g.touchHeight, justifyContent: "center" },
+    playerTrackArea: { height: g.touchControlHeight, justifyContent: "center" },
     playerTrack: {
       height: 6,
       borderRadius: r.pill,
@@ -742,6 +743,7 @@ export function styles(
       overflow: "hidden",
     },
     playerFill: { height: "100%", backgroundColor: c.ink },
+    playerKnob: { position: "absolute", top: (g.touchControlHeight - g.scrubKnob) / 2, width: g.scrubKnob, height: g.scrubKnob, marginLeft: -g.scrubKnob / 2, borderRadius: r.pill, backgroundColor: c.ink },
     playerTimes: { flexDirection: "row", justifyContent: "space-between" },
     playerControls: {
       flexDirection: "row",

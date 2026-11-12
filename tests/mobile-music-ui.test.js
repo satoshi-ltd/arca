@@ -74,7 +74,7 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
   assert.match(library, /label="Shuffle"/);
   const nowPage = read("src/NowPlayingPage.jsx");
   assert.match(nowPage, /command\("repeat", nextRepeat\(state\.repeat\)\)/);
-  assert.match(nowPage, /accessibilityRole="adjustable"/, "the progress bar seeks");
+  assert.match(nowPage, /accessibilityRole: "adjustable"/, "the progress bar seeks");
 });
 
 test("a track still downloading stays in its album, dimmed, labelled and not playable", () => {

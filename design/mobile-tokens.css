@@ -99,6 +99,7 @@
   --m-icon-stroke: 1.75;
   --m-touch-height: 44px;
   --m-touch-control-height: 48px;
+  --m-scrub-knob: 16px;
 }
 [data-theme="dark"] {
   --m-notice-surface: #1f2521;

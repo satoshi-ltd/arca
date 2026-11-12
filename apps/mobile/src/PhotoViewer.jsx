@@ -7,6 +7,7 @@ import {
   Linking,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -30,11 +31,13 @@ import {
   toggleZoom,
   zoomAround,
 } from "./viewer-gestures";
-import { motion } from "./design-tokens.js";
+import { geometry as g, motion } from "./design-tokens.js";
 import { useMotion } from "./motion";
+import { touchSlop } from "./touch-target.js";
 import { originTransform } from "./viewer-origin.js";
 
 const rest = { scale: 1, x: 0, y: 0 };
+const barSlop = touchSlop(Platform.OS, g.touchHeight, g.touchHeight);
 const begin = (touches, state, gesture) =>
   touches.length > 1
     ? {
@@ -753,6 +756,7 @@ export function PhotoViewer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close"
+              hitSlop={barSlop}
               style={s.viewerIconButton}
               onPress={closeToOrigin}
             >
@@ -776,6 +780,7 @@ export function PhotoViewer({
                   : undefined
               }
               disabled={!canShare}
+              hitSlop={barSlop}
               style={[s.viewerIconButton, !canShare && s.disabled]}
               onPress={() => share(item)}
             >
@@ -785,6 +790,7 @@ export function PhotoViewer({
               accessibilityRole="button"
               accessibilityLabel="Photo information"
               accessibilityState={{ expanded: infoOpen }}
+              hitSlop={barSlop}
               style={s.viewerIconButton}
               onPress={() => setInfoOpen((value) => !value)}
             >
@@ -801,6 +807,7 @@ export function PhotoViewer({
                   : undefined
               }
               disabled={!canDelete}
+              hitSlop={barSlop}
               style={[s.viewerIconButton, !canDelete && s.disabled]}
               onPress={() => remove(item)}
             >

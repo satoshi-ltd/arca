@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.46 — 2026-11-12
+
+- The phone's film player and Now playing show a handle on their progress line that you can drag: the time follows your finger and playback jumps there when you let go; a swipe that turns vertical never moves playback.
+- On Android, the sleep timer, segments, switches, Now playing's artist and album links, Using local Wi-Fi? and the photo viewer's buttons are easier to hit, without looking different.
+
+Needs: native build
+
 ## 0.9.45 — 2026-11-12
 
 - The History folder filter, Settings selects and the tray's ⋯ menu now open in the same frame as every ⋯ menu: rounder corners, roomier padding, no extra outline, and the standard green focus ring when moving with the keyboard. The selected option keeps its highlight under the pointer and the focus ring.

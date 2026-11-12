@@ -2972,17 +2972,17 @@
 }
 .m-video-scrub.m-video-scrub-touch {
   position: relative;
-  height: 48px;
+  height: var(--m-touch-control-height);
 }
 .m-video-knob,
 .m-np-knob {
   position: absolute;
   top: 50%;
   left: 38%;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  border-radius: 8px;
+  width: var(--m-scrub-knob);
+  height: var(--m-scrub-knob);
+  margin: calc(var(--m-scrub-knob) / -2) 0 0 calc(var(--m-scrub-knob) / -2);
+  border-radius: 50%;
 }
 .m-video-knob {
   background: var(--m-on-media);
@@ -2994,6 +2994,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  height: var(--m-touch-control-height);
 }
 .m-video-picture.m-video-bright {
   background: var(--m-on-media);
