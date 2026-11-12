@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.30 — 2026-11-12
+
+- The release pipeline gives the test suite 40 minutes instead of 20, because on Windows runners the grown suite no longer fit and the release never started.
+
 ## 0.9.29 — 2026-11-12
 
 - The release pipeline passes on Windows again, so 0.9.x reaches the desktop updater, Docker and the website: one test kept the index open while its temporary folder was removed, which Windows refuses.
