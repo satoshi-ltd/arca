@@ -153,8 +153,8 @@ export class Gallery {
         );
       const source = {
         ...old,
-        // A lost record may have been mid-conversion: recover missing files before any scan.
-        mode: damaged ? "converting" : "source",
+        // A lost or unfinished conversion must recover missing files before any scan.
+        mode: damaged || old?.mode === "converting" ? "converting" : "source",
         enabled: old?.mode === "source" ? old.enabled : true,
         albums,
         albumId: undefined,

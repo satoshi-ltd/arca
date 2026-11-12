@@ -1645,6 +1645,48 @@ test("interrupted old album conversion restores missing files without publishing
   assert.equal((await store.gallery(r.scope, volume.id)).mode, "source");
 });
 
+test("changing the album during an interrupted repair keeps restoring every indexed file without proposing deletions", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, store, files, volume } = f;
+  const names = ["one.jpg", "two.jpg", "three.jpg"];
+  for (const name of names)
+    fs.writeFileSync(path.join(volume.path, name), name);
+  await f.daemon.engine.cycle();
+  await sync(f);
+  await f.enable();
+  await store.setGallery(r.scope, volume.id, {
+    ...(await store.gallery(r.scope, volume.id)),
+    mode: "converting",
+  });
+  await files.removeFolder(r.scope, volume.id);
+  const apply = r.apply.bind(r);
+  let restored = 0;
+  r.apply = async (...args) => {
+    if (restored++ === 1) throw new Error("Repair interrupted");
+    return apply(...args);
+  };
+  await r.sync();
+  assert.match(r.error, /Repair interrupted/);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting");
+  r.apply = apply;
+
+  await r.gallery.configure(volume.id, { albums: [], videos: false }, true);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting");
+  await sync(f);
+  await f.daemon.engine.cycle();
+  for (const name of names) {
+    assert.equal(
+      fs.readFileSync(files.work(r.scope, volume.id, name), "utf8"),
+      name,
+    );
+    assert.equal(fs.readFileSync(path.join(volume.path, name), "utf8"), name);
+  }
+  const gallery = await store.gallery(r.scope, volume.id);
+  assert.equal(gallery.mode, "source");
+  assert.deepEqual(gallery.albums, []);
+  assert.equal(gallery.videos, false);
+});
+
 test("gallery records that are not valid settings read as damaged", () => {
   assert.equal(parseGallery(null), null);
   assert.deepEqual(parseGallery('{"mode":"source","prefix":"Machine-a"}'), {

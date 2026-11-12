@@ -39,9 +39,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **SYNC-IGNORE-RECREATED** — A hub `.arcaignore` deleted and created again does not pause its replicas
   `bug · agent · high`
   After the hub's `.arcaignore` is deleted and then recreated, every desktop replica stops with “.arcaignore differs between this device and the hub”: the replica's index row for the deleted policy has no hash, so it never equals the hash of the empty local policy in `syncIgnore`. Reproduced by the review of 0.9.3 on 0.9.2 as well. Accept: a replica whose indexed policy row is a deletion and whose local policy is empty or absent takes the recreated policy, with a test.
-- **MOB-CONVERTING-RECONFIG** — Changing an album during an interrupted repair keeps the repair
-  `bug · agent · high`
-  `gallery.js` writes `mode: damaged ? "converting" : "source"`, so saving Change album… while the record is already `converting` flips it to `source` before the missing indexed files were restored, and the next scan proposes them as deleted. Traced, not reproduced. Accept: a save while the mode is `converting` keeps `converting`, with a test that interrupts the repair, changes the album and sees every indexed file restored and no deletion proposed.
 - **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
   `bug · agent · high`
   `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
@@ -128,6 +125,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 
 ### High priority — medium effort
 
+- **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
+  `bug · agent · high`
+  The phone's repair of a linked album restores every missing indexed file before anything else runs, and each restore is not isolated, so a row whose content the hub no longer has (an older revision collected after the hub edited or deleted the file) fails every cycle: scan, uploads and pulls never run, the folder shows a raw error forever and Enable uploads stays disabled. Since 0.9.24 Change album… no longer ends the repair (it used to, by proposing deletions), so the only way out is Stop syncing. Traced by the review of 0.9.24, not run. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
 - **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
   `bug · agent · high`
   A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file or folder with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. On a case-sensitive disk, creating and removing `notes.txt` beside a synced `Notes.txt` triggers it. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.24 — 2026-11-11
+
+- Changing an album on the phone while it is still restoring files from an interrupted repair keeps the repair going, so every file it indexed comes back and none is proposed as deleted.
+
+Needs: native build
+
 ## 0.9.23 — 2026-11-11
 
 - A file that cannot be read or written (held open by another app, permission denied, changed or removed while it was scanned) no longer stops or slows its whole folder: the rest syncs both ways at the usual pace, the folder names that file, and it is never treated as deleted.
