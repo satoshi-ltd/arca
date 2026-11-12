@@ -21,7 +21,7 @@ Lanes:
 - **Queue** — approved agent tasks, in the order they will be done. Only the maintainer moves a task here, with two exceptions that enter at the top: a bug the maintainer reports, and a red pipeline on `main`.
 - **In progress** — at most one agent task.
 - **Needs maintainer** — decisions, and approved native work waiting for a build window.
-- **Proposed** — ideas not yet approved, from the maintainer or from Claude, grouped by what they improve. Never worked on until approved; approving one is moving it to Queue.
+- **Proposed** — ideas not yet approved, from the maintainer or from Claude, ordered by priority and then by effort (small, medium, large). Never worked on until approved; approving one is moving it to Queue.
 
 A purely visual idea is not filed here as Proposed: its board in `design/proposals.html` is the proposal. Once the maintainer approves it, it enters Queue as a `ui` task with the board ID and `accept: the board`; when it ships, delete the task and the board. A task that mixes logic and a screen splits: the screen is board `UI-<TASKID>`, the logic stays under its ID and its accept says "the interface follows board UI-<TASKID>"; a board ID never equals a non-`ui` task ID. When a task ships, delete it and record it in the changelog and in the SPEC section it changes. Device evidence is never filed ahead of the code: a `verify` task is created only when its implementation has shipped and the maintainer has not yet checked it on a device.
 
@@ -29,6 +29,22 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
+
+- **UX-NOTICE-TAP-DISMISS** — Tapping a notice dismisses it
+  `bug · agent · high`
+  Reported by the maintainer: pressing a notice should make it go, unless the press lands on one of its controls (Undo or another action, Details, Copy, ×). Today a card closes only with its × (and a swipe down on the phone) and a pill cannot be dismissed at all until its timer ends, on desktop, web and phone. Accept: a click or tap anywhere on a pill or card that is not one of its controls dismisses it through the same exit as ×, on desktop/web and on the phone; pressing its action still runs the action; expanding Details or Copy does not dismiss; screen readers keep the × and the action; SPEC's feedback section says so; DOM and mobile tests cover each case.
+- **SEC-ARCHIVE-FLOOR** — Only a device that backs up holds the hub's history
+  `bug · agent · high`
+  `GET /v1/archive` marks whichever replica credential calls it, a phone included, as an enabled backup at revision 0, which puts the retention floor at 0: one request from any linked device stops version pruning on the hub until that device is removed. It fails safe (nothing is lost) and was traced by the review of 0.9.12, not run. Accept: asking for the archive does not enable a backup acknowledgement by itself (only `/v1/backup-ack {enabled: true}` does), phones are refused as SPEC says they never back up, and a test shows retention still prunes after a replica that is not a backup read the archive.
+- **SYNC-IGNORE-RECREATED** — A hub `.arcaignore` deleted and created again does not pause its replicas
+  `bug · agent · high`
+  After the hub's `.arcaignore` is deleted and then recreated, every desktop replica stops with “.arcaignore differs between this device and the hub”: the replica's index row for the deleted policy has no hash, so it never equals the hash of the empty local policy in `syncIgnore`. Reproduced by the review of 0.9.3 on 0.9.2 as well. Accept: a replica whose indexed policy row is a deletion and whose local policy is empty or absent takes the recreated policy, with a test.
+- **MOB-CONVERTING-RECONFIG** — Changing an album during an interrupted repair keeps the repair
+  `bug · agent · high`
+  `gallery.js` writes `mode: damaged ? "converting" : "source"`, so saving Change album… while the record is already `converting` flips it to `source` before the missing indexed files were restored, and the next scan proposes them as deleted. Traced, not reproduced. Accept: a save while the mode is `converting` keeps `converting`, with a test that interrupts the repair, changes the album and sees every indexed file restored and no deletion proposed.
+- **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
+  `bug · agent · high`
+  `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
 
 ## In progress
 
@@ -105,150 +121,136 @@ Agent tasks that end with JavaScript and contract tests and run only after a mai
 
 ## Proposed
 
-Findings of the source audit of 2026-11-11 plus what remained from earlier ones. Unless an entry says reproduced, its cause was traced in the code and not run, so its first step is the failing test its accept describes. Suggested approval order: data safety, stability, security, performance, then usability and features. No task in this lane is approved for implementation.
+Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. They are ordered by priority (data safety and stalls first) and, within a priority, by effort: small is one function and its tests, medium a few files or one subsystem, large a design change or native work. Unless an entry says reproduced, its cause was traced in the code and not run, so its first step is the failing test its accept describes. No task in this lane is approved for implementation.
 
-### Data safety
+### High priority — small effort
+
+
+### High priority — medium effort
 
 - **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
   `bug · agent · high`
   A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file or folder with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. On a case-sensitive disk, creating and removing `notes.txt` beside a synced `Notes.txt` triggers it. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
-- **MOB-CONVERTING-RECONFIG** — Changing an album during an interrupted repair keeps the repair
-  `bug · agent · normal`
-  `gallery.js` writes `mode: damaged ? "converting" : "source"`, so saving Change album… while the record is already `converting` flips it to `source` before the missing indexed files were restored, and the next scan proposes them as deleted. Traced, not reproduced. Accept: a save while the mode is `converting` keeps `converting`, with a test that interrupts the repair, changes the album and sees every indexed file restored and no deletion proposed.
+- **SYNC-STAGE-SPACE** — A replica with less free space than its new content still uploads
+  `bug · agent · high`
+  A replica stages every new file into `objects` before the first upload; when they do not fit, the scan fails with "Insufficient free disk space", the staged objects are released and the cycle repeats forever with nothing uploaded. Accept: a replica whose free space is below its new content uploads file by file until done.
 - **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
-  `bug · agent · normal`
+  `bug · agent · high`
   The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT), where a same-timestamp edit is legitimate, keep today's behaviour unless the maintainer says otherwise at approval.
-- **SYNC-ROLLBACK-ANCHOR** — A hub restored whole and changed again is still told apart on the next incremental sync
-  `feature · agent · normal`
-  When `history.json` is restored together with the index and the hub then records enough new revisions to pass a replica's cursor, an incremental cycle sees only higher revisions, so a path the hub changed again replaces the replica's newer file as an ordinary update, and a file only the replica had is never uploaded again; the periodic full pass catches only rows that contradict. Accept: `/v1/changes` carries a digest of the revision at the replica's cursor, a mismatch is treated as the hub having gone back, and a test restores a hub whole, changes the same path on it past the replica's cursor and sees the replica's version kept as a conflict copy on an incremental cycle.
-- **SYNC-RELINK-NO-COPY** — Relinking a folder does not copy unchanged files into the state directory
-  `feature · agent · normal`
-  A relink scan has no index to trust, so `capture` copies and hashes every file into `objects`: linking an existing folder, and now the automatic relink after a hub went back, needs free space of about the folder's size on the state volume on each replica, and a relink that stops midway keeps those copies. Accept: a relink trusts a `scan_cache` record whose signature matches and stages only what must upload, with a test counting object copies for a folder identical to the hub's.
-- **BACKUP-HUB-ROLLBACK** — A full backup notices that the hub went back
-  `feature · agent · low`
-  The backup worker's archive cursor is not compared with the hub's history: against a hub that went back it gets 409 and then, once the hub passes the cursor, a silent gap in what it copies. Accept: the worker reads the catalog's `history`, keeps the revisions it already holds, restarts its copy from the hub's head on a changed epoch or a cursor ahead, and reports it; with a test.
-- **MOB-HUB-ROLLBACK** — A phone reconciles with a hub that went back in time
-  `feature · agent · normal`
-  The phone skips hub rows older than its own, so nothing is replaced, but it then stays diverged: its newer files never upload and its later edits are refused as stale. Accept: the phone reads the catalog's `history` epoch and head, and on a changed epoch or a cursor ahead of the head relinks the folder as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub.
-- **VIDEO-UNSELECTED-REPAIR** — A Movies & TV library the hub is not syncing is reported, not left losing uploads
-  `bug · agent · normal`
-  Before 0.9.4 a hub could end with a video library and `selected=0`; every later upload to it is committed without a working file, lives only in `objects` and is collected, and the interface offers no way out because a library has no Hub working copy panel. Accept: such a folder shows Needs attention with Start syncing on the hub, uploads to it are refused meanwhile, and a test builds that state and sees nothing collected.
-- **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
-  `bug · agent · low`
-  `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
-- **SEC-HUB-IN-USE-OTHER** — Other hub changes to a file FFmpeg holds open wait instead of failing on Windows
-  `bug · agent · low`
-  The Windows in-use check covers `/v1/delete-file` and Delete movie or episode only. Gallery deletion, a replica's proposed deletion applied on the hub, hub rename, restore and a conflict choice can still record a change whose move then fails while a preview or probe holds the file. Accept: each path ends the hub's own work on the file or answers 409 before recording anything, with Windows-shaped tests.
-- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
-  `feature · agent · low`
-  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index from the scanner worker (keeping one, mode 0600), Erase removes it, and the CLI documents how to restore it with the daemon stopped; `history.json` stays in place, so the restored index starts a new history epoch and replicas reconcile instead of reverting; after such a start the hub finishes one full scan before it serves heads, so a working copy it still holds does not turn into redundant conflict copies on replicas; with tests.
+- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
+  `bug · agent · high`
+  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
+- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
+  `feature · agent · high`
+  The foreground rediscovery pages the whole camera roll every 60 s, 100 assets per page with one store read each, and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
 
-### Stability
+### High priority — large effort
 
 - **HUB-ASYNC-APPLY** — The daemon keeps answering while it writes a large file
   `feature · agent · high`
   Accepting or pulling a file hashes it, copies it and fsyncs it synchronously on the main thread (`commit`, `apply`, `settle`); hub reselection recovers every row with no yield. A 4 GB upload freezes the hub for about a minute on a hard disk: every device shows the hub unavailable, streams stall and the Compose healthcheck fails. Accept: with a stubbed slow copy, `/v1/status` answers within a second while a row materializes and during hub reselection, spies see no synchronous hash or copy on the main thread, and the journal and recovery tests keep passing. SPEC "Storage" documents the synchronous I/O as a limit and changes with it.
 - **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
-  `feature · agent · normal`
+  `feature · agent · high`
   The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete; scan results still pass the existing per-row checks.
-- **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
-  `feature · agent · normal`
-  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
-- **SYNC-STAGE-SPACE** — A replica with less free space than its new content still uploads
-  `bug · agent · normal`
-  A replica stages every new file into `objects` before the first upload; when they do not fit, the scan fails with "Insufficient free disk space", the staged objects are released and the cycle repeats forever with nothing uploaded. Accept: a replica whose free space is below its new content uploads file by file until done.
-- **MOB-SHARE-WAIT** — Saving a shared file neither waits without bound nor needs twice its size free
-  `bug · agent · normal`
-  Save stops the running cycle and awaits it with no deadline, so a cycle hashing a large file or exporting a video holds the sheet, and a process that dies meanwhile loses the batch at the next launch; `importFile` requires twice the file's size plus the headroom because it copies the inbox file instead of moving it; Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts. Accept: Save gives the running cycle a bounded time and says what it is waiting for, the inbox copy is moved into place so one size plus the headroom is enough, and Add files… uses the share's stall deadline, with tests for each.
-- **MOB-UPLOAD-BACKOFF** — A photo that cannot upload is not exported and hashed again every minute
-  `bug · agent · normal`
-  Every failure retries after a fixed minute, and the export runs before the exclusion check, so excluded or failing videos are copied and hashed three per cycle indefinitely. Accept: an excluded resource with a saved manifest is refused before `media.export`, repeated failures back off from one minute to one hour and reset on Retry or Sync now, with a test counting exports. SPEC's "back off for a minute" changes.
-- **MOB-EXPORT-DEADLINE** — A large video's export is limited by stalls, not by total time
-  `bug · agent · normal · native`
-  iOS and Android give the whole export one 90 s deadline, so an iCloud original that needs longer never uploads. Accept: the deadline restarts on each chunk in Swift and Kotlin; the JS contract test covers the error codes.
-- **SYNC-IGNORE-RECREATED** — A hub `.arcaignore` deleted and created again does not pause its replicas
-  `bug · agent · normal`
-  After the hub's `.arcaignore` is deleted and then recreated, every desktop replica stops with “.arcaignore differs between this device and the hub”: the replica's index row for the deleted policy has no hash, so it never equals the hash of the empty local policy in `syncIgnore`. Reproduced by the review of 0.9.3 on 0.9.2 as well. Accept: a replica whose indexed policy row is a deletion and whose local policy is empty or absent takes the recreated policy, with a test.
+
+### Normal priority — small effort
+
 - **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
-  `bug · agent · low`
+  `bug · agent · normal`
   An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
 - **NET-TAILSCALE-TIMEOUT** — The Tailscale listener gives a request as long as the main one
-  `bug · agent · low`
+  `bug · agent · normal`
   The listener bound to the Tailscale address sets `requestTimeout` to 5 s while serving the whole API (the main server allows 65 s), so an 8 MiB upload block over a slow or relayed tailnet link may be cut. Accept: both listeners share one timeout, and a test sends a block slower than 5 s through the Tailscale listener.
 - **MOB-REVOKED-ERROR** — Losing access mid-cycle reports the revocation
-  `bug · agent · low`
-  The cycle reads `connection.id` after the client cleared the connection, so the error reads "Cannot read properties of null" (reproduced). Accept: revoking during a scan reports the lost access.
-- **MOB-IOS-ERRORS** — iPhone file errors say what failed
-  `bug · agent · low · native`
-  The Swift `replaceFile` and partial-file checks throw `NetworkUnavailable` for a failed rename, so the phone shows "Connect to the hub's local Wi-Fi…" as a file's issue; Kotlin names each cause. Accept: Swift throws the same named errors and the JS contract maps them.
-- **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting where it may not gets the reason, and the delete's error paths are tested
-  `bug · agent · low`
-  The hub's `/v1/delete-file` answers a linked replica outside a video or audio library with "Local administrator credential required", which a stale catalog on a replica that streams the library can surface. Accept: the hub's linked branch fails with a message that names the library kinds (404), tested through a replica's `/v1/video/delete`; further tests cover a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
-- **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
-  `chore · agent · low`
-  accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
-
-### Security
-
-- **SEC-WEB-APPROVAL-REF** — A web sign-in is never approved without matching its reference
   `bug · agent · normal`
-  `decide` takes no reference and the prompt shows the oldest pending request, which anyone who can reach the web port may create and keep alive; one Allow on the wrong prompt gives a 24-hour administrator session. Accept: the pending list omits the reference, Allow must carry it, a wrong or missing one is refused and ends the request, and tests cover both and two concurrent requests. The interface follows board UI-SEC-WEB-APPROVAL-REF on desktop and web and UI-SEC-WEB-APPROVAL-REF-MOB on the phone: the number is typed, never shown.
-- **SEC-RUNTIME-CHECKSUMS** — The bundled Node and FFmpeg are verified against committed checksums
-  `chore · agent · normal · depends: DEC-FFMPEG-SOURCE`
-  `stage-runtime.js` takes Node's expected hash from the same origin as the binary and FFmpeg has none. Accept: a committed checksum table per platform, checked by `stage-runtime.js` and `verify-bundle.js` (a test swaps a byte and the stage fails), and a CI check that fails when the bundled FFmpeg is older than a recorded minimum.
-- **SEC-SIGNING-STEP** — The updater key never enters the build graph
-  `chore · agent · normal`
-  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures; do not assume `createUpdaterArtifacts` succeeds without a key.
-- **SEC-DEPS** — Dependency advisories are checked in CI
-  `chore · agent · normal`
-  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
+  The cycle reads `connection.id` after the client cleared the connection, so the error reads "Cannot read properties of null" (reproduced). Accept: revoking during a scan reports the lost access.
+- **UX-WEB-401-LOGOUT** — A hub's refusal of a pairing code does not sign the web administrator out
+  `bug · agent · normal`
+  In the web UI of a server replica, a 401 passed through from `/v1/connect` (a wrong or used code, a refused credential) is taken for the browser session ending and shows the sign-in page. Traced, not run. Accept: only a 401 about the browser's own session shows sign-in; the hub's refusal appears in the Connect dialog, with a DOM test.
+- **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting where it may not gets the reason, and the delete's error paths are tested
+  `bug · agent · normal`
+  The hub's `/v1/delete-file` answers a linked replica outside a video or audio library with "Local administrator credential required", which a stale catalog on a replica that streams the library can surface. Accept: the hub's linked branch fails with a message that names the library kinds (404), tested through a replica's `/v1/video/delete`; further tests cover a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
+- **SEC-BACKUP-ACK-COLUMN** — A stored backup acknowledgement is always a revision number
+  `bug · agent · normal`
+  `/v1/backup-ack` refuses non-integers since 0.9.12, but a row written before that keeps its value: the upsert takes `MAX(revision, excluded.revision)` and SQLite ranks text above every integer, so honest reports never replace it; the page prints 0, yet the retention floor compares against it (text: nothing is ever removable; an inflated number: no version counts as protected) until the device is removed. Reproduced by the review of 0.9.12 on the schema; it needs a linked device that used the old hole. Accept: the upsert treats a stored value that is not an integer within the hub's revisions as 0, the retention floor ignores such rows, and a test stores text and an oversized number and sees the next honest report replace them.
+- **SEC-ERASE-GENERATION-ROW** — Erase leaves no folder ID behind in the index
+  `bug · agent · normal`
+  `finishInstallationReset` empties the tables in catalogue order, and `file_generations` goes before `local_files`, whose delete trigger writes a `file_generations` row again; a replica that held local changes keeps one row with the erased share ID in the emptied index. Seen by the review of 0.9.10 (scratch run), not covered by a test. Accept: after Erase every table is empty whatever the order, with a test on a replica that holds `local_files` rows and fails today.
+- **SEC-ADMIN-LOOPBACK** — The local administrator credential never authenticates from another machine
+  `bug · agent · normal`
+  The admin token is accepted from any socket, yet its only users (the CLI and the desktop app) are on loopback and it rotates only on Erase, so a copied `config.json` is permanent remote administration. Accept: an admin bearer from a non-loopback socket answers 401, browser sessions are unchanged, tests cover both, and SPEC notes that a proxy on the same host still looks like loopback.
 - **SEC-OPEN-LAUNCHERS-2** — More file kinds that run code are revealed, never opened
   `bug · agent · normal`
   Synced files carry no quarantine or Mark-of-the-Web, so the OS never warns. Not yet in the list: `com pif cpl msc vbe jse wsf wsh url chm reg msp application appref-ms fileloc inetloc webloc mpkg jar py pyw settingcontent-ms appx msix appinstaller diagcab xll iso img vhd vhdx scf library-ms psm1 psd1 ps1xml jnlp mobileconfig`; an extensionless Unix file with an executable bit opens in Terminal on macOS. Accept: the desktop and Rust lists gain these kinds, a Unix file with `mode & 0o111` and no extension is revealed, with tests; SPEC lists them and says the phone opens a synced `.apk` in the installer on purpose.
-- **SEC-MOBILE-MANIFEST** — Limit Android cover-provider access without breaking external players
-  `chore · agent · normal · native`
-  accept: limit `CoverProvider` to authorized cover consumers with URI grants or another appropriate mechanism, while preserving Media3 notifications and Android Auto; tests exercise access and grants. The provider currently serves covers to other apps, so making it private without working grants is not sufficient.
-- **SEC-ADMIN-LOOPBACK** — The local administrator credential never authenticates from another machine
-  `bug · agent · low`
-  The admin token is accepted from any socket, yet its only users (the CLI and the desktop app) are on loopback and it rotates only on Erase, so a copied `config.json` is permanent remote administration. Accept: an admin bearer from a non-loopback socket answers 401, browser sessions are unchanged, tests cover both, and SPEC notes that a proxy on the same host still looks like loopback.
-- **SEC-FORM-ACTION** — Injected markup cannot submit a form, and hub-supplied IDs and revisions never reach HTML raw
-  `bug · agent · low`
-  Neither content security policy sets `form-action`; a folder ID from the hub's catalog becomes an element `id` unvalidated on refresh, and `rev` values are rendered raw in History. Reaching them needs a malicious hub. Accept: `form-action 'self'` on the web and `'none'` in Tauri, the catalog refresh validates IDs as `hubCatalog` does, `rev` renders through a number, with DOM tests for a hostile ID and a string `rev`.
-- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
-  `chore · agent · low`
-  `compose.yaml` already has a healthcheck. Accept: the Dockerfile pins the base image by digest and ffmpeg by version and carries its own `HEALTHCHECK` on `arca.js status` for people who run the image without Compose, `publish-docker.yml` publishes provenance and an SBOM, and `SHA256SUMS` in `publish.yml` is signed.
-- **SEC-MUSIC-CONTROLLERS** — Another app on the phone cannot browse or control the Arca music library
-  `bug · agent · low · native`
-  `MusicService` is exported and accepts every controller. Accept: `onConnect` accepts only its own UID, trusted system controllers and an allowlist (Android Auto, Assistant, Wear), with JVM tests.
-- **SEC-IOS-ATS** — iOS never allows arbitrary plaintext loads
-  `chore · agent · low · native`
-  `NSAllowsArbitraryLoads` is on although the native module already refuses HTTP outside verified private or tailnet addresses. Accept: `NSAllowsLocalNetworking` replaces it and the config test pins it.
-- **SEC-ERASE-GENERATION-ROW** — Erase leaves no folder ID behind in the index
-  `bug · agent · low`
-  `finishInstallationReset` empties the tables in catalogue order, and `file_generations` goes before `local_files`, whose delete trigger writes a `file_generations` row again; a replica that held local changes keeps one row with the erased share ID in the emptied index. Seen by the review of 0.9.10 (scratch run), not covered by a test. Accept: after Erase every table is empty whatever the order, with a test on a replica that holds `local_files` rows and fails today.
-- **SEC-BACKUP-ACK-COLUMN** — A stored backup acknowledgement is always a revision number
-  `bug · agent · low`
-  `/v1/backup-ack` refuses non-integers since 0.9.12, but a row written before that keeps its value: the upsert takes `MAX(revision, excluded.revision)` and SQLite ranks text above every integer, so honest reports never replace it; the page prints 0, yet the retention floor compares against it (text: nothing is ever removable; an inflated number: no version counts as protected) until the device is removed. Reproduced by the review of 0.9.12 on the schema; it needs a linked device that used the old hole. Accept: the upsert treats a stored value that is not an integer within the hub's revisions as 0, the retention floor ignores such rows, and a test stores text and an oversized number and sees the next honest report replace them.
-- **SEC-CSP-FORM-ACTION** — An injected form cannot submit anywhere
-  `chore · agent · low`
-  The web UI's content security policy sets no `form-action`, which is what made markup injected into a page worth anything while scripts are blocked. Accept: the policy carries `form-action 'self'` on the hub's web UI and the desktop app, with a test on the served header and on `tauri.conf.json`, and the sign-in, onboarding and dialog forms still work in the DOM tests.
-- **SEC-ARCHIVE-FLOOR** — Only a device that backs up holds the hub's history
+- **PERF-APPROVAL-POLL** — A device that cannot approve web sign-ins does not ask for them every three seconds
+  `feature · agent · normal`
+  Desktop and phone poll `/v1/web-approvals` every 3 s while visible, authorised or not, although SPEC limits the poll to clients with that authority. Accept: after one unauthorised answer no further request is sent, and an authorised client polls only after an events signal or at a slower bounded cadence; tests count requests on desktop and phone.
+- **UX-FIELD-ERRORS** — A wrong code or address is flagged at its field
   `bug · agent · normal`
-  `GET /v1/archive` marks whichever replica credential calls it, a phone included, as an enabled backup at revision 0, which puts the retention floor at 0: one request from any linked device stops version pruning on the hub until that device is removed. It fails safe (nothing is lost) and was traced by the review of 0.9.12, not run. Accept: asking for the archive does not enable a backup acknowledgement by itself (only `/v1/backup-ack {enabled: true}` does), phones are refused as SPEC says they never back up, and a test shows retention still prunes after a replica that is not a backup read the archive.
-
-### Performance — hub and desktop
-
-No measurements: counts of statements and calls are traced, times are estimates. `node scripts/verify-hub-load.js . 100000` and an `EXPLAIN QUERY PLAN` of the statements named below settle the order cheaply.
-
-- **PERF-THUMB-HITS** — A thumbnail served from disk costs no fsync'd write
+  "Enter all six digits." and "Enter the full hub address…" are shown as the operation error card "Could not complete action" instead of inline, and the code cells stay filled after a rejected code. Accept: submitting Connect, Change address or the wizard with an invalid field sets `aria-invalid`, shows the error-tone message tied by `aria-describedby` and no notice card; a rejected code clears its cells.
+- **MOB-VIDEO-BACK** — Android Back closes the Audio or Subtitles panel before the film
+  `bug · agent · normal`
+  accept: `onRequestClose` closes an open panel first, as the photo viewer does with Info, with a test.
+- **MOB-SWITCH-CONTRAST** — The Off position of a switch is visible
+  `bug · agent · normal`
+  The phone's switch track uses the `line` colour (about 1.5:1 on a surface), where desktop and SPEC §9 use `control` (3:1). Accept: `switchTrack` uses the control token, a test asserts 3:1 in both palettes, and the kit is regenerated.
+- **UX-MOB-VIDEO-FOLD** — The video player does not rotate on the nearly square Fold
+  `bug · agent · normal`
+  The player rotates 90° whenever height exceeds width. Accept: a pure rotation rule skips it when the aspect ratio is under about 1.2 or the layout is wide, with a test, and the kit's caption says so.
+- **MOB-ALBUM-UNAVAILABLE** — The Photo uploads sheet says how to get Save changes back when an album disappeared
+  `bug · agent · normal`
+  Save is disabled with no reason while a selected album is missing, and the form row shows the album's name with no sign that it is gone. Accept: the row reads "Unavailable" and the button carries its reason, through a pure helper tested beside `gallerySettingsChanged`.
+- **UX-ERASE-CONFIRM** — Erase asks for more than one click
   `feature · agent · normal`
-  A disk hit does `UPDATE gallery_derivatives SET used` (an fsync under `synchronous=FULL`) and a synchronous read, and never enters the 32 MB memory LRU. Accept: disk hits enter the LRU and `used` is flushed in one transaction about once a minute and on close; a test sees at most one update and one read across two requests.
-- **PERF-FULL-PASS-DATES** — A full reconciliation does not rewrite every photo's dates
+  Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
+
+### Normal priority — medium effort
+
+- **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
   `feature · agent · normal`
-  Each full pass on a replica runs two autocommit upserts per media row that write even when nothing changed: 60,000 fsync'd transactions for 30,000 photos at every start and every six hours. Accept: one transaction per feed page and no write for an equal value; a second pass over an unchanged 500-row page writes nothing to `gallery_metadata` or `added_dates`.
+  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
+- **MOB-UPLOAD-BACKOFF** — A photo that cannot upload is not exported and hashed again every minute
+  `bug · agent · normal`
+  Every failure retries after a fixed minute, and the export runs before the exclusion check, so excluded or failing videos are copied and hashed three per cycle indefinitely. Accept: an excluded resource with a saved manifest is refused before `media.export`, repeated failures back off from one minute to one hour and reset on Retry or Sync now, with a test counting exports. SPEC's "back off for a minute" changes.
+- **MOB-SHARE-WAIT** — Saving a shared file neither waits without bound nor needs twice its size free
+  `bug · agent · normal`
+  Save stops the running cycle and awaits it with no deadline, so a cycle hashing a large file or exporting a video holds the sheet, and a process that dies meanwhile loses the batch at the next launch; `importFile` requires twice the file's size plus the headroom because it copies the inbox file instead of moving it; Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts. Accept: Save gives the running cycle a bounded time and says what it is waiting for, the inbox copy is moved into place so one size plus the headroom is enough, and Add files… uses the share's stall deadline, with tests for each.
+- **VIDEO-UNSELECTED-REPAIR** — A Movies & TV library the hub is not syncing is reported, not left losing uploads
+  `bug · agent · normal`
+  Before 0.9.4 a hub could end with a video library and `selected=0`; every later upload to it is committed without a working file, lives only in `objects` and is collected, and the interface offers no way out because a library has no Hub working copy panel. Accept: such a folder shows Needs attention with Start syncing on the hub, uploads to it are refused meanwhile, and a test builds that state and sees nothing collected.
+- **SYNC-ROLLBACK-ANCHOR** — A hub restored whole and changed again is still told apart on the next incremental sync
+  `feature · agent · normal`
+  When `history.json` is restored together with the index and the hub then records enough new revisions to pass a replica's cursor, an incremental cycle sees only higher revisions, so a path the hub changed again replaces the replica's newer file as an ordinary update, and a file only the replica had is never uploaded again; the periodic full pass catches only rows that contradict. Accept: `/v1/changes` carries a digest of the revision at the replica's cursor, a mismatch is treated as the hub having gone back, and a test restores a hub whole, changes the same path on it past the replica's cursor and sees the replica's version kept as a conflict copy on an incremental cycle.
+- **MOB-HUB-ROLLBACK** — A phone reconciles with a hub that went back in time
+  `feature · agent · normal`
+  The phone skips hub rows older than its own, so nothing is replaced, but it then stays diverged: its newer files never upload and its later edits are refused as stale. Accept: the phone reads the catalog's `history` epoch and head, and on a changed epoch or a cursor ahead of the head relinks the folder as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub.
+- **SEC-FORM-ACTION** — Injected markup cannot submit a form, and hub-supplied IDs and revisions never reach HTML raw
+  `bug · agent · normal`
+  Neither content security policy sets `form-action`; a folder ID from the hub's catalog becomes an element `id` unvalidated on refresh, and `rev` values are rendered raw in History. Reaching them needs a malicious hub. Accept: `form-action 'self'` on the web and `'none'` in Tauri, the catalog refresh validates IDs as `hubCatalog` does, `rev` renders through a number, with DOM tests for a hostile ID and a string `rev`.
+- **SEC-WEB-APPROVAL-REF** — A web sign-in is never approved without matching its reference
+  `bug · agent · normal`
+  `decide` takes no reference and the prompt shows the oldest pending request, which anyone who can reach the web port may create and keep alive; one Allow on the wrong prompt gives a 24-hour administrator session. Accept: the pending list omits the reference, Allow must carry it, a wrong or missing one is refused and ends the request, and tests cover both and two concurrent requests. The interface follows board UI-SEC-WEB-APPROVAL-REF on desktop and web and UI-SEC-WEB-APPROVAL-REF-MOB on the phone: the number is typed, never shown.
+- **SEC-DEPS** — Dependency advisories are checked in CI
+  `chore · agent · normal`
+  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
+- **SEC-RUNTIME-CHECKSUMS** — The bundled Node and FFmpeg are verified against committed checksums
+  `chore · agent · normal · depends: DEC-FFMPEG-SOURCE`
+  `stage-runtime.js` takes Node's expected hash from the same origin as the binary and FFmpeg has none. Accept: a committed checksum table per platform, checked by `stage-runtime.js` and `verify-bundle.js` (a test swaps a byte and the stage fails), and a CI check that fails when the bundled FFmpeg is older than a recorded minimum.
 - **PERF-PROPOSE-COMMITS** — Accepting a proposal runs no folder-wide statement and commits its bookkeeping once
   `feature · agent · normal`
   Each accepted file scans the folder's revision index for `MAX(rev)`, prunes proposals with a 10,000-row `NOT IN`, opens a new `Store` in the worker and makes five to seven separate fsync'd commits. Accept: at most three commits per accepted file and no statement whose plan scans `revisions` or `proposals`, counted through a statement wrapper.
+- **PERF-RETENTION-PASS** — The hourly retention pass does not load every revision into memory
+  `feature · agent · normal`
+  Hourly, and on the first cycle after start, the hub reads every revision row and every hash per folder and lists the object store, even when nothing is removable. Accept: candidates are selected in SQL, a folder whose every revision is current returns no revision row, and a second pass with an unchanged sequence runs no `revisions` or hash statement.
+- **PERF-REPLICA-RELEASE** — A replica cycle does not read the whole index to collect an empty object store
+  `feature · agent · normal`
+  Every replica cycle ends by loading all current hashes and the entire `scan_cache`, although the object store is normally empty. Accept: with an empty objects directory the function prepares no statement; with one stray object it looks up only that hash.
+- **PERF-FULL-PASS-DATES** — A full reconciliation does not rewrite every photo's dates
+  `feature · agent · normal`
+  Each full pass on a replica runs two autocommit upserts per media row that write even when nothing changed: 60,000 fsync'd transactions for 30,000 photos at every start and every six hours. Accept: one transaction per feed page and no write for an equal value; a second pass over an unchanged 500-row page writes nothing to `gallery_metadata` or `added_dates`.
+- **PERF-THUMB-HITS** — A thumbnail served from disk costs no fsync'd write
+  `feature · agent · normal`
+  A disk hit does `UPDATE gallery_derivatives SET used` (an fsync under `synchronous=FULL`) and a synchronous read, and never enters the 32 MB memory LRU. Accept: disk hits enter the LRU and `used` is flushed in one transaction about once a minute and on close; a test sees at most one update and one read across two requests.
 - **PERF-RULES-HOIST** — Exclusion rules resolve once per loop, not once per file
   `feature · agent · normal`
   `visibleRules()` does a folder SELECT and an `lstat` of `.arcaignore` per call and runs per row in `replaceLocal` and several engine loops, and two callers omit the directory argument at one more SELECT per row. Accept: rules resolved once per loop or page (the cycle keeps its `.arcaignore` hash check); a test counts at most two `lstat` calls for 1,000 entries with an unchanged result.
@@ -258,161 +260,150 @@ No measurements: counts of statements and calls are traced, times are estimates.
 - **PERF-BROWSE-MEMO** — An open folder does not re-aggregate its subtree for every page and status change
   `feature · agent · normal`
   `/v1/browse` groups every live row under the prefix for each page, and the desktop refetches every loaded page and replaces the view on each status change, every 5 s during a sync. Accept: two pages of one prefix run one aggregation statement, and an unchanged generation triggers no `/v1/browse` call and no repaint.
-- **PERF-RETENTION-PASS** — The hourly retention pass does not load every revision into memory
-  `feature · agent · normal`
-  Hourly, and on the first cycle after start, the hub reads every revision row and every hash per folder and lists the object store, even when nothing is removable. Accept: candidates are selected in SQL, a folder whose every revision is current returns no revision row, and a second pass with an unchanged sequence runs no `revisions` or hash statement.
-- **PERF-REPLICA-RELEASE** — A replica cycle does not read the whole index to collect an empty object store
-  `feature · agent · normal`
-  Every replica cycle ends by loading all current hashes and the entire `scan_cache`, although the object store is normally empty. Accept: with an empty objects directory the function prepares no statement; with one stray object it looks up only that hash.
 - **PERF-WEB-ASSETS** — The web UI revalidates its assets instead of downloading them again
   `feature · agent · normal`
   A browser session reads about 1.2 MB (`app.js`, lucide, CSS, fonts) from disk and receives it uncompressed with `no-store` on every load; the desktop app loads its own bundle. Accept: assets hashed once (re-read when mtime changes), `ETag` with `no-cache`, 304 on `If-None-Match`, optional gzip with `Vary`; CSP stays on 200; tests cover 304 and a gzip round trip.
-- **PERF-APPROVAL-POLL** — A device that cannot approve web sign-ins does not ask for them every three seconds
-  `feature · agent · low`
-  Desktop and phone poll `/v1/web-approvals` every 3 s while visible, authorised or not, although SPEC limits the poll to clients with that authority. Accept: after one unauthorised answer no further request is sent, and an authorised client polls only after an events signal or at a slower bounded cadence; tests count requests on desktop and phone.
-- **PERF-SCAN-STATS** — A full scan stats each file once and reads the scan cache once
-  `feature · agent · low`
-  Per file a scan resolves the folder, reads the marker, stats every path component and prepares one cache SELECT: 12–20 system calls where one or two are needed. Accept: scanning 1,000 unchanged files makes at most 1,100 stat-class calls, one marker read and one `scan_cache` statement.
-- **PERF-WEB-IMAGE-CACHE** — Pages and thumbnails get separate browser quotas
-  `feature · agent · low`
-  The IndexedDB store holds 128 records shared by gallery pages and thumbnails, so the persistent thumbnail cache is nearly empty after a restart. Accept: separate quotas (pages by count, thumbnails by bytes) in a pure module with a test; whether private images may be cached by the browser is a maintainer decision.
-- **PERF-WIN-HIDDEN-EVENTS** — A window hidden or minimized on Windows stops its background requests
-  `feature · agent · low`
-  WebView2 keeps reporting the page as visible while its window is hidden, so on Windows the `/v1/events` long poll (gated on `document.hidden`) continues in a tray-hidden window and asks for status on every change, and a minimized window keeps the five-second status poll; nothing fires when the window returns, so the first status answer waits for the next tick. Traced in wry, not run on Windows. Accept: the events loop, the gallery and audio-library refreshes and the status poll share one shown-window test that asks the native window (visible and not minimized) in the desktop app, a native show or restore polls once, and a DOM test covers a page that reads visible in a hidden window.
-- **PERF-GALLERY-QUIET-WRITES** — A gallery write that changes nothing does not make galleries read again
-  `feature · agent · low`
-  The `gallery` row generation is shared by every gallery and moves on any write to `gallery_metadata`, `gallery_assets` and `added_dates`, including an upsert that stores the values already there (`rememberFileDate` and `rememberAddedDate` on every uploaded or pulled photo, the added-dates re-walk), so a kept gallery is read once more although nothing it shows changed. Measured by the review of 0.9.11; results stay correct. Accept: the UPDATE triggers fire only when a column the gallery reads changed (`WHEN OLD.x IS NOT NEW.x`), `gallery_members`, `gallery_assets` and `added_dates` move a per-folder counter, and a test shows an identical upsert and a write in another gallery leave a kept gallery unread.
-
-### Performance — phone
-
-- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
-  `feature · agent · high`
-  The foreground rediscovery pages the whole camera roll every 60 s, 100 assets per page with one store read each, and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
-- **PERF-MOB-HASH-CACHE** — Inventory scans load the hash cache once per folder
-  `feature · agent · normal`
-  `cachedRecord` never keeps a store hit in memory, so each inventory makes one SQLite read per file, and re-stats each file although the walk already returned its size and time. Accept: one query per folder fills the map and the walk's stat is reused; a test sees no per-file `cachedHash` calls and no hashing on a second scan of an unchanged folder.
 - **PERF-MOB-FOLDER-LIST** — An open folder keeps its listing when nothing changed
   `feature · agent · normal`
   Every refresh walks the open folder, sorts it, sets a new array and writes the whole listing as one JSON value, which recomputes the gallery model; 20,000 photos is about 40,000 native calls and 4–5 MB written per run. Accept: an unchanged walk keeps the previous array and skips the write, the listing persists on a debounce and within the size SPEC states; a `folder-listing.js` test checks identity and change detection.
 - **PERF-MOB-MUSIC-MEMO** — The phone's music library is rebuilt only when it changed
   `feature · agent · normal`
   Every cycle parses and rebuilds each music library even when the hub answers `unchanged`, and the music screen, Now playing and Folders rebuild or parse it again; video parses its saved library on every request to read its version. Accept: the built library memoized on its version, journal, file rows and playlists; a test sees no store reads or `player.reload` on a second unchanged refresh and a rebuild after a local rename.
-- **PERF-MOB-THUMB-MAP** — The gallery's thumbnail map is not rewritten while scrolling
-  `feature · agent · low`
-  The whole map (full `file://` URIs, 1–4 MB) is stringified and written after scroll-driven passes, and every flush re-creates every photo object up to four times a second. Accept: thumbnails stored as rows with only the changes written, the map passed by reference and version; a test sees three deltas write three rows and a reload give the same thumbnails.
-- **PERF-MOB-SEARCH** — Phone search parses only matching rows
-  `feature · agent · low`
-  Every ASCII query also reads up to 10,000 accented rows per folder and parses each, folder after folder, and outdated searches keep running. Accept: match on `path` before parsing and stop when a newer query starts; a test with 5,000 accented rows parses only the 3 matches.
-
-### Usability — desktop and web
-
-Defects against SPEC §9 first, then ideas that add or change a control and need the maintainer's yes (and a board when they are visible).
-
-- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
-  `bug · agent · normal`
-  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
-- **UX-WEB-401-LOGOUT** — A hub's refusal of a pairing code does not sign the web administrator out
-  `bug · agent · normal`
-  In the web UI of a server replica, a 401 passed through from `/v1/connect` (a wrong or used code, a refused credential) is taken for the browser session ending and shows the sign-in page. Traced, not run. Accept: only a 401 about the browser's own session shows sign-in; the hub's refusal appears in the Connect dialog, with a DOM test.
+- **PERF-MOB-HASH-CACHE** — Inventory scans load the hash cache once per folder
+  `feature · agent · normal`
+  `cachedRecord` never keeps a store hit in memory, so each inventory makes one SQLite read per file, and re-stats each file although the walk already returned its size and time. Accept: one query per folder fills the map and the walk's stat is reused; a test sees no per-file `cachedHash` calls and no hashing on a second scan of an unchanged folder.
 - **UX-VIEWER-ERRORS** — Errors and "Needs the hub" explanations are visible in the photo viewer
   `bug · agent · normal`
   The viewer is the modal dialog at full height: an action's error is written below the window and its result notice lands under the modal layer and expires unseen. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's visible box, and a result notice is shown above the viewer, with DOM tests.
-- **UX-FIELD-ERRORS** — A wrong code or address is flagged at its field
-  `bug · agent · normal`
-  "Enter all six digits." and "Enter the full hub address…" are shown as the operation error card "Could not complete action" instead of inline, and the code cells stay filled after a rejected code. Accept: submitting Connect, Change address or the wizard with an invalid field sets `aria-invalid`, shows the error-tone message tied by `aria-describedby` and no notice card; a rejected code clears its cells.
-- **UX-APPROVAL-FOCUS** — The web sign-in approval opens with Deny focused
-  `bug · agent · normal`
-  `modal()` gives Cancel the initial focus only when a confirmation option exists, so the approval prompt, a confirmation without one, opens focused on "Raw details". Accept: every confirmation dialog, the approval prompt included, opens with Cancel focused.
 - **UX-DESK-FOCUS-RETURN** — Keyboard focus survives clearing or deleting a photo selection and sidebar Pause
   `bug · agent · normal`
   Clear selection hides its own toolbar, a confirmed delete returns focus to a hidden opener, and Pause rebuilds the button it disabled, so focus falls to the page. Accept: after Clear selection and after a confirmed delete the focused element is a photo tile or the header's back button, and after Pause it is Resume.
 - **DESK-ZOOM-CHROME** — Window-control offsets follow the zoom level
   `bug · agent · normal`
   accept: `installDesktopZoom` publishes the zoom as a CSS custom property and the window-controls inset, the controls drop, `.window-drag` and the native drag strip's `clientY` test divide by it, so at 70% the photo viewer's Back button and the sidebar lockup clear the native traffic lights and at 150% they do not drift away; the 760 px breakpoint is evaluated in unzoomed window pixels so a normal window at 130–150% keeps the full sidebar. Tests cover the property and the computed offsets.
-- **UX-FILES-TIME-REPLICA** — Files rows show their last-change time on replicas
+- **UX-FILES-BACK** — Back goes up one folder level in Files, and a reload stays in the subfolder
   `feature · agent · normal`
-  `/v1/browse` reads the time from the local `revisions` table, which a replica does not fill, so replica rows show a size only. Accept: the hub sends the current revision's time for every file (or the change feed carries it), a desktop replica's Files rows show it, and a test pins a replica store without local revisions.
-- **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
-  `bug · agent · low`
-  Today the whole dialog scrolls and no dialog pins its action row. Accept: dialogs whose content outgrows the window (Choose folders, Add to playlist, the Erase path list, Pair a device, the conflict dialog) scroll their body while the title and the action row stay visible at the 620 px minimum height; a DOM test fills a dialog past the window height.
-- **UX-NOTICE-REDACTION** — Redacting credentials in a notice does not mangle host names
-  `bug · agent · low`
-  `safeDetails` treats `code:`, `token:`, `secret:` and `password:` as credential fields, so an address whose host ends in one of those words (`http://vscode:8080`) is shown as `[redacted]`. Accept: redaction applies to key and value pairs, not to a host and port, with a notice-contract test.
+  Idea. Files navigation keeps the subfolder out of the route, so Back in the web admin leaves the folder from three levels deep, while libraries push an entry per level. Accept: each level is a route entry, with a DOM test for Back and reload.
+- **MOB-BACK-LEVELS** — Android Back goes up one folder level and clears a photo selection before leaving the folder
+  `feature · agent · normal`
+  Idea. Back from three levels deep, or with a hundred photos selected, drops to Folders; SPEC specifies one level up only for music. Accept: a pure `backStep(state)` reducer with a test and no new control.
+
+### Normal priority — large effort
+
+- **SYNC-RELINK-NO-COPY** — Relinking a folder does not copy unchanged files into the state directory
+  `feature · agent · normal`
+  A relink scan has no index to trust, so `capture` copies and hashes every file into `objects`: linking an existing folder, and now the automatic relink after a hub went back, needs free space of about the folder's size on the state volume on each replica, and a relink that stops midway keeps those copies. Accept: a relink trusts a `scan_cache` record whose signature matches and stages only what must upload, with a test counting object copies for a folder identical to the hub's.
+- **HUB-DEVICE-ID** — Pairing the same device again keeps one hub registration
+  `feature · agent · normal`
+  Each device keeps a persistent device ID and a client-held secret and sends both with `/pair`; the hub rotates that registration's token instead of adding a device, and a missing ID keeps today's behaviour. Device IDs are visible to every linked device and web-approval authority is keyed by them, so the ID alone must never rotate a registration. Accept: re-pairing with the same ID and secret leaves one roster entry, the same ID with a wrong secret adds a device and grants nothing, and an older client still pairs.
+- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
+  `feature · agent · normal`
+  The video scrubber is 32 dp and seeks only on release with no thumb; the Now Playing track has no thumb or drag; the sleep chip is 32 dp; segments, switches and breadcrumbs are 44 dp with no slop; the Now Playing artist and album links, the "Using local Wi-Fi?" link and the viewer bar buttons are under the touch height. Accept: both scrubbers get a visible thumb, drag seeking and a hit area of at least the touch height, and the listed targets reach 48 dp on Android; component tests check the hit areas; the interface follows board UI-MOB-MEDIA-TARGETS.
+- **MOB-MEDIA-INSETS** — Player and viewer controls clear the cutout and the gesture bar
+  `bug · agent · normal`
+  `VideoPlayer.jsx` places its top and bottom bars and the Audio and Subtitles panel at 0 with no safe-area insets (and the picture is rotated on a portrait phone, so the insets must be mapped); the photo viewer applies only top and bottom insets, so its bar sits under a notch in landscape. Accept: a `layout.js` helper gives both their four margins, tested for portrait, landscape and the rotated player.
+- **MOB-EXPORT-DEADLINE** — A large video's export is limited by stalls, not by total time
+  `bug · agent · normal · native`
+  iOS and Android give the whole export one 90 s deadline, so an iCloud original that needs longer never uploads. Accept: the deadline restarts on each chunk in Swift and Kotlin; the JS contract test covers the error codes.
+- **MOB-VIDEO-ASSISTIVE** — The film player waits for people who use a switch, a keyboard or a screen reader's focus
+  `feature · agent · normal · native`
+  The controls now stay while TalkBack or VoiceOver is on, but Switch Access, Voice Access, Switch Control and external keyboards are not detected, so their users must reach a control within three seconds; the Up next card advances by itself after ten seconds without being announced; opening the Audio or Subtitles panel does not move accessibility focus to it. Accept: the controls also stay while any of those is in use (Android's service list filtered to input services; iOS through native code), Up next is announced and holds its countdown for a screen reader, and a panel takes focus when it opens; tests cover the rules.
+- **SEC-MOBILE-MANIFEST** — Limit Android cover-provider access without breaking external players
+  `chore · agent · normal · native`
+  accept: limit `CoverProvider` to authorized cover consumers with URI grants or another appropriate mechanism, while preserving Media3 notifications and Android Auto; tests exercise access and grants. The provider currently serves covers to other apps, so making it private without working grants is not sufficient.
+- **SEC-MUSIC-CONTROLLERS** — Another app on the phone cannot browse or control the Arca music library
+  `bug · agent · normal · native`
+  `MusicService` is exported and accepts every controller. Accept: `onConnect` accepts only its own UID, trusted system controllers and an allowlist (Android Auto, Assistant, Wear), with JVM tests.
+
+### Low priority — small effort
+
 - **UX-DESK-VIDEO-WORDS** — A video in a gallery is called a video
   `bug · agent · low`
   In the desktop and web viewer a video's buttons read Delete photo, Download photo, Photo information, Previous photo and Next photo, and the hub's refusals say “Photo changed. Refresh the gallery before deleting.” for a video. Accept: the viewer's labels and those two messages name the kind of the item, with DOM and daemon tests.
 - **UX-DELETE-RETENTION-OFF** — Deleting says when nothing will be recoverable
   `feature · agent · low`
   Idea. The gallery and file deletion confirmations say History can restore the item while retention keeps it, even when the folder's version history is Off and the version goes at the next hourly maintenance. Accept: with history Off the confirmation says the deletion cannot be undone; the wording is part of the approval.
+- **UX-NOTICE-REDACTION** — Redacting credentials in a notice does not mangle host names
+  `bug · agent · low`
+  `safeDetails` treats `code:`, `token:`, `secret:` and `password:` as credential fields, so an address whose host ends in one of those words (`http://vscode:8080`) is shown as `[redacted]`. Accept: redaction applies to key and value pairs, not to a host and port, with a notice-contract test.
+- **UX-APPROVAL-FOCUS** — The web sign-in approval opens with Deny focused
+  `bug · agent · low`
+  `modal()` gives Cancel the initial focus only when a confirmation option exists, so the approval prompt, a confirmation without one, opens focused on "Raw details". Accept: every confirmation dialog, the approval prompt included, opens with Cancel focused.
+- **UX-FILES-TIME-REPLICA** — Files rows show their last-change time on replicas
+  `feature · agent · low`
+  `/v1/browse` reads the time from the local `revisions` table, which a replica does not fill, so replica rows show a size only. Accept: the hub sends the current revision's time for every file (or the change feed carries it), a desktop replica's Files rows show it, and a test pins a replica store without local revisions.
 - **UX-DESK-COPY** — Dialog titles and Restore follow the copy rules
   `bug · agent · low`
   "Create a shared folder on hub <name>" and "Path on <name>" use the hub's configured name; "Stop syncing on this hub?" does not name the folder; Connect stacks three hints under one field; Restore's title and prose say "rev" and "sha" and the full path. Accept: the three titles follow SPEC's rules, one hint per field, Restore reads `Restore “name”?` with no `rev` or `sha` in prose (the mono row value stays), and the kit pages match.
-- **DOC-SPEC-DRIFT** — SPEC says what the code and the kit already do
-  `chore · agent · low`
-  Stale sentences found by the audit: the tray's Now playing row (§4 against §9 and the code), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. Accept: each sentence matches the shipped behaviour; no code changes.
-- **KIT-HYGIENE** — The kit's tray reuses the production rule
-  `chore · agent · low`
-  `.kit-tray` re-declares `#tray-content` and `#tray-error` with literal sizes that have drifted from production (a 6 px gap against `--space-2`). Accept: the kit reuses the production rules; `npm run design -- --check` and the design tests pass.
-- **UX-FILES-BACK** — Back goes up one folder level in Files, and a reload stays in the subfolder
-  `feature · agent · normal`
-  Idea. Files navigation keeps the subfolder out of the route, so Back in the web admin leaves the folder from three levels deep, while libraries push an entry per level. Accept: each level is a route entry, with a DOM test for Back and reload.
-- **UX-ERASE-CONFIRM** — Erase asks for more than one click
-  `feature · agent · normal`
-  Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
-- **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
-  `feature · agent · low`
-  Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
-- **UX-PHOTO-RANGE** — Shift-click selects a range of photos
-  `feature · agent · low`
-  Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Arrow extend the selection from the last toggled tile, and the bar downloads the selected originals, with DOM tests; the interface follows board UI-UX-PHOTO-RANGE.
-
-### Usability — phone
-
-- **MOB-VIDEO-ASSISTIVE** — The film player waits for people who use a switch, a keyboard or a screen reader's focus
-  `feature · agent · normal · native`
-  The controls now stay while TalkBack or VoiceOver is on, but Switch Access, Voice Access, Switch Control and external keyboards are not detected, so their users must reach a control within three seconds; the Up next card advances by itself after ten seconds without being announced; opening the Audio or Subtitles panel does not move accessibility focus to it. Accept: the controls also stay while any of those is in use (Android's service list filtered to input services; iOS through native code), Up next is announced and holds its countdown for a screen reader, and a panel takes focus when it opens; tests cover the rules.
-- **MOB-MEDIA-INSETS** — Player and viewer controls clear the cutout and the gesture bar
-  `bug · agent · normal`
-  `VideoPlayer.jsx` places its top and bottom bars and the Audio and Subtitles panel at 0 with no safe-area insets (and the picture is rotated on a portrait phone, so the insets must be mapped); the photo viewer applies only top and bottom insets, so its bar sits under a notch in landscape. Accept: a `layout.js` helper gives both their four margins, tested for portrait, landscape and the rotated player.
-- **UX-MOB-VIDEO-FOLD** — The video player does not rotate on the nearly square Fold
-  `bug · agent · normal`
-  The player rotates 90° whenever height exceeds width. Accept: a pure rotation rule skips it when the aspect ratio is under about 1.2 or the layout is wide, with a test, and the kit's caption says so.
-- **MOB-ALBUM-UNAVAILABLE** — The Photo uploads sheet says how to get Save changes back when an album disappeared
-  `bug · agent · normal`
-  Save is disabled with no reason while a selected album is missing, and the form row shows the album's name with no sign that it is gone. Accept: the row reads "Unavailable" and the button carries its reason, through a pure helper tested beside `gallerySettingsChanged`.
-- **MOB-SWITCH-CONTRAST** — The Off position of a switch is visible
-  `bug · agent · normal`
-  The phone's switch track uses the `line` colour (about 1.5:1 on a surface), where desktop and SPEC §9 use `control` (3:1). Accept: `switchTrack` uses the control token, a test asserts 3:1 in both palettes, and the kit is regenerated.
-- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
-  `feature · agent · normal`
-  The video scrubber is 32 dp and seeks only on release with no thumb; the Now Playing track has no thumb or drag; the sleep chip is 32 dp; segments, switches and breadcrumbs are 44 dp with no slop; the Now Playing artist and album links, the "Using local Wi-Fi?" link and the viewer bar buttons are under the touch height. Accept: both scrubbers get a visible thumb, drag seeking and a hit area of at least the touch height, and the listed targets reach 48 dp on Android; component tests check the hit areas; the interface follows board UI-MOB-MEDIA-TARGETS.
-- **MOB-VIDEO-BACK** — Android Back closes the Audio or Subtitles panel before the film
-  `bug · agent · low`
-  accept: `onRequestClose` closes an open panel first, as the photo viewer does with Info, with a test.
 - **MOB-COPY** — Phone confirmations and results follow the copy rules
   `bug · agent · low`
   "Photos deleted" for one photo or a video; "Originals stay in Photos" in a folder with no linked album; "File renamed" and "Diagnostics copied" toasts against Quiet successes; Up next counts "tracks" for episodes; ordinary copy uses the hub's configured name where SPEC says "the hub". Accept: `confirm-copy.js` and string tests pin each; SPEC settles the hub-name rule, which §5 Offline contradicts.
 - **MOB-TAB-LABELS** — Bottom tab labels stay whole at large text
   `bug · agent · low`
   Phone tabs take one line at the caption size with only the global 2× cap, while the rail caps at 1.1× for this reason; "Settings" is estimated to ellipsize near 1.6×. Accept: a tab-label cap constant tested like `railLabelFontCap`.
-- **MOB-BACK-LEVELS** — Android Back goes up one folder level and clears a photo selection before leaving the folder
-  `feature · agent · normal`
-  Idea. Back from three levels deep, or with a hundred photos selected, drops to Folders; SPEC specifies one level up only for music. Accept: a pure `backStep(state)` reducer with a test and no new control.
+- **DOC-SPEC-DRIFT** — SPEC says what the code and the kit already do
+  `chore · agent · low`
+  Stale sentences found by the audit: the tray's Now playing row (§4 against §9 and the code), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. Accept: each sentence matches the shipped behaviour; no code changes.
+- **KIT-HYGIENE** — The kit's tray reuses the production rule
+  `chore · agent · low`
+  `.kit-tray` re-declares `#tray-content` and `#tray-error` with literal sizes that have drifted from production (a 6 px gap against `--space-2`). Accept: the kit reuses the production rules; `npm run design -- --check` and the design tests pass.
+- **PERF-GALLERY-QUIET-WRITES** — A gallery write that changes nothing does not make galleries read again
+  `feature · agent · low`
+  The `gallery` row generation is shared by every gallery and moves on any write to `gallery_metadata`, `gallery_assets` and `added_dates`, including an upsert that stores the values already there (`rememberFileDate` and `rememberAddedDate` on every uploaded or pulled photo, the added-dates re-walk), so a kept gallery is read once more although nothing it shows changed. Measured by the review of 0.9.11; results stay correct. Accept: the UPDATE triggers fire only when a column the gallery reads changed (`WHEN OLD.x IS NOT NEW.x`), `gallery_members`, `gallery_assets` and `added_dates` move a per-folder counter, and a test shows an identical upsert and a write in another gallery leave a kept gallery unread.
+- **MOB-IOS-ERRORS** — iPhone file errors say what failed
+  `bug · agent · low · native`
+  The Swift `replaceFile` and partial-file checks throw `NetworkUnavailable` for a failed rename, so the phone shows "Connect to the hub's local Wi-Fi…" as a file's issue; Kotlin names each cause. Accept: Swift throws the same named errors and the JS contract maps them.
+- **SEC-IOS-ATS** — iOS never allows arbitrary plaintext loads
+  `chore · agent · low · native`
+  `NSAllowsArbitraryLoads` is on although the native module already refuses HTTP outside verified private or tailnet addresses. Accept: `NSAllowsLocalNetworking` replaces it and the config test pins it.
+
+### Low priority — medium effort
+
+- **PERF-SCAN-STATS** — A full scan stats each file once and reads the scan cache once
+  `feature · agent · low`
+  Per file a scan resolves the folder, reads the marker, stats every path component and prepares one cache SELECT: 12–20 system calls where one or two are needed. Accept: scanning 1,000 unchanged files makes at most 1,100 stat-class calls, one marker read and one `scan_cache` statement.
+- **PERF-MOB-THUMB-MAP** — The gallery's thumbnail map is not rewritten while scrolling
+  `feature · agent · low`
+  The whole map (full `file://` URIs, 1–4 MB) is stringified and written after scroll-driven passes, and every flush re-creates every photo object up to four times a second. Accept: thumbnails stored as rows with only the changes written, the map passed by reference and version; a test sees three deltas write three rows and a reload give the same thumbnails.
+- **PERF-MOB-SEARCH** — Phone search parses only matching rows
+  `feature · agent · low`
+  Every ASCII query also reads up to 10,000 accented rows per folder and parses each, folder after folder, and outdated searches keep running. Accept: match on `path` before parsing and stop when a newer query starts; a test with 5,000 accented rows parses only the 3 matches.
+- **PERF-WEB-IMAGE-CACHE** — Pages and thumbnails get separate browser quotas
+  `feature · agent · low`
+  The IndexedDB store holds 128 records shared by gallery pages and thumbnails, so the persistent thumbnail cache is nearly empty after a restart. Accept: separate quotas (pages by count, thumbnails by bytes) in a pure module with a test; whether private images may be cached by the browser is a maintainer decision.
+- **PERF-WIN-HIDDEN-EVENTS** — A window hidden or minimized on Windows stops its background requests
+  `feature · agent · low`
+  WebView2 keeps reporting the page as visible while its window is hidden, so on Windows the `/v1/events` long poll (gated on `document.hidden`) continues in a tray-hidden window and asks for status on every change, and a minimized window keeps the five-second status poll; nothing fires when the window returns, so the first status answer waits for the next tick. Traced in wry, not run on Windows. Accept: the events loop, the gallery and audio-library refreshes and the status poll share one shown-window test that asks the native window (visible and not minimized) in the desktop app, a native show or restore polls once, and a DOM test covers a page that reads visible in a hidden window.
+- **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
+  `bug · agent · low`
+  Today the whole dialog scrolls and no dialog pins its action row. Accept: dialogs whose content outgrows the window (Choose folders, Add to playlist, the Erase path list, Pair a device, the conflict dialog) scroll their body while the title and the action row stay visible at the 620 px minimum height; a DOM test fills a dialog past the window height.
+- **BACKUP-HUB-ROLLBACK** — A full backup notices that the hub went back
+  `feature · agent · low`
+  The backup worker's archive cursor is not compared with the hub's history: against a hub that went back it gets 409 and then, once the hub passes the cursor, a silent gap in what it copies. Accept: the worker reads the catalog's `history`, keeps the revisions it already holds, restarts its copy from the hub's head on a changed epoch or a cursor ahead, and reports it; with a test.
+- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
+  `feature · agent · low`
+  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index from the scanner worker (keeping one, mode 0600), Erase removes it, and the CLI documents how to restore it with the daemon stopped; `history.json` stays in place, so the restored index starts a new history epoch and replicas reconcile instead of reverting; after such a start the hub finishes one full scan before it serves heads, so a working copy it still holds does not turn into redundant conflict copies on replicas; with tests.
+- **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
+  `chore · agent · low`
+  accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
+- **UX-PHOTO-RANGE** — Shift-click selects a range of photos
+  `feature · agent · low`
+  Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Arrow extend the selection from the last toggled tile, and the bar downloads the selected originals, with DOM tests; the interface follows board UI-UX-PHOTO-RANGE.
+- **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
+  `feature · agent · low`
+  Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
 - **UX-AUTO-EMPTY** — The car says what to do when the library is empty
   `feature · agent · low · native`
   Idea. An empty or unsynced library returns three empty tabs with no message. Accept: the Android Auto service returns a message and a resolution label ("Open Arca on your phone to sync music"), with JVM tests; the interface follows board UI-UX-AUTO-EMPTY.
 
-### Features
+### Low priority — large effort
 
-- **HUB-DEVICE-ID** — Pairing the same device again keeps one hub registration
-  `feature · agent · normal`
-  Each device keeps a persistent device ID and a client-held secret and sends both with `/pair`; the hub rotates that registration's token instead of adding a device, and a missing ID keeps today's behaviour. Device IDs are visible to every linked device and web-approval authority is keyed by them, so the ID alone must never rotate a registration. Accept: re-pairing with the same ID and secret leaves one roster entry, the same ID with a wrong secret adds a device and grants nothing, and an older client still pairs.
+- **SEC-SIGNING-STEP** — The updater key never enters the build graph
+  `chore · agent · low`
+  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures; do not assume `createUpdaterArtifacts` succeeds without a key.
 - **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
-  `feature · agent · normal`
-  accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the three queries on hub and phone. Feasibility: GPS read 0.17 ms per photo, a dataset of about 2.5 MB plus alternate names, grid lookup about 13 µs.
-- **HUB-MOVED-NOTICE** — The old address tells clients where the hub went
   `feature · agent · low`
-  An operator command makes the old host answer every `/v1/*` with 421 `{error: "hub-moved", hubId, url}`, only to a credential it still recognises, and serve no data; a client whose saved hub ID matches offers Change address with the same checks (confirmed on desktop and phone; a player without a UI only when the new host passes the connect-time LAN or tailnet verification). Accept: the notice never changes the hub ID, is never followed without the same verification, and is tested from a desktop replica and a player.
+  accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the three queries on hub and phone. Feasibility: GPS read 0.17 ms per photo, a dataset of about 2.5 MB plus alternate names, grid lookup about 13 µs.
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car
   `feature · agent · low · native`
   accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.
