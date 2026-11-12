@@ -1841,7 +1841,10 @@ test("journal rows without a folded path, from an interrupted upgrade or an olde
     .run(volume.id, "Waiting.txt", JSON.stringify({ volume: volume.id, path: "Waiting.txt", hash, size: 7, deleted: 0, rev }));
   assert.equal(s.unwritten(volume.id, "waiting.txt"), null);
   const reopened = new Store(s.home);
-  t.after(() => reopened.close());
-  assert.equal(reopened.unwritten(volume.id, "waiting.txt")?.rev, rev);
-  assert.equal(reopened.db.prepare("SELECT COUNT(*) AS n FROM pending WHERE path_key IS NULL").get().n, 0);
+  try {
+    assert.equal(reopened.unwritten(volume.id, "waiting.txt")?.rev, rev);
+    assert.equal(reopened.db.prepare("SELECT COUNT(*) AS n FROM pending WHERE path_key IS NULL").get().n, 0);
+  } finally {
+    reopened.close();
+  }
 });

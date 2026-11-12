@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.29 — 2026-11-12
+
+- The release pipeline passes on Windows again, so 0.9.x reaches the desktop updater, Docker and the website: one test kept the index open while its temporary folder was removed, which Windows refuses.
+
 ## 0.9.28 — 2026-11-11
 
 - Locating a folder whose directory moved, after the hub had stopped syncing it, now brings in files devices uploaded meanwhile instead of recording them as deleted, and the hub scans the located folder at once.
