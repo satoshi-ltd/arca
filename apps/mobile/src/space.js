@@ -14,4 +14,6 @@ export function neededBytes(volume, folders, volumes) {
 export const spaceShort = (needed, free) =>
   Number.isFinite(needed) && Number.isFinite(free) && needed + HEADROOM > free;
 export const notEnoughSpace = (needed, free) =>
-  `Not enough space: ${bytes(needed)} to download · ${bytes(free)} free`;
+  needed > 0
+    ? `Not enough space: ${bytes(needed)} to download · ${bytes(free)} free`
+    : `Not enough space: Arca needs ${bytes(HEADROOM)} free · ${bytes(free)} free`;

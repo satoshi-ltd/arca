@@ -45,6 +45,7 @@ test("the sheet and the engine share the formula, and a folder that does not fit
 
 test("onboarding warns before Start syncing when the ticked folders do not fit, with the sheet's check and wording", () => {
   assert.equal(notEnoughSpace(13.4 * 1024 ** 3, 8.1 * 1024 ** 3), "Not enough space: 13.4 GB to download · 8.1 GB free");
+  assert.equal(notEnoughSpace(0, 120 * 1024 ** 2), "Not enough space: Arca needs 256.0 MB free · 120.0 MB free", "streaming every folder still needs the headroom, and says so");
   const screen = fs.readFileSync(new URL("../apps/mobile/src/Onboarding.jsx", import.meta.url), "utf8");
   assert.match(screen, /import \{ notEnoughSpace, spaceShort \} from "\.\/space\.js";/);
   assert.match(screen, /const needed = downloadBytes\(chosen, modes\);\s+const short = spaceShort\(needed, free\);/, "recomputed on every tick and Stream choice");

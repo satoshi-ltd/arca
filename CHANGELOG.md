@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.42 — 2026-11-12
+
+- When every folder chosen during phone onboarding streams and the phone is short of space, the warning now says that Arca needs 256 MB free instead of reading "0 B to download".
+
+Needs: native build
+
 ## 0.9.41 — 2026-11-12
 
 - The status card's one-line second line uses the app's single narrow-window breakpoint, so at a fractional window width it never both cuts and wraps.
