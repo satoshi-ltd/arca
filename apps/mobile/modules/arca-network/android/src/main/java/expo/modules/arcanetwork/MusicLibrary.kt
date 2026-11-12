@@ -204,6 +204,9 @@ class MusicTree(
     const val PLAYLISTS = "playlists"
     const val RECENT = "recent"
     const val PODCASTS = "podcasts"
+    const val NOTHING_ON_PHONE = "No music on this phone yet"
+    const val NOTHING_DOWNLOADED = "Nothing downloaded on this phone"
+    const val SYNC_ON_PHONE = "Open Arca on your phone to sync music"
     private const val CONTINUE = "continue"
     private const val SEPARATOR = '\u001F'
     fun trackNodeId(context: String, track: String, position: Int? = null): String {
@@ -308,6 +311,14 @@ class MusicTree(
   private fun showNode(show: MusicShow) =
     MusicNode(show.id, show.title, count(show.tracks.size, "episode", "episodes"), show.cover, false)
   fun playable(track: MusicTrack) = streams || !track.stream
+  val emptyMessage by lazy {
+    when {
+      library.tracks.values.any(::playable) -> null
+      library.tracks.isEmpty() -> NOTHING_ON_PHONE
+      else -> NOTHING_DOWNLOADED
+    }
+  }
+  fun carMessage(playing: Boolean) = emptyMessage.takeUnless { playing }
 
   private fun trackNode(context: String, track: MusicTrack, position: Int?): MusicNode {
     if (!playable(track)) return MusicNode(trackNodeId(context, track.id), track.title, UNAVAILABLE, track.cover, false, track = track)

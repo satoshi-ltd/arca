@@ -540,3 +540,20 @@ test("a failed Stop streaming keeps the folder in the list to retry, and no hub 
   await phoneReplica(store, files, client, { scope: null }).forgetStreamed("v");
   assert.equal(await store.get("streamed:null"), null);
 });
+
+test("the car hears why an empty library has nothing to play and what to do, until a track is on the phone", () => {
+  const native = "modules/arca-network/android/src";
+  const service = read(`${native}/main/java/expo/modules/arcanetwork/MusicService.kt`);
+  const tree = read(`${native}/main/java/expo/modules/arcanetwork/MusicLibrary.kt`);
+  assert.match(tree, /const val NOTHING_ON_PHONE = "No music on this phone yet"/);
+  assert.match(tree, /const val NOTHING_DOWNLOADED = "Nothing downloaded on this phone"/);
+  assert.match(tree, /const val SYNC_ON_PHONE = "Open Arca on your phone to sync music"/);
+  assert.match(tree, /val emptyMessage by lazy \{\s+when \{\s+library\.tracks\.values\.any\(::playable\) -> null\s+library\.tracks\.isEmpty\(\) -> NOTHING_ON_PHONE\s+else -> NOTHING_DOWNLOADED/);
+  assert.match(service, /val browsing = browse\(\)\s+showEmpty\(browsing\)\s+current\.notifyChildrenChanged\(MusicTree\.ROOT/, "every reload and hub change sets or clears it before the tabs refresh");
+  assert.match(service, /session\?\.setPlaybackException\(browsing\.carMessage\(player\.isPlaying\)\?\.let\(::emptyLibrary\)\)/, "a stream still playing from its buffer is never shown as an error");
+  assert.match(service, /schedule\(\)\s+if \(loaded\.isDone\) showEmpty\(browse\(\)\)\s+\}/, "it is re-evaluated when playback stops or starts");
+  assert.match(tree, /fun carMessage\(playing: Boolean\) = emptyMessage\.takeUnless \{ playing \}/);
+  assert.match(service, /putString\(MediaConstants\.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_LABEL_COMPAT, MusicTree\.SYNC_ON_PHONE\)/);
+  assert.match(service, /open\?\.let \{ putParcelable\(MediaConstants\.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_INTENT_COMPAT, it\) \}/);
+  assert.match(read(`${native}/test/java/expo/modules/arcanetwork/MusicStreamTest.kt`), /@Test fun aLibraryWithoutAPlayableTrackTellsTheCarWhy\(\)[\s\S]*away\.carMessage\(true\)/);
+});

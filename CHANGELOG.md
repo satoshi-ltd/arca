@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.35 — 2026-11-11
+
+- Android Auto now says "No music on this phone yet" (or "Nothing downloaded on this phone" while a streamed library's hub is away) and to open Arca on the phone, instead of showing empty tabs.
+
+Needs: native build
+
 ## 0.9.34 — 2026-11-11
 
 - Onboarding now warns before you start when the chosen folders do not fit on the phone, and keeps Start syncing off until you untick a folder or choose Stream.

@@ -54,6 +54,29 @@ class MusicStreamTest {
     assertEquals("v:A/1.mp3", offline.expand(rows[0].id)!!.first.single().id)
   }
 
+  @Test fun aLibraryWithoutAPlayableTrackTellsTheCarWhy() {
+    assertEquals("No music on this phone yet", MusicTree(MusicLibraryData.EMPTY).emptyMessage)
+    assertEquals("Open Arca on your phone to sync music", MusicTree.SYNC_ON_PHONE)
+    val streamed = MusicLibraryData.parse(
+      """
+      {"format":1,"scope":"hub-1",
+       "tracks":[{"id":"v:A/2.mp3","uri":"$hub","stream":true,"title":"Two","artist":"Ann","album":"First","duration":60}],
+       "albums":[{"id":"album:first","title":"First","artist":"Ann","tracks":["v:A/2.mp3"]}],
+       "artists":[{"id":"artist:ann","name":"Ann","letter":"A","albums":["album:first"]}],
+       "recent":[]}
+      """.trimIndent(),
+      root.path,
+    )
+    val away = MusicTree(streamed).streaming(false)
+    assertEquals("Nothing downloaded on this phone", away.emptyMessage)
+    assertNull("a stream still playing from its buffer keeps its state", away.carMessage(true))
+    assertEquals("Nothing downloaded on this phone", away.carMessage(false))
+    assertEquals("the tabs stay", listOf(MusicTree.ARTISTS, MusicTree.ALBUMS, MusicTree.RECENT), away.roots.map { it.id })
+    assertNull(away.queue("album:first"))
+    assertNull("the hub back clears it", MusicTree(streamed).emptyMessage)
+    assertNull("a track on the phone clears it with the hub away", MusicTree(library()).streaming(false).emptyMessage)
+  }
+
   @Test fun theCredentialReachesOnlyTheHubsOrigin() {
     assertTrue(MusicHub.headers(hub).isEmpty())
     assertTrue(MusicHub.set("https://hub.example:8443", "Bearer secret"))

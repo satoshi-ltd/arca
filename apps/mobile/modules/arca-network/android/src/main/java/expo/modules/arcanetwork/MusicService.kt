@@ -12,6 +12,7 @@ import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -97,6 +98,7 @@ class MusicService : MediaLibraryService() {
   private val main = Handler(Looper.getMainLooper())
   private val onMain = Executor { main.post(it) }
   private var session: MediaLibrarySession? = null
+  private var open: PendingIntent? = null
   private lateinit var player: ExoPlayer
   private lateinit var shuffle: StartFirstShuffleOrder
   private var tree = MusicTree(MusicLibraryData.EMPTY)
@@ -138,6 +140,7 @@ class MusicService : MediaLibraryService() {
         remember()
         observe()
         schedule()
+        if (loaded.isDone) showEmpty(browse())
       }
       override fun onPlaybackStateChanged(playbackState: Int) {
         observe()
@@ -156,7 +159,7 @@ class MusicService : MediaLibraryService() {
         remember()
       }
     })
-    val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
+    open = packageManager.getLaunchIntentForPackage(packageName)?.let {
       PendingIntent.getActivity(this, 2, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
     val synced = object : ForwardingPlayer(player) {
@@ -214,11 +217,22 @@ class MusicService : MediaLibraryService() {
   private fun notifyRoots() {
     val current = session ?: return
     val browsing = browse()
+    showEmpty(browsing)
     current.notifyChildrenChanged(MusicTree.ROOT, browsing.roots.size, null)
     for (root in browsing.roots) current.notifyChildrenChanged(root.id, browsing.children(root.id)?.size ?: 0, null)
   }
 
   private fun playing() = tree.streaming(MusicHub.ready)
+
+  private fun showEmpty(browsing: MusicTree) {
+    session?.setPlaybackException(browsing.carMessage(player.isPlaying)?.let(::emptyLibrary))
+  }
+
+  private fun emptyLibrary(message: String) =
+    PlaybackException(message, null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND, Bundle().apply {
+      putString(MediaConstants.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_LABEL_COMPAT, MusicTree.SYNC_ON_PHONE)
+      open?.let { putParcelable(MediaConstants.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_INTENT_COMPAT, it) }
+    })
 
   fun applyRename(from: String, to: String, done: () -> Unit) {
     main.post {

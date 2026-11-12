@@ -43,9 +43,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
   `feature · agent · normal`
   Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.
-- **UX-AUTO-EMPTY** — The car says what to do when the library is empty
-  `feature · agent · normal · native`
-  Idea. An empty or unsynced library returns three empty tabs with no message. Accept: the Android Auto service returns a message and a resolution label ("Open Arca on your phone to sync music"), with JVM tests; the interface follows board UI-UX-AUTO-EMPTY.
 
 
 
