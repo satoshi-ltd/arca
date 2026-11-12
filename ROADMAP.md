@@ -30,9 +30,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
 
-- **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
-  `bug · agent · high`
-  `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
 
 ## In progress
 

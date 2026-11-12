@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.28 — 2026-11-11
+
+- Locating a folder whose directory moved, after the hub had stopped syncing it, now brings in files devices uploaded meanwhile instead of recording them as deleted, and the hub scans the located folder at once.
+
+Needs: hub redeploy
+
 ## 0.9.27 — 2026-11-11
 
 - Reading the hub's archive no longer counts as a backup, so a device that is not a backup, a phone included, can no longer stop the hub from pruning old versions; phones are refused the archive and backup acknowledgements, and a real backup acknowledges itself before it reads anything.

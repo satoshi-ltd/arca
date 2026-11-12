@@ -2877,11 +2877,21 @@ export class Engine {
       );
     this.rememberCatalogVolume(v);
     if (existing?.selected) return existing;
+    const local = this.linkVolume(v.name, existing?.path || location, v.id);
+    await this.reportMachine(true);
+    this.lastReport = null;
+    return local;
+  }
+  linkVolume(name, location, id) {
+    const s = this.store;
+    const reselected =
+      this.config.role === "hub" &&
+      !s.volumes().find((row) => row.id === id)?.selected;
     let local;
     s.db.exec("BEGIN IMMEDIATE");
     try {
-      local = s.addVolume(v.name, existing?.path || location, v.id);
-      if (this.config.role === "hub")
+      local = s.addVolume(name, location, id);
+      if (reselected)
         for (const row of s.rows(id))
           s.queue({ ...s.syncRow(row), reselected: true }, null);
       s.db.exec("COMMIT");
@@ -2889,15 +2899,13 @@ export class Engine {
       s.db.exec("ROLLBACK");
       throw e;
     }
-    if (this.config.role === "hub")
+    if (reselected)
       try {
         s.recover(id);
       } catch (error) {
         if (!error.failures) throw error;
       }
     this.work.mark(id);
-    await this.reportMachine(true);
-    this.lastReport = null;
     return local;
   }
   async renameFile(volume, name, newName, rev, { rewrites = false } = {}) {

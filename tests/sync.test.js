@@ -3602,6 +3602,49 @@ test("file rename validates names and stale revisions, preserves history and syn
   assert.equal(read(replica, volume, "nested/Final.txt"), "pending edit");
 });
 
+test("locating a folder the hub stopped syncing here materializes what replicas uploaded meanwhile", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "kept.txt", "kept");
+  await hub.sync();
+  const replica = await connect("locate-requeue");
+  await replica.sync();
+  await hub.api("/v1/unselect", { id: volume.id });
+  write(replica, volume, "uploaded.txt", "while stopped");
+  await replica.sync();
+  assert.equal(hub.engine.store.current(volume.id, "uploaded.txt").deleted, 0);
+  const original = hub.engine.store.volume(volume.id).path;
+  const moved = original + "-moved";
+  fs.renameSync(original, moved);
+  await hub.api("/v1/locate-folder", { id: volume.id, path: moved });
+  await hub.sync();
+  assert.equal(
+    hub.engine.store.history(volume.id, "uploaded.txt").some((row) => row.deleted),
+    false,
+    "no deletion is recorded",
+  );
+  assert.equal(fs.readFileSync(path.join(moved, "uploaded.txt"), "utf8"), "while stopped");
+  await replica.sync();
+  assert.equal(read(replica, volume, "uploaded.txt"), "while stopped");
+  assert.equal(read(hub, volume, "kept.txt"), "kept");
+});
+
+test("the hub's next incremental cycle scans a folder it located, picking up what changed on its disk", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "kept.txt", "kept");
+  await hub.sync();
+  for (const stopped of [true, false]) {
+    if (stopped) await hub.api("/v1/unselect", { id: volume.id });
+    const original = hub.engine.store.volume(volume.id).path;
+    const moved = `${original}-${stopped ? "stopped" : "selected"}`;
+    fs.renameSync(original, moved);
+    const name = stopped ? "added-while-stopped.txt" : "added-after-move.txt";
+    fs.writeFileSync(path.join(moved, name), name);
+    await hub.api("/v1/locate-folder", { id: volume.id, path: moved });
+    await hub.engine.exclusive(() => hub.engine.cycle({ incremental: true }));
+    assert.equal(hub.engine.store.current(volume.id, name)?.deleted, 0, `${name} is indexed by the next incremental cycle`);
+  }
+});
+
 test("catalog-only hub rename keeps content and rejects exclusions and directory targets", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "original.txt", "archive");

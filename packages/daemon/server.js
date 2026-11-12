@@ -2127,7 +2127,7 @@ export async function start(home, options = {}) {
                 "Choose the original folder with its matching Arca marker. Files are not created or replaced.",
                 409,
               );
-            return s.addVolume(v.name, location, v.id);
+            return engine.linkVolume(v.name, location, v.id);
           });
           setImmediate(tick);
           return send(200, located);
@@ -2969,6 +2969,7 @@ export async function start(home, options = {}) {
           "/v1/conflict-choice",
           "/v1/select",
           "/v1/unselect",
+          "/v1/locate-folder",
           "/v1/delete-share",
           "/v1/ignore-policy",
           "/v1/pause",
