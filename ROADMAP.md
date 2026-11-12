@@ -113,6 +113,12 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 
 ### High priority — medium effort
 
+- **MOB-MASS-DELETE** — The phone holds a sudden mass disappearance as the hub and computers do
+  `bug · agent · high`
+  Since 0.9.40 the hub and desktop or server replicas hold a scan's mass deletion until someone confirms it, but the phone still queues a deletion for every indexed file missing from its app storage (`replica.js` around the inventory), guarded only by a missing root. Accept: the same rule (at least 50 files and more than a quarter of the folder within a rolling hour, renames excused one to one, empty files never a move) holds the phone's deletions, persisted across launches; the folder row shows the attention and a confirmation sheet offers Check again and Delete from every device with the desktop's words; source-contract and fake-engine tests.
+- **HUB-HOLD-PROPOSED-DELETES** — The hub holds a mass deletion a device sends it
+  `bug · agent · high`
+  The 0.9.40 guard holds deletions a scan finds, not deletions a device proposes: a phone or a replica that empties its own copy (or runs an older version) still sends every deletion and the hub applies them for everyone. Accept: the hub applies the same rolling-hour rule to accepted deletion proposals per folder, answers held proposals so the device keeps its row as pending, shows the folder's attention on the hub and offers the same Review, with tests on old and new replica versions.
 - **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
   `bug · agent · high`
   The phone's repair of a linked album restores every missing indexed file before anything else runs, and each restore is not isolated, so a row whose content the hub no longer has (an older revision collected after the hub edited or deleted the file) fails every cycle: scan, uploads and pulls never run, the folder shows a raw error forever and Enable uploads stays disabled. Since 0.9.24 Change album… no longer ends the repair (it used to, by proposing deletions), so the only way out is Stop syncing. Traced by the review of 0.9.24, not run. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
