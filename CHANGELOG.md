@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.47 — 2026-11-12
+
+- In a gallery, Shift-click or Shift+Space selects every photo between the last one you picked and this one, and the selection bar can download what you selected: one photo as itself, several as one ZIP named after the folder, up to 10,000 at a time.
+- The desktop asks where to save and keeps working while the download runs; its delete button now reads Delete…, as on the phone, and on a narrow window both actions become icons.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.46 — 2026-11-12
 
 - The phone's film player and Now playing show a handle on their progress line that you can drag: the time follows your finger and playback jumps there when you let go; a swipe that turns vertical never moves playback.

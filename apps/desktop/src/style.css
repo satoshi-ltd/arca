@@ -3884,12 +3884,12 @@ section:has(> .replica-danger) > .section-label {
 .photo-selection-count {
   white-space: nowrap;
 }
+.photo-selection-bar .icon-button > .photo-selection-label {
+  display: none;
+}
 @media (max-width: 480px) {
   .photo-selection-bar {
     gap: var(--space-1);
-  }
-  .photo-selection-delete {
-    font-size: var(--text-caption);
   }
 }
 .photo-more {

@@ -8171,7 +8171,7 @@ test("the wall files each photo under the local day its date names, sharpens til
   assert.deepEqual(large, [], "no wall tile at this size pulls the 2048 px preview");
 });
 
-async function mountWall(t, { zone, page, preview, prepare = () => {}, memories = [], answer = () => undefined }) {
+async function mountWall(t, { zone, page, preview, prepare = () => {}, memories = [], answer = () => undefined, commands = {}, web = false, status = (value) => value }) {
   const previousZone = process.env.TZ;
   if (zone) process.env.TZ = zone;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-wall-"));
@@ -8179,7 +8179,7 @@ async function mountWall(t, { zone, page, preview, prepare = () => {}, memories 
   const daemon = await start(home, { timer: false });
   const v = daemon.engine.store.addVolume("Photos");
   daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
-  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: web ? `http://127.0.0.1:${daemon.port}` : "http://tauri.localhost" });
   const w = dom.window;
   w.setInterval = () => 0;
   w.devicePixelRatio = 2;
@@ -8214,15 +8214,15 @@ async function mountWall(t, { zone, page, preview, prepare = () => {}, memories 
     if (previousZone === undefined) delete process.env.TZ;
     else process.env.TZ = previousZone;
   });
-  w.__TAURI__ = {
-    core: {
-      invoke: (command, args) => {
+  const invoke = (command, args) => {
         const request = (async () => {
-          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command === "bootstrap") return { setup: false, status: status(daemon.engine.status()) };
+          if (commands[command]) return commands[command](args);
           if (command !== "api") throw new Error(command);
           const route = args.route;
           const answered = await answer(route, args);
           if (answered !== undefined) return answered;
+          if (route === "/v1/status") return status(daemon.engine.status());
           if (route.startsWith("/v1/gallery?")) return { indexing: false, previous: null, next: null, ...(await page(new URLSearchParams(route.split("?")[1]))) };
           if (route.startsWith("/v1/gallery/memories")) return { memories };
           if (route.startsWith("/v1/gallery/preview")) {
@@ -8243,9 +8243,17 @@ async function mountWall(t, { zone, page, preview, prepare = () => {}, memories 
         requests.add(request);
         request.then(() => requests.delete(request), () => requests.delete(request));
         return request;
-      },
-    },
   };
+  if (web)
+    w.fetch = async (route, options = {}) => {
+      try {
+        const value = await invoke("api", { route: String(route), method: options.method || "GET", ...(options.body ? { body: JSON.parse(options.body) } : {}) });
+        return new Response(JSON.stringify(value ?? {}), { headers: { "Content-Type": "application/json" } });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+    };
+  else w.__TAURI__ = { core: { invoke } };
   await w.eval(`(async()=>{${script}\n})()`);
   w.location.hash = `#/folders/${v.id}`;
   w.dispatchEvent(new w.HashChangeEvent("hashchange"));
@@ -8409,6 +8417,171 @@ test("deleting from a gallery on a computer says what goes and what is not touch
 const tilePx = (element, name) => parseFloat(element.style.getPropertyValue(name));
 const frames = () => new Promise((resolve) => setTimeout(resolve, 80));
 const noUndated = { count: 0, videos: 0, rev: 0 };
+
+const rangeItems = () => [
+  wallItem("a.jpg", "2026-10-02T10:00:00"),
+  wallItem("b.jpg", "2026-10-01T10:00:00"),
+  wallItem("c.jpg", "2026-09-28T10:00:00"),
+  wallItem("d.jpg", "2026-09-27T10:00:00"),
+  wallItem("e.jpg", "2026-08-15T10:00:00"),
+];
+const rangeTimeline = [{ month: "2026-10", count: 2, videos: 0 }, { month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }];
+const rangeWall = { page: () => ({ items: rangeItems(), timeline: rangeTimeline, undated: noUndated }), preview: () => ({ data: "data:image/jpeg;base64,AAAA" }) };
+const wallTile = (w, name) => w.document.querySelector(`.photo-open[aria-label="Open ${name}"]`).closest(".photo-thumb");
+const pressed = (w) => [...w.document.querySelectorAll(".photo-thumb")].filter((tile) => tile.querySelector(".photo-select").getAttribute("aria-pressed") === "true").map((tile) => tile.querySelector(".photo-open").getAttribute("aria-label").replace("Open ", ""));
+const shiftClick = (w, name, target = ".photo-select") => wallTile(w, name).querySelector(target).dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }));
+
+test("Shift-click and Shift+Space add every photo between the last toggled one and the target, across months, and never deselect", async (t) => {
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    answer: (route, args) => (route === "/v1/gallery/delete" ? { paths: [args.body.path], rows: [{ path: args.body.path, rev: 1 }] } : undefined),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  wallTile(w, "b.jpg").querySelector(".photo-select").click();
+  shiftClick(w, "d.jpg");
+  assert.deepEqual(pressed(w), ["b.jpg", "c.jpg", "d.jpg"], "the range crosses from October into September");
+  shiftClick(w, "c.jpg", ".photo-open");
+  assert.deepEqual(pressed(w), ["b.jpg", "c.jpg", "d.jpg"], "a Shift-click on a selected photo keeps it");
+  const key = new w.KeyboardEvent("keydown", { key: " ", shiftKey: true, bubbles: true, cancelable: true });
+  wallTile(w, "e.jpg").querySelector(".photo-select").dispatchEvent(key);
+  assert.equal(key.defaultPrevented, true);
+  const release = new w.KeyboardEvent("keyup", { key: " ", shiftKey: false, bubbles: true, cancelable: true });
+  wallTile(w, "e.jpg").querySelector(".photo-select").dispatchEvent(release);
+  assert.equal(release.defaultPrevented, true, "Space released after Shift cannot activate the button and deselect");
+  assert.deepEqual(pressed(w), ["b.jpg", "c.jpg", "d.jpg", "e.jpg"], "Shift+Space ranges from the last target into August");
+  assert.equal(w.document.querySelector(".photo-selection-count").textContent, "4 selected");
+  w.document.querySelector(".photo-selection-clear").click();
+  shiftClick(w, "a.jpg");
+  assert.deepEqual(pressed(w), ["a.jpg"], "after Clear there is no anchor, so only the target is added");
+  wallTile(w, "a.jpg").querySelector(".photo-select").click();
+  wallTile(w, "b.jpg").querySelector(".photo-select").click();
+  w.document.querySelector(".photo-selection-delete").click();
+  w.document.querySelector("#dialog-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(() => !w.document.querySelector('.photo-open[aria-label="Open b.jpg"]'));
+  shiftClick(w, "d.jpg");
+  assert.deepEqual(pressed(w), ["d.jpg"], "a deleted anchor starts no range");
+});
+
+test("the selection bar reads clear, count, Download, Delete…, View folder, and a narrow window turns both actions into named icon buttons", async (t) => {
+  let narrow = false;
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    prepare: (w) => {
+      w.matchMedia = (query) => ({ matches: narrow && query === "(max-width: 480px)", addEventListener() {}, removeEventListener() {} });
+    },
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  wallTile(w, "a.jpg").querySelector(".photo-select").click();
+  assert.deepEqual(
+    [...w.document.querySelector("#photo-selection").children].map((control) => control.getAttribute("aria-label") || control.textContent.trim()),
+    ["Clear selection", "1 selected", "Download", "Delete…", "View folder"],
+  );
+  const actions = () => [".photo-selection-download", ".photo-selection-delete"].map((selector) => w.document.querySelector(selector));
+  assert.deepEqual(actions().map((control) => [control.className, control.textContent.trim()]), [["secondary photo-selection-download", "Download"], ["secondary photo-selection-delete", "Delete…"]]);
+  narrow = true;
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => !w.document.querySelector("#photo-gallery"));
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  assert.deepEqual(actions().map((control) => [control.className, control.getAttribute("aria-label")]), [["photo-selection-download icon-button", "Download"], ["photo-selection-delete icon-button", "Delete…"]], "plain icon buttons like Clear, never framed secondary");
+  const style = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(style, /\.photo-selection-bar \.icon-button > \.photo-selection-label \{\n  display: none;/);
+});
+
+test("Download saves one selected original as itself and several as one archive through the desktop's save dialog", async (t) => {
+  const invoked = [];
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    commands: {
+      save_file: (args) => (invoked.push(["save_file", args]), true),
+      save_archive: (args) => (invoked.push(["save_archive", args]), invoked.length < 3),
+    },
+    answer: (route) => {
+      if (route === "/v1/gallery/archive") throw new Error("the desktop saves archives natively");
+    },
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  const volume = w.location.hash.split("/").pop();
+  wallTile(w, "c.jpg").querySelector(".photo-select").click();
+  w.document.querySelector(".photo-selection-download").click();
+  await until(() => /Photo saved\./.test(w.document.querySelector("#notice").textContent));
+  shiftClick(w, "e.jpg");
+  await until(() => !w.document.querySelector(".photo-selection-download").hasAttribute("aria-busy"));
+  w.document.querySelector(".photo-selection-download").click();
+  await until(() => /3 photos saved\./.test(w.document.querySelector("#notice").textContent));
+  const items = ["c.jpg", "d.jpg", "e.jpg"].map((name) => ({ path: name, hash: `h-${name}` }));
+  assert.deepEqual(JSON.parse(JSON.stringify(invoked)), [["save_file", { volume, path: "c.jpg" }], ["save_archive", { volume, items, name: "Photos" }]]);
+  w.document.querySelector("#notice").textContent = "";
+  await until(() => !w.document.querySelector(".photo-selection-download").hasAttribute("aria-busy"));
+  w.document.querySelector(".photo-selection-download").click();
+  await until(() => invoked.length === 3);
+  await frames();
+  assert.doesNotMatch(w.document.querySelector("#notice").textContent, /saved/, "a cancelled save dialog says nothing");
+});
+
+test("a desktop save in progress holds only its own button, never the app", async (t) => {
+  let finish;
+  const saving = [];
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    commands: {
+      save_archive: () => new Promise((resolve) => saving.push(resolve) && (finish = resolve)),
+    },
+    answer: (route, args) => (route === "/v1/gallery/delete" ? { paths: [args.body.path], rows: [{ path: args.body.path, rev: 1 }] } : undefined),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  wallTile(w, "a.jpg").querySelector(".photo-select").click();
+  shiftClick(w, "c.jpg");
+  const download = w.document.querySelector(".photo-selection-download");
+  download.click();
+  await until(() => saving.length === 1);
+  assert.equal(download.getAttribute("aria-busy"), "true");
+  assert.equal(download.getAttribute("aria-disabled"), "true");
+  assert.notEqual(w.document.body.getAttribute("aria-busy"), "true");
+  download.click();
+  await frames();
+  assert.equal(saving.length, 1, "a second click waits for the save in progress");
+  w.document.querySelector(".photo-selection-delete").click();
+  w.document.querySelector("#dialog-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(() => /3 photos deleted\./.test(w.document.querySelector("#notice").textContent));
+  finish(true);
+  await until(() => !download.hasAttribute("aria-busy"));
+  assert.equal(download.hasAttribute("aria-disabled"), false);
+});
+
+test("on the web Download fetches a one-time archive link for several originals", async (t) => {
+  const archives = [];
+  const clicked = [];
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    web: true,
+    prepare: (w) => {
+      w.HTMLAnchorElement.prototype.click = function () {
+        clicked.push([this.getAttribute("href"), this.hasAttribute("download")]);
+      };
+    },
+    answer: (route, args) => (route === "/v1/gallery/archive" ? (archives.push(args.body), { url: "/v1/gallery/archive?ticket=t1" }) : undefined),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  wallTile(w, "a.jpg").querySelector(".photo-select").click();
+  wallTile(w, "b.jpg").querySelector(".photo-select").click();
+  w.document.querySelector(".photo-selection-download").click();
+  await until(() => clicked.length === 1);
+  assert.deepEqual(clicked, [["/v1/gallery/archive?ticket=t1", true]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(archives)), [{ volume: w.location.hash.split("/").pop(), items: ["a.jpg", "b.jpg"].map((name) => ({ path: name, hash: `h-${name}` })) }]);
+});
+
+test("Download stays available while the hub is away, while Delete… waits for it", async (t) => {
+  const { w } = await mountWall(t, {
+    ...rangeWall,
+    status: (value) => ({ ...value, role: "replica", hubUnavailable: true }),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 5);
+  wallTile(w, "a.jpg").querySelector(".photo-select").click();
+  assert.equal(w.document.querySelector(".photo-selection-download").hasAttribute("aria-disabled"), false);
+  assert.equal(w.document.querySelector(".photo-selection-delete").getAttribute("aria-disabled"), "true");
+});
+
 
 test("a page whose first new photo closes the row above re-lays that whole row", async (t) => {
   let release;

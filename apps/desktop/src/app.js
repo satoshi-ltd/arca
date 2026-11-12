@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.46";
+const APP_VERSION = "0.9.47";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1229,7 +1229,7 @@ const api = (route, body) => {
     body: body ?? null,
   })
     .then((value) => {
-      if (body !== undefined) clearGalleryPages();
+      if (body !== undefined && route !== "/v1/gallery/archive") clearGalleryPages();
       if (route === "/v1/delete-file" && body) rememberGalleryDeletion(body);
       if (route === "/v1/gallery/delete")
         for (const row of value.rows || []) rememberGalleryDeletion(row);
@@ -3895,6 +3895,15 @@ function mountGallery(volume) {
   heading.classList.add("gallery-selection-host");
   heading.append(toolbar);
   toolbar.querySelector(".photo-selection-delete").hidden = !galleryCanDelete();
+  const narrowBar = window.matchMedia?.("(max-width: 480px)");
+  const fitSelectionBar = () => {
+    for (const control of toolbar.querySelectorAll(".photo-selection-download, .photo-selection-delete")) {
+      control.classList.toggle("icon-button", Boolean(narrowBar?.matches));
+      control.classList.toggle("secondary", !narrowBar?.matches);
+    }
+  };
+  fitSelectionBar();
+  narrowBar?.addEventListener?.("change", fitSelectionBar);
   syncHubOnlyControls();
   function updateSelection() {
     if (state.selection.size) {
@@ -3922,11 +3931,37 @@ function mountGallery(volume) {
   function togglePhoto(item) {
     if (state.selection.has(item.path)) state.selection.delete(item.path);
     else state.selection.set(item.path, item);
+    state.anchor = item.path;
+    updateSelection();
+  }
+  function selectRange(item) {
+    const tiles = [...root.querySelectorAll(".photo-days .photo-thumb")];
+    const position = (path) =>
+      tiles.findIndex((tile) => state.items[Number(tile.dataset.photo)].path === path);
+    const end = position(item.path);
+    const start = state.anchor ? position(state.anchor) : -1;
+    const span = start < 0 ? [tiles[end]] : tiles.slice(Math.min(start, end), Math.max(start, end) + 1);
+    for (const tile of span) {
+      const photo = state.items[Number(tile.dataset.photo)];
+      state.selection.set(photo.path, photo);
+    }
+    state.anchor = item.path;
     updateSelection();
   }
   toolbar.querySelector(".photo-selection-clear").onclick = () => {
     state.selection.clear();
+    state.anchor = null;
     updateSelection();
+  };
+  toolbar.querySelector(".photo-selection-download").onclick = (event) => {
+    const control = event.currentTarget;
+    if (control.getAttribute("aria-busy") === "true") return;
+    control.setAttribute("aria-busy", "true");
+    control.setAttribute("aria-disabled", "true");
+    void background(() => downloadGalleryPhotos([...state.selection.values()])).finally(() => {
+      control.removeAttribute("aria-busy");
+      control.removeAttribute("aria-disabled");
+    });
   };
   toolbar.querySelector(".photo-selection-delete").onclick = (event) =>
     event.currentTarget.getAttribute("aria-disabled") === "true" ? hubOnlyBlocked() : deleteGalleryPhotos([...state.selection.values()]);
@@ -3934,6 +3969,7 @@ function mountGallery(volume) {
   state.removePhoto = (item) => {
     item.deleted = true;
     state.selection.delete(item.path);
+    if (state.anchor === item.path) state.anchor = null;
     const touched = new Set();
     for (const tile of root.querySelectorAll(".photo-thumb")) {
       if (state.items[Number(tile.dataset.photo)].path !== item.path) continue;
@@ -4155,9 +4191,25 @@ function mountGallery(volume) {
         tile.onpointerenter = (event) => previewVideo(tile, item, event);
         tile.onpointerleave = stopHover;
       }
-      tile.querySelector(".photo-open").onclick = () =>
-        state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
-      tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
+      tile.querySelector(".photo-open").onclick = (event) =>
+        event.shiftKey
+          ? selectRange(item)
+          : state.selection.size
+            ? togglePhoto(item)
+            : openGalleryPhoto(index);
+      tile.querySelector(".photo-select").onclick = (event) =>
+        event.shiftKey ? selectRange(item) : togglePhoto(item);
+      tile.onkeydown = (event) => {
+        if (event.key !== " " || !event.shiftKey) return;
+        event.preventDefault();
+        tile.rangeKey = true;
+        selectRange(item);
+      };
+      tile.onkeyup = (event) => {
+        if (event.key !== " " || !tile.rangeKey) return;
+        tile.rangeKey = false;
+        event.preventDefault();
+      };
       const flow = group.querySelector(":scope > .photo-flow");
       tile.photoTime = dayKey ? galleryMoment(item.date).getTime() : null;
       const last = flow.lastElementChild;
@@ -4729,6 +4781,7 @@ function mountGallery(volume) {
   watchPixelRatio();
   state.cleanup = () => {
     state.unpinch();
+    narrowBar?.removeEventListener?.("change", fitSelectionBar);
     state.pixelRatioQuery?.query.removeEventListener(
       "change",
       state.pixelRatioQuery.changed,
@@ -4872,9 +4925,32 @@ function deleteGalleryPhotos(items) {
   );
   $("#submit-dialog").classList.add("danger");
 }
+const ARCHIVE_ITEMS = 10000;
+async function downloadGalleryPhotos(items) {
+  if (items.length === 1) return downloadGalleryPhoto(items[0]);
+  if (items.length > ARCHIVE_ITEMS)
+    throw new Error("Too many photos to download at once. Select fewer and try again.");
+  const body = {
+    volume: galleryView.volume,
+    items: items.map(({ path, hash }) => ({ path, hash })),
+  };
+  if (native) {
+    const name = status.volumes.find((v) => v.id === galleryView.volume)?.name || "Photos";
+    if (await invoke("save_archive", { ...body, name })) notice(`${mediaCount(items)} saved.`);
+    return;
+  }
+  const { url } = await api("/v1/gallery/archive", body);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
 async function downloadGalleryPhoto(item) {
   if (native) {
-    await invoke("save_file", { volume: galleryView.volume, path: item.path });
+    if (await invoke("save_file", { volume: galleryView.volume, path: item.path }))
+      notice(`${item.kind === "video" ? "Video" : "Photo"} saved.`);
   } else {
     const link = document.createElement("a");
     link.href =
@@ -5340,7 +5416,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "recent" ? button("All history", "folder-history", v.id, "ghost small-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary photo-selection-download" aria-label="Download">${icon("download")}<span class="photo-selection-label">Download</span></button><button type="button" class="secondary photo-selection-delete" aria-label="Delete…">${icon("trash-2")}<span class="photo-selection-label">Delete…</span></button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (

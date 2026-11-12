@@ -48,6 +48,8 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pipeline } from "node:stream/promises";
+import { scanFile, zipStream } from "./zip.js";
 import {
   moveFolder,
   retentionPlan,
@@ -84,6 +86,11 @@ import {
   stateOverlap,
 } from "./storage.js";
 
+const attachment = (name) =>
+  `attachment; filename*=UTF-8''${encodeURIComponent(name).replace(/'/g, "%27")}`;
+const archiveName = (name) =>
+  name.replace(/[\\/<>:"|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "") || "Photos";
+
 async function body(req, limit = 1024 * 1024) {
   const chunks = [];
   let size = 0;
@@ -103,6 +110,7 @@ function equal(a, b) {
   const y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
+const ARCHIVE_ITEMS = 10000;
 const MUSIC_DOWNLOAD_ROUTES = [
   "/v1/music/downloads",
   "/v1/music/download",
@@ -290,6 +298,7 @@ export async function start(home, options = {}) {
     return ok;
   };
   const playbackTickets = new Map();
+  const archiveTickets = new Map();
   const previewTickets = new Map();
   const musicTickets = new Map();
   const videoTickets = new Map();
@@ -761,9 +770,9 @@ export async function start(home, options = {}) {
         ].includes(route)
       )
         fail("Resetting this device requires setup or retrying the erase", 409);
-      const jsonBody = async () => {
+      const jsonBody = async (limit) => {
         try {
-          const value = JSON.parse((await body(req)).toString());
+          const value = JSON.parse((await body(req, limit)).toString());
           if (!value || typeof value !== "object" || Array.isArray(value))
             fail("Expected a JSON object", 400);
           return value;
@@ -1048,14 +1057,11 @@ export async function start(home, options = {}) {
           url: `http://127.0.0.1:${server.address().port}/v1/gallery/media?ticket=${ticket}`,
         });
       }
-      if (req.method === "GET" && route === "/v1/gallery/download") {
-        requireAdmin();
-        const volume = url.searchParams.get("volume");
-        const name = url.searchParams.get("path");
-        const hash = url.searchParams.get("hash");
+      const galleryOriginal = (volume, name, hash) => {
         const v = s.volume(volume);
         if (config.role !== "hub" && !v.selected)
           fail("Select this folder first", 403);
+        validPath(name);
         const row = s.viewCurrent(volume, name);
         if (
           !row ||
@@ -1071,22 +1077,114 @@ export async function start(home, options = {}) {
             : s.filePath(v, name);
         if (!fs.existsSync(file))
           fail("Local copy missing. Sync before downloading.", 409);
-        if (
-          s.videoFolder(volume) && file !== s.blob(hash)
-            ? !(await s.holds(volume, file, hash))
-            : (await hashFileAsync(file)) !== hash
-        )
+        return file;
+      };
+      const originalMatches = async (volume, file, hash, scanned) =>
+        s.videoFolder(volume) && file !== s.blob(hash)
+          ? await s.holds(volume, file, hash)
+          : (scanned ?? (await hashFileAsync(file))) === hash;
+      if (req.method === "GET" && route === "/v1/gallery/download") {
+        requireAdmin();
+        const volume = url.searchParams.get("volume");
+        const name = url.searchParams.get("path");
+        const hash = url.searchParams.get("hash");
+        const file = galleryOriginal(volume, name, hash);
+        if (!(await originalMatches(volume, file, hash)))
           fail("File changed. Sync before downloading.", 409);
         checkCredential();
         res.writeHead(200, {
           "Content-Type": "application/octet-stream",
           "Content-Length": fs.statSync(file).size,
-          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(name)).replace(/'/g, "%27")}`,
+          "Content-Disposition": attachment(path.basename(name)),
           "Cache-Control": "private, no-store",
         });
         fs.createReadStream(file)
           .on("error", () => res.destroy())
           .pipe(res);
+        return;
+      }
+      if (route === "/v1/gallery/archive") {
+        requireAdmin();
+        const owner = browserSession || config.adminToken;
+        const originals = (volume, items) =>
+          items.map((item) => ({
+            ...item,
+            file: galleryOriginal(volume, item.path, item.hash),
+          }));
+        const entry = async (volume, item) => {
+          const scanned = await scanFile(item.file);
+          if (!(await originalMatches(volume, item.file, item.hash, scanned.hash)))
+            fail("File changed. Sync before downloading.", 409);
+          checkCredential();
+          if (browserSession && !web.session(req)) fail("Unauthorized", 401);
+          return {
+            name: item.path,
+            file: item.file,
+            size: scanned.size,
+            crc: scanned.crc,
+            mtime: fs.statSync(item.file).mtime,
+          };
+        };
+        const entries = async function* (volume, first, rest) {
+          yield first;
+          for (const item of rest) yield await entry(volume, item);
+        };
+        if (req.method === "POST") {
+          let b;
+          try {
+            b = await jsonBody(4 * 1024 * 1024);
+          } catch (error) {
+            if (error.status === 413)
+              fail("Too many photos to download at once. Select fewer and try again.", 413);
+            throw error;
+          }
+          if (!Array.isArray(b.items) || !b.items.length)
+            fail("Choose the photos to download");
+          const requested = new Map();
+          for (const item of b.items) {
+            if (!item || typeof item !== "object" || typeof item.path !== "string")
+              fail("Invalid photo");
+            requested.set(item.path, { path: item.path, hash: item.hash });
+          }
+          const items = [...requested.values()];
+          if (items.length > ARCHIVE_ITEMS)
+            fail("Too many photos to download at once. Select fewer and try again.", 413);
+          const volume = b.volume;
+          originals(volume, items);
+          const name = archiveName(s.volume(volume).name);
+          for (const [key, ticket] of archiveTickets)
+            if (ticket.expires < Date.now()) archiveTickets.delete(key);
+          while (archiveTickets.size >= 16)
+            archiveTickets.delete(archiveTickets.keys().next().value);
+          const ticket = token();
+          archiveTickets.set(ticket, {
+            volume,
+            items,
+            name,
+            owner,
+            expires: Date.now() + 5 * 60000,
+          });
+          return send(200, {
+            url: "/v1/gallery/archive?" + new URLSearchParams({ ticket }),
+          });
+        }
+        if (req.method !== "GET") fail("Method not allowed", 405);
+        const key = url.searchParams.get("ticket");
+        const ticket = archiveTickets.get(key);
+        if (!ticket || ticket.owner !== owner)
+          fail("Download expired. Try again.", 410);
+        archiveTickets.delete(key);
+        if (ticket.expires < Date.now()) fail("Download expired. Try again.", 410);
+        const files = originals(ticket.volume, ticket.items);
+        const first = await entry(ticket.volume, files[0]);
+        res.writeHead(200, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": attachment(`${ticket.name}.zip`),
+          "Cache-Control": "private, no-store",
+        });
+        pipeline(zipStream(entries(ticket.volume, first, files.slice(1))), res).catch(() =>
+          res.destroy(),
+        );
         return;
       }
       if (

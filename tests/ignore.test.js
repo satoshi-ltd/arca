@@ -276,3 +276,12 @@ test("the phone refuses the same rules before compiling them", async () => {
   assert.equal(folderIgnored("**/".repeat(12) + "zzz\n"), null, "an unsafe policy is never evaluated and hides nothing it could later forget");
   assert.equal(folderIgnored("*.tmp\n")("a.txt"), false);
 });
+
+test("the desktop's partial archive beside a chosen destination never syncs", () => {
+  const partial = (name) => `.${name}.${(4242).toString(16)}-${(1793000000000000000n).toString(16)}.partial`;
+  for (const name of ["Photos.zip", "Café ☀.zip", "Trip 2.zip"]) {
+    assert.equal(builtinExcluded(partial(name)), true, name);
+    assert.equal(builtinExcluded(`Downloads/${partial(name)}`), true, name);
+  }
+  assert.equal(builtinExcluded(".Photos.zip.10a2-18e1.partial-x"), false);
+});

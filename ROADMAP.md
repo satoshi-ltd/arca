@@ -29,12 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-- **UX-PHOTO-RANGE** — Shift-click selects a range of photos
-  `feature · agent · low`
-  Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Space add every tile between the last toggled one and the clicked one, the bar downloads the selected originals (one file as itself, several as one archive named after the folder), with DOM tests for the range and the download request; the interface follows board UI-UX-PHOTO-RANGE.
-- **UI-UX-PHOTO-RANGE** — Shift-click selects a range of photos, and a selection can be downloaded
-  `ui · agent · low`
-  accept: the board (desktop and web).
 
 ## In progress
 

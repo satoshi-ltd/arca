@@ -388,6 +388,68 @@ async fn save_file(volume: String, path: String) -> Result<bool, String> {
         Ok(true)
     }).await.map_err(|e| e.to_string())?
 }
+fn partial_path(destination: &Path) -> PathBuf {
+    let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    destination.with_file_name(format!(".{name}.{:x}-{stamp:x}.partial", std::process::id()))
+}
+const DOWNLOAD_STOPPED: &str = "The download stopped before it finished. Try again.";
+fn archive_error(body: Option<Value>) -> String {
+    body.as_ref().and_then(|b| b["error"].as_str()).unwrap_or(DOWNLOAD_STOPPED).to_string()
+}
+fn open_partial(destination: &Path) -> Result<(PathBuf, fs::File), String> {
+    let partial = partial_path(destination);
+    let file = fs::OpenOptions::new().write(true).create_new(true).open(&partial).map_err(|e| e.to_string())?;
+    Ok((partial, file))
+}
+fn finish_partial(partial: &Path, destination: &Path, written: Result<fs::File, String>) -> Result<(), String> {
+    let result = written.and_then(|file| {
+        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        fs::rename(partial, destination).map_err(|e| e.to_string())
+    });
+    if result.is_err() {
+        let _ = fs::remove_file(partial);
+    }
+    result
+}
+#[tauri::command]
+async fn save_archive(volume: String, name: String, items: Value) -> Result<bool, String> {
+    let suggested = format!("{name}.zip");
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        rfd::FileDialog::new().set_title("Download photos").set_file_name(suggested.as_str()).save_file()
+    }).await.map_err(|e| e.to_string())?;
+    let Some(destination) = destination else { return Ok(false); };
+    let ticket = request("/v1/gallery/archive", "POST", Some(json!({ "volume": volume, "items": items }))).await?;
+    let route = ticket["url"].as_str().filter(|url| url.starts_with("/v1/gallery/archive?")).ok_or("Invalid archive link")?;
+    let c = config()?;
+    let port = c["port"].as_u64().ok_or("Invalid daemon port")?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut response = client
+        .get(format!("http://127.0.0.1:{port}{route}"))
+        .bearer_auth(c["adminToken"].as_str().ok_or("Missing local credential")?)
+        .send()
+        .await
+        .map_err(|_| "The daemon is unavailable. Use Start service.".to_string())?;
+    if !response.status().is_success() {
+        return Err(archive_error(response.json().await.ok()));
+    }
+    let (partial, mut file) = open_partial(&destination)?;
+    let written = async {
+        while let Some(chunk) = response.chunk().await.map_err(|_| archive_error(None))? {
+            std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
+        }
+        Ok::<(), String>(())
+    }
+    .await
+    .map(|_| file);
+    finish_partial(&partial, &destination, written)?;
+    Ok(true)
+}
 fn preferences() -> Value {
     fs::read(home().join("desktop.json")).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or(json!({}))
 }
@@ -754,6 +816,7 @@ fn main() {
             open_maps,
             open_trailer,
             save_file,
+            save_archive,
             desktop_preferences,
             set_launch_at_login,
             choose_folder,
@@ -1056,6 +1119,58 @@ mod reveal_tests {
     }
 }
 
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("arca-archive-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+    #[test]
+    fn a_partial_archive_is_a_hidden_sibling_of_the_destination() {
+        let destination = Path::new("downloads").join("Café ☀.zip");
+        let partial = partial_path(&destination);
+        assert_eq!(partial.parent(), destination.parent());
+        let partial_name = partial.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(partial_name.starts_with(".Café ☀.zip."));
+        assert!(partial_name.ends_with(".partial"));
+        assert_ne!(partial, destination);
+    }
+    #[test]
+    fn a_daemon_refusal_keeps_its_words_and_a_broken_stream_reads_as_stopped() {
+        assert_eq!(archive_error(Some(json!({"error": "File changed. Sync before downloading."}))), "File changed. Sync before downloading.");
+        assert_eq!(archive_error(Some(json!({}))), DOWNLOAD_STOPPED);
+        assert_eq!(archive_error(None), "The download stopped before it finished. Try again.");
+    }
+    #[test]
+    fn a_finished_archive_replaces_the_chosen_file_and_leaves_no_partial() {
+        let dir = scratch("done");
+        let destination = dir.join("Photos.zip");
+        fs::write(&destination, "old").unwrap();
+        let (partial, mut file) = open_partial(&destination).unwrap();
+        std::io::Write::write_all(&mut file, b"zip bytes").unwrap();
+        finish_partial(&partial, &destination, Ok(file)).unwrap();
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "zip bytes");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn a_failed_archive_removes_its_partial_and_keeps_the_chosen_file() {
+        let dir = scratch("failed");
+        let destination = dir.join("Photos.zip");
+        fs::write(&destination, "old").unwrap();
+        let (partial, mut file) = open_partial(&destination).unwrap();
+        std::io::Write::write_all(&mut file, b"half").unwrap();
+        drop(file);
+        assert_eq!(finish_partial(&partial, &destination, Err("File changed. Sync before downloading.".into())), Err("File changed. Sync before downloading.".to_string()));
+        assert!(!partial.exists());
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "old");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+}
 #[cfg(test)]
 mod daemon_tests {
     use super::*;
