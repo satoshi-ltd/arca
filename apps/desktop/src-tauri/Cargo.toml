@@ -25,7 +25,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-tauri-winrt-notification = "0.7.3"
+tauri-winrt-notification = "0.8.1"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 notify-rust = "4.18.0"
