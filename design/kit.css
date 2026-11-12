@@ -873,6 +873,9 @@ body.kit {
 .kit-width-960 {
   max-width: calc(960px - var(--sidebar-width) - 2 * var(--space-6));
 }
+.kit-width-448 {
+  max-width: 448px;
+}
 .kit-device-end-162 {
   --device-end: 162px;
 }

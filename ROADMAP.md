@@ -29,6 +29,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
+- **UX-PHOTO-RANGE** — Shift-click selects a range of photos
+  `feature · agent · low`
+  Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Space add every tile between the last toggled one and the clicked one, the bar downloads the selected originals (one file as itself, several as one archive named after the folder), with DOM tests for the range and the download request; the interface follows board UI-UX-PHOTO-RANGE.
+- **UI-UX-PHOTO-RANGE** — Shift-click selects a range of photos, and a selection can be downloaded
+  `ui · agent · low`
+  accept: the board (desktop and web).
 
 ## In progress
 
@@ -361,9 +367,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 - **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
   `chore · agent · low`
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
-- **UX-PHOTO-RANGE** — Shift-click selects a range of photos
-  `feature · agent · low`
-  Idea. Selection is click by click and the bar offers Delete only. Accept: Shift-click and Shift+Arrow extend the selection from the last toggled tile, and the bar downloads the selected originals, with DOM tests; the interface follows board UI-UX-PHOTO-RANGE.
 
 ### Low priority — large effort
 
