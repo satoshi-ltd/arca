@@ -77,9 +77,6 @@ Each carries a recommendation; a yes or no is enough.
 - **DEC-LAST-CHANGE-SCOPE** — Is a folder's Last change the newest event or the newest saved version?
   `decision · maintainer · low`
   The cell shows the first activity row that is not a deletion, a conflict copy or a directory, so after deleting a file it still shows the previous saved file and its author. Recommendation: count deletions (a new activity filter on the hub, gated for older hubs, and a "Deleted <name>" rendering on desktop and phone) and keep conflict copies out; the cheap alternative is renaming the label to "Last saved version".
-- **VERIFY-UPDATER-SIGNED-VERSION** — An installed desktop app updates itself to a release signed for its version
-  `verify · maintainer · high`
-  Release 0.9.41, the first built with Tauri CLI 2.12, published signatures whose trusted comment ends in `version:0.9.41` on macOS, Windows, the Debian package and the AppImage, and the `updater` job accepted them. Left for a real device: an installed 0.9.40 or earlier app updates itself to the newest release, and Open folder and Reveal work from the Linux AppImage, which no longer bundles its own xdg-open.
 
 ### Native work waiting for a build
 
