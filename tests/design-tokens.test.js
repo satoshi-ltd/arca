@@ -25,10 +25,10 @@ test("one spacing, radius and type scale shared by both platforms", () => {
   assert.match(css, /--text-display: 28px;\s*--text-display-line: 34px;/);
   for (const selector of [".code-display", ".request-number"])
     assert.match(read("apps/desktop/src/style.css"), new RegExp(`\\n\\${selector} \\{[^}]*font: var\\(--text-display\\) \\/ var\\(--text-display-line\\) var\\(--font-mono\\);`), selector);
-  for (const selector of [".access-card .request-number", ".approval-dialog .request-number"])
+  for (const selector of [".access-card .request-number"])
     assert.match(read("apps/desktop/src/style.css"), new RegExp(`\\n\\${selector.replaceAll(" ", " \\")} \\{\\s*font-size: var\\(--text-display\\);`), selector);
   const theme = read("apps/mobile/src/theme.js");
-  for (const rule of ["codeDigit", "requestNumber"]) assert.match(theme, new RegExp(`${rule}: \\{\\s*fontFamily: "FragmentMono_400Regular",\\s*fontSize: g\\.touchDisplayFont,`), rule);
+  for (const rule of ["codeDigit"]) assert.match(theme, new RegExp(`${rule}: \\{\\s*fontFamily: "FragmentMono_400Regular",\\s*fontSize: g\\.touchDisplayFont,`), rule);
   assert.match(theme, /codeSeparator: \{ fontSize: g\.touchDisplayFont,/);
   for (const [step, value] of Object.entries(space)) assert.match(css, new RegExp(`--space-${step}: ${value}px;`));
   for (const name of ["r-tag", "r-segment", "r-card", "r-window", "r-dialog", "notice-radius", "notice-title", "notice-body", "dialog-title", "onboarding-title", "onboarding-welcome-title", "access-reference-font", "approval-reference-font"])

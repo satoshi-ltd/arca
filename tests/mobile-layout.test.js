@@ -550,10 +550,19 @@ test("sheets close only through their parent and never become invisible touch tr
   assert.match(sheet, /else if \(leaving\.current\) \{\s+leaving\.current = false;\s+animate\(1, motion\.enter\);/);
   const approval = components.slice(components.indexOf("export function ApprovalSheet("));
   assert.match(approval, /closing=\{closing\}\s+onExited=\{onExited\}/);
-  assert.match(approval, /String\(request\.reference \|\| ""\)/);
+  assert.doesNotMatch(approval, /request\.reference/, "the sheet never shows the browser's number");
+  assert.match(approval, /<CodeInput\s+eyebrow\s+autofill=\{false\}\s+label="Type the browser’s number"\s+value=\{reference\}\s+onChangeText=\{setReference\}/, "the number is typed into the pairing code field");
+  assert.match(approval, /useEffect\(\(\) => setReference\(""\), \[request\.id\]\)/, "another request starts with empty cells");
+  assert.match(approval, /disabled=\{busy \|\| seconds === 0 \|\| reference\.length !== 6\}\s+onPress=\{\(\) => onDecision\("allow", reference\)\}/, "Allow is off until six digits and carries them");
+  assert.match(approval, /<SheetFooter>[\s\S]*label="Deny"[\s\S]*label="Allow"[\s\S]*<\/SheetFooter>/, "Deny and Allow sit in the footer above the keyboard");
+  const code = components.slice(components.indexOf("export function CodeInput("), components.indexOf("export function Card("));
+  assert.match(code, /keyboardType="number-pad"/);
+  assert.match(code, /textContentType=\{autofill \? "oneTimeCode" : "none"\}\s+autoComplete=\{autofill \? "one-time-code" : "off"\}/, "the approval field never offers a one-time-code suggestion");
   assert.match(approval, /\["link", "Address", request\.host \|\| ""\]/, "the sheet shows the address the browser used");
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   assert.match(app, /useRetained\(approvalRequest\)/);
+  assert.match(app, /client\.api\("\/v1\/web-approvals", \{ id: webApproval\.id, decision, reference \}\)/);
+  assert.match(app, /if \(error\.status === 422\) \{\s+setWebApproval\(null\);\s+notices\.push\(errorNotice\(error\.message, \{ id: "web-approval" \}\)\);/, "a mismatch ends the sheet and says so");
   assert.match(app, /closing=\{!approvalRequest\}\s+onExited=\{releaseApproval\}/);
 });
 

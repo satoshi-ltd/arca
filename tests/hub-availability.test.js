@@ -233,6 +233,22 @@ test("a replica relays live web-approval requests and never replays a saved one 
   assert.equal(live.offline, undefined);
   await replica.api("/v1/web-approvals", { id: created.id, decision: "deny" });
   assert.deepEqual((await replica.api("/v1/web-approvals")).requests, []);
+  const create = async () =>
+    (
+      await fetch(base + "/auth/approval", {
+        method: "POST",
+        headers: { Origin: base, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create" }),
+      })
+    ).json();
+  const typo = await create();
+  await assert.rejects(
+    replica.api("/v1/web-approvals", { id: typo.id, decision: "allow", reference: typo.reference === "000000" ? "000001" : "000000" }),
+    { status: 422, message: "That number belongs to a different request." },
+  );
+  assert.deepEqual((await replica.api("/v1/web-approvals")).requests, []);
+  const typed = await create();
+  assert.equal((await replica.api("/v1/web-approvals", { id: typed.id, decision: "allow", reference: typed.reference })).state, "approved");
   replica.engine.store.db
     .prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)")
     .run(

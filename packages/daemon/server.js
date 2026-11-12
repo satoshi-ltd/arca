@@ -56,7 +56,7 @@ import {
   releaseReplicaObjects,
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
-import { Web, hostName } from "./web.js";
+import { Web, hostName, REFERENCE_MISMATCH } from "./web.js";
 import { tailAddress } from "./tailscale.js";
 import { Engine, HUB_UNAVAILABLE, STREAM_ONLY_EDIT, STREAMED_EDIT } from "./engine.js";
 import { fromHub, streamedCover, streamedLibrary, streamedMedia, streamedTrack, trackOf } from "./music-routes.js";
@@ -1771,11 +1771,16 @@ export async function start(home, options = {}) {
         if (route === "/v1/web-approvals") {
           if (config.role !== "hub") {
             requireAdmin();
-            return send(200, await engine.hubAction(route, b));
+            try {
+              return send(200, await engine.hubAction(route, b));
+            } catch (error) {
+              if (error.status === 422) fail(REFERENCE_MISMATCH, 422);
+              throw error;
+            }
           }
           if (!web || (!admin && !canApprove(device.id)))
             fail("Web approval is not allowed on this device", 403);
-          return send(200, web.decide(b.id, b.decision, device.id));
+          return send(200, web.decide(b.id, b.decision, device.id, b.reference));
         }
         if (route === "/v1/settings") {
           requireAdmin();

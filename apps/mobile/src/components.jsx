@@ -535,14 +535,18 @@ export function StepIndicator({ step, count = 3 }) {
     </View>
   );
 }
-export function CodeInput({ label, hint, error, value, onChangeText, editable = true }) {
+export function CodeInput({ label, hint, error, value, onChangeText, editable = true, eyebrow = false, autofill = true }) {
   const { s, c } = useDesign();
   const [focused, setFocused] = useState(false);
   const input = useRef(null);
   const focus = useContext(FieldFocus);
   return (
     <View style={s.section}>
-      <Text style={s.heading}>{label}</Text>
+      {eyebrow ? (
+        <Eyebrow style={s.centerText}>{label}</Eyebrow>
+      ) : (
+        <Text style={s.heading}>{label}</Text>
+      )}
       <View style={s.fieldBody}>
         <Pressable
           onPress={() => input.current?.focus()}
@@ -554,7 +558,7 @@ export function CodeInput({ label, hint, error, value, onChangeText, editable = 
             accessible={false}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            style={s.codeCells}
+            style={[s.codeCells, eyebrow && s.codeCellsCentered]}
           >
             {Array.from({ length: 6 }, (_, index) => (
               <React.Fragment key={index}>
@@ -586,8 +590,8 @@ export function CodeInput({ label, hint, error, value, onChangeText, editable = 
               onChangeText(next.replace(/[^0-9]/g, "").slice(0, 6))
             }
             keyboardType="number-pad"
-            textContentType="oneTimeCode"
-            autoComplete="one-time-code"
+            textContentType={autofill ? "oneTimeCode" : "none"}
+            autoComplete={autofill ? "one-time-code" : "off"}
             autoCorrect={false}
             caretHidden
             selectionColor={c.accent}
@@ -1878,7 +1882,8 @@ export function ApprovalSheet({
   const remaining = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const age = Math.max(0, Math.floor((now - request.created) / 60000));
   const requested = age > 0 ? `${age} min ago` : "Just now";
-  const reference = String(request.reference || "");
+  const [reference, setReference] = useState("");
+  useEffect(() => setReference(""), [request.id]);
   return (
     <Sheet
       onClose={() => onDecision("deny")}
@@ -1895,14 +1900,14 @@ export function ApprovalSheet({
         right now.
       </Text>
       <View style={s.requestReference}>
-        <Eyebrow style={s.centerText}>
-          Request · must match the browser
-        </Eyebrow>
-        <Text accessibilityLabel={reference} style={s.requestNumber}>
-          {reference.slice(0, 3)}
-          <Text style={s.requestSeparator}> – </Text>
-          {reference.slice(3)}
-        </Text>
+        <CodeInput
+          eyebrow
+          autofill={false}
+          label="Type the browser’s number"
+          value={reference}
+          onChangeText={setReference}
+          editable={!busy}
+        />
       </View>
       <View style={s.group}>
         {[
@@ -1939,8 +1944,8 @@ export function ApprovalSheet({
             <Button
               primary
               label="Allow"
-              disabled={busy || seconds === 0}
-              onPress={() => onDecision("allow")}
+              disabled={busy || seconds === 0 || reference.length !== 6}
+              onPress={() => onDecision("allow", reference)}
             />
           </View>
         </View>

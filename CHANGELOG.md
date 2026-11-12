@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.31 — 2026-11-11
+
+- Approving a web sign-in now asks you to type the number the browser shows instead of displaying it, so an Allow on someone else's request can no longer open a 24-hour administrator session; a number from another request ends that request and says so.
+- Approving needs this version on the approving device: an older desktop or phone gets "That number belongs to a different request." from an updated hub, and Deny still works.
+
+Needs: desktop build · native build · hub redeploy · server replica redeploy
+
 ## 0.9.30 — 2026-11-12
 
 - The release pipeline gives the test suite 40 minutes instead of 20, because on Windows runners the grown suite no longer fit and the release never started.

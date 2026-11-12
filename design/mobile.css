@@ -429,13 +429,6 @@
   border-radius: var(--m-card-radius);
   text-align: center;
 }
-.m-request-number {
-  font: var(--m-touch-display-font) / var(--m-touch-control-height) var(--font-mono);
-  letter-spacing: var(--m-reference-tracking);
-}
-.m-request-number > span {
-  color: var(--m-line);
-}
 .m-approval-row {
   display: flex;
   align-items: center;

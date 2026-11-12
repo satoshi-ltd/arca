@@ -864,15 +864,18 @@ export default function App() {
       ? webApproval
       : null;
   const [shownApproval, releaseApproval] = useRetained(approvalRequest);
-  const answerWebApproval = async (decision) => {
+  const answerWebApproval = async (decision, reference) => {
     if (!webApproval || approvalBusy) return;
     setApprovalBusy(true);
     setApprovalError("");
     try {
-      await client.api("/v1/web-approvals", { id: webApproval.id, decision });
+      await client.api("/v1/web-approvals", { id: webApproval.id, decision, reference });
       setWebApproval(null);
     } catch (error) {
-      setApprovalError(error.message);
+      if (error.status === 422) {
+        setWebApproval(null);
+        notices.push(errorNotice(error.message, { id: "web-approval" }));
+      } else setApprovalError(error.message);
     } finally {
       setApprovalBusy(false);
     }

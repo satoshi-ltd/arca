@@ -142,7 +142,7 @@ test("web approvals are capped per address and a session ends with the approver 
   const capped = await auth({ action: "create" });
   assert.equal(capped.status, 429);
   assert.match((await capped.json()).error, /from this address/);
-  assert.equal((await call("/v1/web-approvals", { body: { id: first.id, decision: "allow" }, token: secret })).status, 200);
+  assert.equal((await call("/v1/web-approvals", { body: { id: first.id, decision: "allow", reference: first.reference }, token: secret })).status, 200);
   const granted = await auth({ ...first, action: "poll" });
   const cookie = granted.headers.get("set-cookie").split(";")[0];
   const status = () => fetch(base + "/v1/status", { headers: { cookie } });
@@ -162,7 +162,7 @@ test("revoking a device ends the web sessions it approved, and a code sign-in se
   const auth = (body) =>
     fetch(base + "/auth/approval", { method: "POST", headers: { Origin: base, "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const request = await (await auth({ action: "create" })).json();
-  await call("/v1/web-approvals", { body: { id: request.id, decision: "allow" }, token: secret });
+  await call("/v1/web-approvals", { body: { id: request.id, decision: "allow", reference: request.reference }, token: secret });
   const cookie = (await auth({ ...request, action: "poll" })).headers.get("set-cookie").split(";")[0];
   const { issueWebCode } = await import("../packages/daemon/web.js");
   const { code } = issueWebCode(d.engine.store.home);

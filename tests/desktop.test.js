@@ -5410,7 +5410,6 @@ test("web approval uses the shared confirmation and closes after another machine
   };
   const current = {
     id: "request",
-    reference: "042123",
     browser: "Safari on macOS",
     created: Date.now(),
     expires: Date.now() + 600000,
@@ -5426,12 +5425,17 @@ test("web approval uses the shared confirmation and closes after another machine
   };
   let requests = [current],
     offline = true;
+  const decisions = [];
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
         if (command === "bootstrap") return { setup: false };
         if (command !== "api") return {};
         if (args.route === "/v1/status") return daemon.engine.status();
+        if (args.route === "/v1/web-approvals" && args.body) {
+          decisions.push(args.body);
+          throw "That number belongs to a different request.";
+        }
         if (args.route === "/v1/web-approvals")
           return offline ? { requests, offline } : { requests };
         throw new Error("Unexpected route " + args.route);
@@ -5463,11 +5467,34 @@ test("web approval uses the shared confirmation and closes after another machine
   requests = [current];
   timers[0]();
   await until(() => w.document.querySelector("#dialog").open);
-  assert.ok(w.document.querySelector("#dialog.confirmation-dialog"));
-  assert.match(
-    w.document.querySelector("#dialog-content").textContent,
-    /042–123/,
+  assert.ok(w.document.querySelector("#dialog.confirmation-dialog.approval-dialog"));
+  const cells = [...w.document.querySelectorAll('#dialog-content [data-code="approval"]')];
+  assert.equal(cells.length, 6, "the number is typed into the shared six-cell code field");
+  assert.equal(
+    w.document.querySelector("#dialog-content .code-inputs").getAttribute("aria-label"),
+    "Six-digit request number",
   );
+  assert.equal(w.document.querySelector("#dialog-content .request-number"), null, "the prompt never shows the number");
+  assert.match(w.document.querySelector("#dialog-content .request-reference").textContent, /Type the browser’s number/);
+  assert.equal(w.document.activeElement, w.document.querySelector("#cancel-dialog"), "Deny is the focused default");
+  assert.equal(w.document.querySelector("#submit-dialog").disabled, true, "Allow stays off until six digits are typed");
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("autocomplete")), Array(6).fill("off"), "the approval field never offers a one-time-code suggestion");
+  cells[0].value = "0";
+  cells[0].dispatchEvent(new w.Event("input", { bubbles: true }));
+  await settle();
+  assert.equal(w.document.querySelector("#submit-dialog").disabled, true);
+  const paste = new w.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { getData: () => "042-123" } });
+  const queued = w.queueMicrotask;
+  w.queueMicrotask = (task) => task();
+  try {
+    cells[0].dispatchEvent(paste);
+  } finally {
+    w.queueMicrotask = queued;
+  }
+  await settle();
+  assert.equal(cells.map((cell) => cell.value).join(""), "042123");
+  assert.equal(w.document.querySelector("#submit-dialog").disabled, false);
   assert.equal(w.document.querySelector("#dialog-content script"), null);
   assert.match(
     w.document.querySelector("#dialog-content").textContent,
@@ -5477,9 +5504,24 @@ test("web approval uses the shared confirmation and closes after another machine
   assert.equal(w.document.querySelector("#dialog-content b"), null);
   assert.equal(w.document.querySelector("#submit-dialog").textContent, "Allow");
   assert.equal(w.document.querySelector("#cancel-dialog").textContent, "Deny");
+  w.document
+    .querySelector("#dialog-form")
+    .dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(() => !w.document.querySelector("#dialog").open);
+  assert.deepEqual(JSON.parse(JSON.stringify(decisions)), [{ id: "request", decision: "allow", reference: "042123" }], "Allow carries the typed number and a mismatch sends no Deny");
+  await until(() => /That number belongs to a different request\./.test(w.document.querySelector("#notice").textContent));
+  requests = [{ ...current, id: "next" }];
+  timers[0]();
+  await until(() => w.document.querySelector("#dialog").open);
+  assert.equal(w.document.querySelector("#dialog").dataset.approval, "next");
+  assert.equal(readCells(), "", "the next request starts with empty cells");
+  assert.equal(w.document.querySelector("#submit-dialog").disabled, true);
   requests = [];
   timers[0]();
   await until(() => !w.document.querySelector("#dialog").open);
+  function readCells() {
+    return [...w.document.querySelectorAll('#dialog-content [data-code="approval"]')].map((cell) => cell.value).join("");
+  }
 });
 
 for (const role of ["hub", "replica"])

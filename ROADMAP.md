@@ -28,9 +28,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
-- **SEC-WEB-APPROVAL-REF** — A web sign-in is never approved without matching its reference
-  `bug · agent · high`
-  `decide` takes no reference and the prompt shows the oldest pending request, which anyone who can reach the web port may create and keep alive; one Allow on the wrong prompt gives a 24-hour administrator session. Accept: the pending list omits the reference, Allow must carry it, a wrong or missing one is refused and ends the request, and tests cover both and two concurrent requests. The interface follows board UI-SEC-WEB-APPROVAL-REF on desktop and web and UI-SEC-WEB-APPROVAL-REF-MOB on the phone: the number is typed, never shown.
 - **SYNC-MASS-DELETE** — A sudden mass disappearance waits for a decision before it is deleted everywhere
   `bug · agent · high`
   Decided by the maintainer (was DEC-MASS-DELETE): the folder marker is checked only at the root and a scan tombstones every indexed row it did not see, so a subfolder that is its own mount and comes back empty after a reboot, or a folder emptied in Finder, is deleted on every device; Movies & TV has no older version to restore. Accept: a hub or replica scan that would delete at least 50 files and more than a quarter of a folder's files, or everything under a directory that lives on a different device than the folder's root, records nothing for those paths and puts the folder in an attention state until a person confirms the deletion or the files return (Check again rescans); smaller deletions propagate as today; the hub and every replica apply the same rule; tests cover the threshold, the mount case, confirming and the files coming back. The interface follows board UI-MASS-DELETE.

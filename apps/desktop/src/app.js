@@ -154,7 +154,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.30";
+const APP_VERSION = "0.9.31";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -10263,8 +10263,8 @@ function checkFolderPath(name, id = "") {
   });
   check();
 }
-function codeFields(prefix = "code") {
-  return `<div class="code-inputs" role="group" aria-label="Six-digit code">${Array.from({ length: 6 }, (_, i) => `${i === 3 ? '<span class="separator">—</span>' : ""}<input inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" aria-label="Code digit ${i + 1}" data-code="${prefix}" data-digit="${i}" pattern="[0-9]" maxlength="1" value="">`).join("")}</div>`;
+function codeFields(prefix = "code", label = "Six-digit code", autofill = true) {
+  return `<div class="code-inputs" role="group" aria-label="${label}">${Array.from({ length: 6 }, (_, i) => `${i === 3 ? '<span class="separator">—</span>' : ""}<input inputmode="numeric" autocomplete="${i === 0 && autofill ? "one-time-code" : "off"}" aria-label="Code digit ${i + 1}" data-code="${prefix}" data-digit="${i}" pattern="[0-9]" maxlength="1" value="">`).join("")}</div>`;
 }
 const readCode = (prefix) =>
   [...document.querySelectorAll(`[data-code="${prefix}"]`)]
@@ -10294,6 +10294,7 @@ document.addEventListener("paste", (e) => {
   [...digits].forEach((d, i) => {
     if (inputs[start + i]) inputs[start + i].value = d;
   });
+  el.dispatchEvent(new Event("input", { bubbles: true }));
   inputs[Math.min(5, start + digits.length)]?.focus();
 });
 document.addEventListener("keydown", (e) => {
@@ -11982,6 +11983,7 @@ function requestRemaining(expires) {
   const seconds = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
+const REFERENCE_MISMATCH = "That number belongs to a different request.";
 let approvalModal = null;
 let checkingApprovals = false;
 async function checkWebApprovals() {
@@ -12005,7 +12007,7 @@ async function checkWebApprovals() {
         `Someone is signing in to the hub web from a browser. Allow it only if that is you, right now.`,
         "log-in",
       ) +
-        requestReference(r.reference, "REQUEST · must match the browser") +
+        `<div class="request-reference"><div class="eyebrow">Type the browser’s number</div>${codeFields("approval", "Six-digit request number", false)}</div>` +
         `<div class="approval-details">${[
           ["globe", "Browser", escape(r.browser || "Browser")],
           ["shield-check", "From", `<span class="mono">${escape(r.ip)}</span>`],
@@ -12019,13 +12021,24 @@ async function checkWebApprovals() {
           .join("")}</div>
         <details class="approval-raw"><summary>${icon("chevron-right")}Raw details, as reported by the browser</summary><p>${escape(r.agent)}</p></details>`,
       async () => {
-        await api("/v1/web-approvals", { id: r.id, decision: "allow" });
+        try {
+          await api("/v1/web-approvals", { id: r.id, decision: "allow", reference: readCode("approval") });
+        } catch (error) {
+          if (error.message !== REFERENCE_MISMATCH) throw error;
+          approvalModal = null;
+          return () => notice(REFERENCE_MISMATCH, true, { id: "action" });
+        }
         approvalModal = null;
       },
       "Allow",
     );
     $("#dialog").dataset.approval = r.id;
-    $("#dialog").classList.add("approval-dialog");
+    $("#dialog").classList.add("confirmation-dialog", "approval-dialog");
+    const allow = $("#submit-dialog");
+    const typed = () => (allow.disabled = !/^\d{6}$/.test(readCode("approval")));
+    typed();
+    const typing = new AbortController();
+    $("#dialog-content").addEventListener("input", () => queueMicrotask(typed), { signal: typing.signal });
     const footer = document.createElement("p");
     footer.className = "hint approval-session";
     footer.textContent = "Grants a 24-hour session on that browser.";
@@ -12043,6 +12056,7 @@ async function checkWebApprovals() {
       "close",
       () => {
         clearInterval(timer);
+        typing.abort();
         footer.remove();
         cancel.onclick = previousCancel;
         delete $("#dialog").dataset.approval;
@@ -12062,6 +12076,7 @@ async function checkWebApprovals() {
         approvalModal = null;
         void closeDialog();
       });
+    cancel.focus();
   } catch {
     /* Offline/older hubs keep their existing sign-in path. */
   } finally {
@@ -12177,7 +12192,7 @@ async function showLogin(message = "") {
         requestReference(
           request.reference,
           "REQUEST",
-          "Approve only if the device shows this same number.",
+          "Type this number on the device to approve.",
         ) +
         `<p class="approval-instructions">Open Arca on an authorized device or your phone.</p><p class="approval-countdown">${busyIcon()}<span id="request-countdown"></span></p><button type="button" class="secondary">Cancel request</button>`;
       const tick = () => {

@@ -4547,11 +4547,6 @@ dialog.photo-viewer {
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-3);
 }
-.approval-dialog .request-number {
-  font-size: var(--text-display);
-  margin-top: var(--space-2);
-  gap: var(--space-3);
-}
 .approval-dialog .request-reference .eyebrow {
   font-size: var(--text-caption);
 }

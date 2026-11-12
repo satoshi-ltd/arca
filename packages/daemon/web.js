@@ -99,6 +99,7 @@ export function issueWebCode(home) {
   );
   return { code, expiresInMinutes: 10 };
 }
+export const REFERENCE_MISMATCH = "That number belongs to a different request.";
 export class Web {
   constructor(home, publicOrigin) {
     this.home = home;
@@ -125,13 +126,17 @@ export class Web {
       if (request.expires <= Date.now()) this.requests.delete(id);
     return [...this.requests.values()]
       .filter((r) => r.state === "pending")
-      .map(({ secret, ...r }) => r);
+      .map(({ secret, reference, ...r }) => r);
   }
-  decide(id, decision, approver) {
+  decide(id, decision, approver, reference) {
     this.pending();
     const r = this.requests.get(id);
     if (!r || r.state !== "pending") fail("This request has ended", 409);
     if (!["allow", "deny"].includes(decision)) fail("Invalid decision", 400);
+    if (decision === "allow" && normalizeCode(reference) !== r.reference) {
+      this.requests.delete(id);
+      fail(REFERENCE_MISMATCH, 422);
+    }
     r.state = decision === "allow" ? "approved" : "denied";
     r.approver = approver;
     return { state: r.state };
@@ -216,11 +221,15 @@ export class Web {
         if (mine >= 3) fail("Too many pending requests from this address", 429);
         const secret = token(),
           id = token(),
-          created = Date.now();
+          created = Date.now(),
+          taken = new Set([...this.requests.values()].map((pending) => pending.reference));
+        let reference;
+        do reference = shortCode();
+        while (taken.has(reference));
         const r = {
           id,
           secret: digest(secret),
-          reference: shortCode(),
+          reference,
           state: "pending",
           created,
           expires: created + 600000,

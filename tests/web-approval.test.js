@@ -67,6 +67,7 @@ test("web approval requires delegated authority, binds redemption and resolves o
   const list = await (await api("/v1/web-approvals", null, secret)).json();
   assert.equal(list.requests[0].id, r.id);
   assert.equal(list.requests[0].secret, undefined);
+  assert.equal(list.requests[0].reference, undefined, "the pending list never shows the number the approver must type");
   assert.equal(list.requests[0].expires - list.requests[0].created, 600000);
   assert.equal(list.requests[0].browser, "Browser");
   assert.equal(
@@ -75,8 +76,8 @@ test("web approval requires delegated authority, binds redemption and resolves o
     "ended",
   );
   const answers = await Promise.all([
-    api("/v1/web-approvals", { id: r.id, decision: "allow" }, secret),
-    api("/v1/web-approvals", { id: r.id, decision: "allow" }, secret),
+    api("/v1/web-approvals", { id: r.id, decision: "allow", reference: r.reference }, secret),
+    api("/v1/web-approvals", { id: r.id, decision: "allow", reference: r.reference }, secret),
   ]);
   assert.deepEqual(answers.map((x) => x.status).sort(), [200, 409]);
   const login = await auth({ ...r, action: "poll" });
@@ -102,7 +103,7 @@ test("web approval requires delegated authority, binds redemption and resolves o
     "denied",
   );
   const revoked = await (await auth({ action: "create" })).json();
-  await api("/v1/web-approvals", { id: revoked.id, decision: "allow" }, secret);
+  await api("/v1/web-approvals", { id: revoked.id, decision: "allow", reference: revoked.reference }, secret);
   await api("/v1/web-approvers", { id: "device", enabled: false });
   assert.equal(
     (await (await auth({ ...revoked, action: "poll" })).json()).state,
@@ -136,6 +137,65 @@ test("web approval requires delegated authority, binds redemption and resolves o
   );
   assert.equal((await auth({ action: "create" })).status, 429);
 });
+test("Allow must carry the browser's number, and a wrong or missing one ends only that request", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-approval-ref-"));
+  init(home, { port: 0 });
+  const d = await start(home, { timer: false });
+  t.after(async () => {
+    await d.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const base = `http://127.0.0.1:${d.port}`,
+    secret = token();
+  d.engine.store.db
+    .prepare("INSERT INTO devices(id,name,token_hash,role) VALUES('device','Mac',?,'replica')")
+    .run(digest(secret));
+  d.engine.config.webApprovers = ["device"];
+  const auth = async (body) =>
+    (
+      await fetch(base + "/auth/approval", {
+        method: "POST",
+        headers: { Origin: base, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    ).json();
+  const decide = (body) =>
+    fetch(base + "/v1/web-approvals", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const pending = async () =>
+    (
+      await (await fetch(base + "/v1/web-approvals", { headers: { Authorization: "Bearer " + secret } })).json()
+    ).requests.map((r) => r.id);
+  const intruder = await auth({ action: "create" });
+  const mine = await auth({ action: "create" });
+  assert.notEqual(intruder.reference, mine.reference);
+  assert.deepEqual((await pending()).sort(), [intruder.id, mine.id].sort());
+  const wrong = await decide({ id: intruder.id, decision: "allow", reference: mine.reference });
+  assert.equal(wrong.status, 422);
+  assert.equal((await wrong.json()).error, "That number belongs to a different request.");
+  assert.equal((await auth({ ...intruder, action: "poll" })).state, "ended", "a mismatch ends the request it was typed on");
+  assert.deepEqual(await pending(), [mine.id], "the other request stays pending");
+  const missing = await auth({ action: "create" });
+  assert.equal((await decide({ id: missing.id, decision: "allow" })).status, 422);
+  assert.equal((await auth({ ...missing, action: "poll" })).state, "ended");
+  assert.equal((await decide({ id: missing.id, decision: "allow", reference: missing.reference })).status, 409, "an ended request cannot be retried");
+  assert.equal((await auth({ ...mine, action: "poll" })).state, "pending");
+  const grouped = `${mine.reference.slice(0, 3)}-${mine.reference.slice(3)}`;
+  assert.equal((await decide({ id: mine.id, decision: "allow", reference: grouped })).status, 200);
+  const login = await fetch(base + "/auth/approval", {
+    method: "POST",
+    headers: { Origin: base, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...mine, action: "poll" }),
+  });
+  assert.match(login.headers.get("set-cookie"), /arca_session=/);
+  const denied = await auth({ action: "create" });
+  assert.equal((await decide({ id: denied.id, decision: "deny" })).status, 200, "Deny needs no number");
+  assert.equal((await auth({ ...denied, action: "poll" })).state, "denied");
+});
+
 test("web approval expires, cancels stale decisions and forgets requests on restart", () => {
   const web = new Web("/unused");
   web.requests.set("expired", {

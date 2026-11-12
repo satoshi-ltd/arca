@@ -822,6 +822,7 @@ export function styles(
     },
     codeControl: { position: "relative" },
     codeCells: { flexDirection: "row", alignItems: "center", gap: sp[2] },
+    codeCellsCentered: { justifyContent: "center" },
     codeCell: {
       flex: 1,
       minHeight: 54,
@@ -1144,15 +1145,6 @@ export function styles(
       gap: g.rowGap,
       marginVertical: sp[2],
     },
-    requestNumber: {
-      fontFamily: "FragmentMono_400Regular",
-      fontSize: g.touchDisplayFont,
-      lineHeight: g.touchControlHeight,
-      letterSpacing: g.referenceTracking,
-      textAlign: "center",
-      color: c.ink,
-    },
-    requestSeparator: { color: c.line },
     approvalRow: {
       flexDirection: "row",
       alignItems: "center",
