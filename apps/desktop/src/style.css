@@ -4715,12 +4715,13 @@ dialog.photo-viewer {
 #last-sync {
   grid-column: 1 / -1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-@media (min-width: 761px) {
+@media (max-width: 760px) {
   #last-sync {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
   }
 }
 #sync-controls {

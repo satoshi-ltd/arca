@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.41 — 2026-11-12
+
+- The status card's one-line second line uses the app's single narrow-window breakpoint, so at a fractional window width it never both cuts and wraps.
+
+Needs: desktop build · hub redeploy
+
 ## 0.9.40 — 2026-11-11
 
 - When files vanish from a folder all at once (at least 50 and more than a quarter of the folder within an hour, or everything on a disk mounted inside it), the hub and computers now hold those deletions instead of sending them to every device: the folder shows Needs attention, and Review lets you check again after reconnecting the disk or confirm with Delete from every device. Renames and moves are not held.

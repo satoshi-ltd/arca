@@ -275,8 +275,8 @@ test("the end of a pause shows the day only when it is not today, and the tray s
   assert.match(source("tray.js"), /^import \{ clockTime \} from "\.\/clock-time\.js";/);
   assert.doesNotMatch(source("app.js"), /const clockTime =/);
   const css = source("style.css").replace(/\r\n/g, "\n");
-  assert.match(css, /\n#last-sync \{\s*grid-column: 1 \/ -1;\s*min-width: 0;\s*\}/, "the base rule lets the line wrap under 760 px");
-  assert.match(css, /\n@media \(min-width: 761px\) \{\s*#last-sync \{\s*white-space: nowrap;\s*overflow: hidden;\s*text-overflow: ellipsis;\s*\}\s*\}/, "the second line stays on one line at the full sidebar's width");
+  assert.match(css, /\n#last-sync \{\s*grid-column: 1 \/ -1;\s*min-width: 0;\s*white-space: nowrap;\s*overflow: hidden;\s*text-overflow: ellipsis;\s*\}/, "the second line is one line on a wide window");
+  assert.match(css, /\n@media \(max-width: 760px\) \{\s*#last-sync \{\s*white-space: normal;\s*\}\s*\}/, "and wraps again under 760 px, through the one narrow query");
 });
 
 function stoppedBoot(t, { upAfter = Infinity, stopped = "", startError = "", hold = false } = {}) {
