@@ -13,6 +13,8 @@ import {
   brandSplashBox,
 } from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
+import { announce } from "./announce.js";
+import { SELECTION_LIMIT_REASON, selectionNote } from "./photo-selection.js";
 import { deviceLabel, folderState, historyTone, machineTone } from "./home-data.js";
 import { foldRowFits, machineLabel, platformName, segmentText } from "./device-line.js";
 import React, {
@@ -1106,9 +1108,13 @@ export function ConfirmDialog({
   );
 }
 
-export function SelectionBar({ count, linked, reason, onClear, onDelete, leaving = false, onLeft }) {
+export function SelectionBar({ count, linked, full, reason, onClear, onDelete, leaving = false, onLeft }) {
   const { s } = useDesign();
   const seen = useRef({ current: false }).current;
+  const note = selectionNote({ linked, full, reason });
+  useEffect(() => {
+    if (note === SELECTION_LIMIT_REASON) announce(note);
+  }, [note]);
   return (
     <RiseOnce seen={seen} leaving={leaving} onLeft={onLeft} style={s.selectionBar}>
       <View style={s.row}>
@@ -1118,7 +1124,7 @@ export function SelectionBar({ count, linked, reason, onClear, onDelete, leaving
         <Button label="Clear" onPress={onClear} />
         <Button label="Delete…" disabled={!linked} onPress={onDelete} />
       </View>
-      {!linked && <Text style={s.caption}>{reason}</Text>}
+      {!!note && <Text style={s.caption}>{note}</Text>}
     </RiseOnce>
   );
 }

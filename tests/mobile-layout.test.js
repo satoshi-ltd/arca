@@ -761,7 +761,7 @@ test("phone hub-only actions say why they are unavailable offline and use the hu
   const components = read("components.jsx");
   assert.match(gallery, /deletable=\{!!remove && linked\}/);
   assert.match(gallery, /deleteReason=\{linked \? undefined : HUB_ONLY_REASON\}/);
-  assert.match(components, /label="Delete…" disabled=\{!linked\} onPress=\{onDelete\} \/>\s+<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{reason\}<\/Text>\}/, "the reason sits under the button row of the pinned selection bar, never inside it");
+  assert.match(components, /label="Delete…" disabled=\{!linked\} onPress=\{onDelete\} \/>\s+<\/View>\s+\{!!note && <Text style=\{s\.caption\}>\{note\}<\/Text>\}/, "the reason sits under the button row of the pinned selection bar, never inside it");
   assert.match(app, /linked=\{connected && !status\.offline\}\s+reason=\{HUB_ONLY_REASON\}/);
   assert.match(components, /accessibilityHint=\{note\}/);
   assert.match(viewer, /deleteReason \|\|\s+"Available after the hub confirms the photo/);

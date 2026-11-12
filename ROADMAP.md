@@ -37,9 +37,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **UX-ERASE-CONFIRM** — Erase asks for more than one click
   `feature · agent · normal`
   Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
-- **UI-MOB-SELECT-LIMIT** — Selecting a 101st photo says why nothing happened
-  `ui · agent · normal`
-  accept: the board (phone and Fold).
 - **UI-MOB-LIMITED-ACCESS** — Limited photo access offers the way to allow more
   `ui · agent · normal`
   accept: the board (phone and Fold).

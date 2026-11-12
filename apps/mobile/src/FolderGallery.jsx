@@ -110,6 +110,7 @@ import {
 } from "./gallery-days";
 import { count } from "./format";
 import { tileLabel } from "./browse";
+import { SELECTION_LIMIT, toggleSelection } from "./photo-selection.js";
 
 const PendingRow = memo(function PendingRow({ item, onOpen, onRetry, onDismiss }) {
   const { s } = useDesign();
@@ -380,12 +381,16 @@ export function FolderGallery({
     layoutRef = useRef(null);
   const suppressPressUntil = useRef(0);
   const [selection, setSelection] = useState([]);
+  const [selectionFull, setSelectionFull] = useState(false);
   const toggle = (item) =>
-    setSelection((items) =>
-      items.some((p) => p.path === item.path)
-        ? items.filter((p) => p.path !== item.path)
-        : [...items, item].slice(0, 100),
-    );
+    setSelection((items) => {
+      const next = toggleSelection(items, item);
+      if (next.full) setSelectionFull(true);
+      return next.items;
+    });
+  useEffect(() => {
+    if (selection.length < SELECTION_LIMIT) setSelectionFull(false);
+  }, [selection.length]);
   const hub = useMemo(
     () => hubGallery({ api, store, scope, volume }),
     [api, store, scope, volume],
@@ -1414,12 +1419,13 @@ export function FolderGallery({
       selection.length
         ? {
             count: selection.length,
+            full: selectionFull,
             clear: () => setSelection([]),
             remove: () => deleteRef.current(selectionRef.current),
           }
         : null,
     );
-  }, [selection.length]);
+  }, [selection.length, selectionFull]);
   useEffect(() => () => onSelection?.(null), []);
   async function deleteItems(item) {
     const result = await remove(item);

@@ -55,10 +55,36 @@ test("photo selection pins its bar above the tab bar and unselected tiles show t
   assert.match(bar, /`\$\{count\} selected`/);
   assert.match(bar, /label="Clear"/);
   assert.match(bar, /label="Delete…" disabled=\{!linked\}/, "the bar asks; only the confirmation that follows fills danger");
-  assert.match(bar, /!linked && <Text style=\{s\.caption\}>\{reason\}/);
+  assert.match(bar, /const note = selectionNote\(\{ linked, full, reason \}\);/);
+  assert.match(bar, /\{!!note && <Text style=\{s\.caption\}>\{note\}<\/Text>\}/);
   const app = read("App.jsx");
   assert.ok(app.indexOf("<SelectionBar") < app.indexOf("<Navigation\n                    view={view}"));
   assert.match(app, /onSelection=\{setPhotoSelection\}/);
+});
+
+test("a tap past 100 selected photos keeps the selection and the bar says why until a photo is unselected", async () => {
+  const { SELECTION_LIMIT_REASON, selectionNote, toggleSelection } = await import("../apps/mobile/src/photo-selection.js");
+  const full = Array.from({ length: 100 }, (_, i) => ({ path: `p/${i}.jpg` }));
+  const blocked = toggleSelection(full, { path: "p/new.jpg" });
+  assert.equal(blocked.full, true);
+  assert.equal(blocked.items, full);
+  const unselected = toggleSelection(full, { path: "p/7.jpg" });
+  assert.equal(unselected.full, false);
+  assert.equal(unselected.items.length, 99);
+  assert.deepEqual(toggleSelection(unselected.items, { path: "p/new.jpg" }), { items: [...unselected.items, { path: "p/new.jpg" }], full: false });
+  assert.equal(SELECTION_LIMIT_REASON, "100 is the most you can select at once.");
+  assert.equal(selectionNote({ linked: true, full: true, reason: "Needs the hub" }), SELECTION_LIMIT_REASON);
+  assert.equal(selectionNote({ linked: false, full: true, reason: "Needs the hub" }), "Needs the hub", "offline takes precedence");
+  assert.equal(selectionNote({ linked: true, full: false, reason: "Needs the hub" }), "");
+  const gallery = read("FolderGallery.jsx");
+  assert.match(gallery, /setSelection\(\(items\) => \{\s+const next = toggleSelection\(items, item\);\s+if \(next\.full\) setSelectionFull\(true\);\s+return next\.items;/, "two taps before a render both count");
+  assert.match(gallery, /if \(selection\.length < SELECTION_LIMIT\) setSelectionFull\(false\);\s+\}, \[selection\.length\]\);/);
+  assert.match(gallery, /full: selectionFull,/);
+  assert.match(gallery, /\}, \[selection\.length, selectionFull\]\);/);
+  assert.match(read("App.jsx"), /<SelectionBar\s+count=\{shownSelection\.count\}\s+full=\{shownSelection\.full\}/);
+  const components = read("components.jsx");
+  assert.match(components, /if \(note === SELECTION_LIMIT_REASON\) announce\(note\);\s+\}, \[note\]\);/, "the reason is announced to screen readers");
+  assert.match(read("announce.js"), /export const announce = \(text\) => AccessibilityInfo\.announceForAccessibility\(text\);/);
 });
 
 test("a History row leads with the file name and moves the folders into the caption", async () => {

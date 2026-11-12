@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.32 — 2026-11-11
+
+- Tapping a photo when 100 are already selected now says that 100 is the most you can select at once, instead of seeming to ignore the tap.
+
+Needs: native build
+
 ## 0.9.31 — 2026-11-11
 
 - Approving a web sign-in now asks you to type the number the browser shows instead of displaying it, so an Allow on someone else's request can no longer open a 24-hour administrator session; a number from another request ends that request and says so.

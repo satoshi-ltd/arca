@@ -4365,6 +4365,7 @@ export default function App() {
                 {!!shownSelection && !!folder && view === "Folders" && (
                   <SelectionBar
                     count={shownSelection.count}
+                    full={shownSelection.full}
                     linked={connected && !status.offline}
                     reason={HUB_ONLY_REASON}
                     onClear={shownSelection.clear}
