@@ -377,7 +377,7 @@ test("Settings does not repeat itself: the name joins the This device row, the h
 test("phone notices have one dismiss control: the 44 dp cross on cards, none on a pill unless a screen reader is on, and an action row only for the notice's own action", () => {
   const notice = read("Notice.jsx");
   assert.doesNotMatch(notice, /Dismiss<\/Text>/);
-  assert.match(notice, /\{!!item\.action && \(\s+<View style=\{\[s\.noticeActions, pill && s\.noticePillActions\]\}>\s+<Pressable/);
+  assert.match(notice, /\{!!item\.action && \(\s+<View style=\{\[s\.noticeActions, pill && s\.noticePillActions\]\} onStartShouldSetResponder=\{\(\) => true\}>\s+<Pressable/);
   assert.match(notice, /\{\(!pill \|\| reader\) && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Dismiss notification"[\s\S]*?style=\{s\.noticeClose\}\s+>/);
   assert.match(read("theme.js"), /noticeClose: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,/);
   assert.match(notice, /onMoveShouldSetPanResponder: \(_, g\) =>\s+g\.dy > 12/, "the swipe is unchanged");

@@ -17,6 +17,7 @@ import { motion, space } from "./design-tokens.js";
 import {
   noticeMetrics,
   noticePill,
+  noticeReleaseDismisses,
   phoneNotices,
   safeDetails,
   errorNotice,
@@ -78,11 +79,12 @@ export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled,
     Animated.timing(drag, { toValue: 0, duration: duration(motion.fast), easing, useNativeDriver: true }).start();
   const swipe = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, g) =>
         g.dy > 12 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_, g) => drag.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_, g) => {
-        if (g.dy > 32) dismiss.current();
+        if (noticeReleaseDismisses(g)) dismiss.current();
         else settle.current();
       },
       onPanResponderTerminate: () => settle.current(),
@@ -136,7 +138,7 @@ export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled,
             </Text>
           )}
           {!!item.action && (
-            <View style={[s.noticeActions, pill && s.noticePillActions]}>
+            <View style={[s.noticeActions, pill && s.noticePillActions]} onStartShouldSetResponder={() => true}>
               <Pressable
                 accessibilityRole="button"
                 disabled={disabled}

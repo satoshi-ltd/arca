@@ -13,6 +13,7 @@ export const noticeMetrics = Object.freeze({
   pillTitle: 40,
   maxVisible: 3,
 });
+export const noticeReleaseDismisses = ({ dx, dy }) => dy > 32 || (Math.abs(dx) < 10 && Math.abs(dy) < 10);
 export const noticePill = (item) =>
   item.kind === "info" &&
   !item.body &&

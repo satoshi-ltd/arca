@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.26 — 2026-11-11
+
+- A notice goes away when you click or tap it anywhere outside its buttons, on the desktop, the web and the phone, the same way as its ×; Undo and other actions, Details, Copy and selecting text inside it still keep it, and an error shown inside a form stays until you close it.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.9.25 — 2026-11-11
 
 - Recreating a folder's .arcaignore on the hub after deleting it no longer pauses desktop replicas and phones with “.arcaignore differs between this device and the hub”: a device with no rules of its own takes the hub's, and rules edited on the device still stop it until they agree.

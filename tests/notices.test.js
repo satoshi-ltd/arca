@@ -405,3 +405,23 @@ test("a sentence that names an address stays readable, and only stack frames are
     assert.ok(hidden.details, technical);
   }
 });
+
+test("a tap on a phone notice dismisses it like a swipe down, outside its Pressables and Details, and a sideways or short drag settles back", async () => {
+  const { noticeReleaseDismisses } = await import("../apps/desktop/src/notice-contract.js");
+  assert.equal(typeof noticeReleaseDismisses, "function");
+  assert.equal(noticeReleaseDismisses({ dx: 0, dy: 0 }), true, "a tap");
+  assert.equal(noticeReleaseDismisses({ dx: 4, dy: -3 }), true, "a tap with a little finger roll");
+  assert.equal(noticeReleaseDismisses({ dx: 0, dy: 40 }), true, "a swipe down");
+  assert.equal(noticeReleaseDismisses({ dx: 0, dy: 20 }), false, "a short drag settles");
+  assert.equal(noticeReleaseDismisses({ dx: 60, dy: 4 }), false, "a sideways drag settles");
+  assert.equal(noticeReleaseDismisses({ dx: 0, dy: -40 }), false, "an upward drag settles");
+  const phone = fs.readFileSync(new URL("../apps/mobile/src/Notice.jsx", import.meta.url), "utf8");
+  assert.match(phone, /PanResponder\.create\(\{\s+onStartShouldSetPanResponder: \(\) => true,\s+onMoveShouldSetPanResponder: \(_, g\) =>\s+g\.dy > 12 && Math\.abs\(g\.dy\) > Math\.abs\(g\.dx\),/, "a press on the row claims it; the swipe rule is unchanged");
+  assert.match(phone, /if \(noticeReleaseDismisses\(g\)\) dismiss\.current\(\);\s+else settle\.current\(\);/, "a tap leaves through the same dismiss as × and the swipe");
+  assert.match(phone, /<Animated\.View style=\{\[s\.noticeMain, pill && s\.noticePillMain, \{ opacity: swap \}\]\} \{\.\.\.swipe\.panHandlers\}>/, "only the main row takes the press, not an accessible wrapper, so Details and Copy below it never dismiss");
+  const main = phone.slice(phone.indexOf("{...swipe.panHandlers}>"), phone.indexOf("{!!item.details && ("));
+  assert.equal((main.match(/<Pressable/g) || []).length, 2, "the action and × stay their own Pressables, which claim the press before the row");
+  assert.match(main, /<View style=\{\[s\.noticeActions, pill && s\.noticePillActions\]\} onStartShouldSetResponder=\{\(\) => true\}>\s+<Pressable\s+accessibilityRole="button"\s+disabled=\{disabled\}/, "a disabled action, which no longer claims its press, never lets it fall through to the row and dismiss");
+  const close = main.slice(main.indexOf('accessibilityLabel="Dismiss notification"') - 80);
+  assert.doesNotMatch(close.slice(0, close.indexOf("</Pressable>")), /disabled/, "the × is never disabled, so it always claims its own press");
+});

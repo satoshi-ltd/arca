@@ -30,9 +30,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
 
-- **UX-NOTICE-TAP-DISMISS** — Tapping a notice dismisses it
-  `bug · agent · high`
-  Reported by the maintainer: pressing a notice should make it go, unless the press lands on one of its controls (Undo or another action, Details, Copy, ×). Today a card closes only with its × (and a swipe down on the phone) and a pill cannot be dismissed at all until its timer ends, on desktop, web and phone. Accept: a click or tap anywhere on a pill or card that is not one of its controls dismisses it through the same exit as ×, on desktop/web and on the phone; pressing its action still runs the action; expanding Details or Copy does not dismiss; screen readers keep the × and the action; SPEC's feedback section says so; DOM and mobile tests cover each case.
 - **SEC-ARCHIVE-FLOOR** — Only a device that backs up holds the hub's history
   `bug · agent · high`
   `GET /v1/archive` marks whichever replica credential calls it, a phone included, as an enabled backup at revision 0, which puts the retention floor at 0: one request from any linked device stops version pruning on the hub until that device is removed. It fails safe (nothing is lost) and was traced by the review of 0.9.12, not run. Accept: asking for the archive does not enable a backup acknowledgement by itself (only `/v1/backup-ack {enabled: true}` does), phones are refused as SPEC says they never back up, and a test shows retention still prunes after a replica that is not a backup read the archive.

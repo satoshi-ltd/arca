@@ -61,7 +61,7 @@ test("notices enter on the shared ease and fall and fade 140 ms when dismissed o
   assert.doesNotMatch(notice, /AccessibilityInfo|noticeMetrics\.duration/, "no own timing and no own reduced-motion read");
   assert.match(notice, /toValue: leaving \? 0 : 1,\s+duration: duration\(leaving \? motion\.exit : motion\.enter\),\s+easing,/);
   assert.match(notice, /onPanResponderMove: \(_, g\) => drag\.setValue\(Math\.max\(0, g\.dy\)\)/, "a swipe moves it with the finger");
-  assert.match(notice, /if \(g\.dy > 32\) dismiss\.current\(\);\s+else settle\.current\(\);/);
+  assert.match(notice, /if \(noticeReleaseDismisses\(g\)\) dismiss\.current\(\);\s+else settle\.current\(\);/);
   assert.match(notice, /const \[rows, left\] = useLeaving\(phoneNotices\(items\), noticeKey\);/, "the stack keeps a dismissed notice until its fall ends");
   assert.match(notice, /onDismiss=\{\(\) => !leaving && onDismiss\(item\.id\)\}/);
   assert.match(notice, /const noticeKey = \(item\) => item\.id;/, "an updated notice keeps its card instead of leaving a duplicate behind");

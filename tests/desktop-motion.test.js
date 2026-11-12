@@ -120,7 +120,7 @@ async function boot(t, { reduced = false, answers = {}, asyncClose = false, volu
     },
     event: { listen: async () => () => {}, emit: async () => {} },
   };
-  w.eval(`(async()=>{${script}\n})()`);
+  w.eval(`(async()=>{${script}\nwindow.noticeStore = noticeStore;})()`);
   ui.$ = (selector) => w.document.querySelector(selector);
   ui.$$ = (selector) => [...w.document.querySelectorAll(selector)];
   ui.idle = () => w.document.body.getAttribute("aria-busy") !== "true";
@@ -275,6 +275,65 @@ test("a dismissed notice falls and fades for 140 ms before it leaves, and the bo
   assert.deepEqual(JSON.parse(JSON.stringify(exit.frames)), [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(8px)" }]);
   await ui.finishAll();
   assert.equal(card.isConnected, false);
+  assert.equal(ui.$("#notice").hidden, true);
+});
+
+test("pressing a notice anywhere but its controls dismisses it through the × exit; its action, Details, Copy and a selection keep it", async (t) => {
+  const ui = await boot(t);
+  await until(() => ui.w.noticeStore);
+  const store = ui.w.noticeStore;
+  const ids = () => [...store.snapshot()].map((item) => item.id);
+  const click = (element) => element.dispatchEvent(new ui.w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  let copied = "";
+  Object.defineProperty(ui.w.navigator, "clipboard", { value: { writeText: async (value) => (copied = value) } });
+
+  store.push({ id: "pill", kind: "info", title: "Saved" });
+  const pill = ui.$('[data-notice-id="pill"]');
+  assert.ok(pill.classList.contains("notice-pill"));
+  click(pill.querySelector("strong"));
+  assert.deepEqual(ids(), [], "a pill leaves at once instead of waiting for its timer");
+  assert.equal(pill.inert, true);
+  const [exit] = ui.running(pill);
+  assert.equal(exit.options.duration, 140, "the same fall and fade as ×");
+  await ui.finishAll();
+  assert.equal(pill.isConnected, false);
+
+  store.push({ id: "undo", kind: "info", title: "Moved", action: "refresh", actionLabel: "Retry now" });
+  const before = ui.calls.length;
+  click(ui.$('[data-notice-id="undo"] [data-action="refresh"]'));
+  await until(() => ui.calls.slice(before).includes("GET /v1/status") && ui.idle());
+  assert.deepEqual(ids(), ["undo"], "its action runs without the press dismissing it");
+  click(ui.$('[data-notice-id="undo"]'));
+  assert.deepEqual(ids(), [], "the card's own padding dismisses");
+  await ui.finishAll();
+
+  store.push({ id: "error", kind: "error", title: "Hub Casa unreachable", body: "Your edits are saved locally.", details: "GET /v1/catalog\nE_TIMEOUT" });
+  const card = ui.$('[data-notice-id="error"]');
+  const details = card.querySelector("details");
+  click(details.querySelector("summary span"));
+  details.open = true;
+  click(card.querySelector('[data-action="copy-notice"]'));
+  await until(() => copied);
+  click(card.querySelector("pre"));
+  assert.deepEqual(ids(), ["error"], "Details, Copy and the trace keep it");
+  ui.w.getSelection().selectAllChildren(card.querySelector(".notice-content p"));
+  click(card.querySelector(".notice-content p"));
+  assert.deepEqual(ids(), ["error"], "a click that ends a selection keeps it");
+  const inDialog = ui.$("#dialog-error");
+  inDialog.innerHTML = card.outerHTML.replace('data-notice-id="error"', 'data-notice-id="dialog-error"');
+  inDialog.hidden = false;
+  ui.w.getSelection().removeAllRanges();
+  click(inDialog.querySelector(".notice-content p"));
+  assert.equal(inDialog.hidden, false, "a stray click in a dialog keeps the only explanation of its failed submit");
+  click(inDialog.querySelector(".notice-close"));
+  assert.equal(inDialog.hidden, true, "its × still closes it");
+  ui.w.getSelection().selectAllChildren(ui.$(".folder-card"));
+  assert.equal(card.getAttribute("role"), "alert", "the card stays an alert, not one button");
+  assert.ok(card.querySelector('.notice-close[aria-label="Dismiss notification"]'));
+  click(card.querySelector(".notice-content p"));
+  assert.deepEqual(ids(), [], "a selection elsewhere, kept by user-select: none, does not stop the dismissal");
+  assert.equal(card.inert, true);
+  await ui.finishAll();
   assert.equal(ui.$("#notice").hidden, true);
 });
 
