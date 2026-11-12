@@ -507,3 +507,63 @@ test("the skip buttons show their seconds beside the arrow, never on top of it",
   assert.doesNotMatch(block(".video-skip-count"), /position: absolute/);
   assert.match(block(".video-skip"), /width: auto/);
 });
+
+test("a folder holding a mass disappearance asks before deleting it from every device, with Check again", async (t) => {
+  const held = { files: 1204, directories: ["/srv/arca/photos/2023", "/srv/arca/photos/2024", "/srv/arca/photos/a", "/srv/arca/photos/b", "/srv/arca/photos/c"], more: 2, token: "shown" };
+  let changed = false;
+  const ui = await boot(
+    t,
+    hub([
+      { ...base, id: "photos", name: "photos", path: "/srv/arca/photos", sync: { ...base.sync, held } },
+      { ...base, id: "docs", name: "documents" },
+      { ...base, id: "scans", name: "scans", sync: { state: "error", error: "EACCES: permission denied", held: { ...held, files: 1 } } },
+      { ...base, id: "busy", name: "busy", sync: { state: "syncing", held } },
+    ]),
+    {
+      answers: {
+        "/v1/review-deletions": () => {
+          if (changed) throw new Error("The missing files changed. Review them again.");
+          return { accepted: true };
+        },
+      },
+    },
+  );
+  const row = () => ui.q('.folder-card[data-id="photos"]');
+  const reviews = () => ui.calls.filter(([route]) => route === "/v1/review-deletions").map(([, body]) => JSON.stringify(body));
+  await until(() => row());
+  assert.ok(row().querySelector(".home-lead > .tile.large.er"));
+  assert.equal(row().querySelector(".meta").textContent, "Needs attention · 1,204 files are missing from this folder. Nothing has been deleted on other devices.");
+  const review = () => row().querySelector('[data-action="folder-problem"]');
+  assert.equal(review().textContent, "Review");
+  const dialog = ui.q("#dialog");
+  review().click();
+  await until(() => dialog.open && ui.q("#dialog-recheck"));
+  assert.equal(dialog.querySelector("h2").textContent, "Delete 1,204 files from every device?");
+  assert.match(dialog.querySelector(".modal-title p").textContent, /^These files are no longer in “photos” on this hub\. /);
+  assert.deepEqual(ui.qa("#dialog-content li").map((li) => li.textContent), [...held.directories, "and 2 more"]);
+  assert.deepEqual(ui.qa(".dialog-actions button").filter((b) => !b.hidden).map((b) => b.textContent.trim()), ["Cancel", "Check again", "Delete from every device"]);
+  assert.ok(ui.q("#submit-dialog").classList.contains("danger"));
+  assert.ok(dialog.classList.contains("wide-dialog") && dialog.classList.contains("confirmation-dialog"));
+  assert.equal(ui.w.document.activeElement, ui.q("#cancel-dialog"));
+  ui.q("#dialog-recheck").click();
+  await until(() => reviews().length === 1);
+  assert.equal(reviews()[0], JSON.stringify({ id: "photos", confirm: false }));
+  await until(() => !dialog.open);
+  review().click();
+  await until(() => dialog.open && ui.q("#dialog-recheck"));
+  ui.q("#submit-dialog").click();
+  await until(() => reviews().length === 2);
+  assert.equal(reviews()[1], JSON.stringify({ id: "photos", confirm: true, token: "shown" }));
+  assert.equal(ui.qa("#dialog-recheck").length, 1);
+  const scans = ui.q('.folder-card[data-id="scans"]');
+  assert.equal(scans.querySelector(".meta").textContent, "Needs attention · EACCES: permission denied · 1 file is missing from this folder. Nothing has been deleted on other devices.");
+  assert.ok(scans.querySelector('[data-action="folder-problem"]'));
+  assert.equal(ui.q('.folder-card[data-id="busy"] .tile.er'), null, "a syncing folder keeps its progress state");
+  await until(() => !dialog.open);
+  changed = true;
+  review().click();
+  await until(() => dialog.open && ui.q("#dialog-recheck"));
+  ui.q("#submit-dialog").click();
+  await until(() => !ui.q("#dialog-error").hidden);
+  assert.match(ui.q("#dialog-error").textContent, /The missing files changed\. Review them again\.$/);
+});

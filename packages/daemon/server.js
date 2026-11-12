@@ -769,6 +769,7 @@ export async function start(home, options = {}) {
             "/v1/music/mark",
             "/v1/music/playlist",
             "/v1/locate-folder",
+            "/v1/review-deletions",
             "/v1/move-folder",
             "/v1/folder-retention",
             "/v1/retention",
@@ -2108,6 +2109,13 @@ export async function start(home, options = {}) {
             200,
             await authorizedWork(() => engine.promote(b.confirmed === true)),
           );
+        if (route === "/v1/review-deletions") {
+          if (typeof b.confirm !== "boolean")
+            fail("Choose whether to delete the missing files");
+          await authorizedWork(() => engine.reviewDeletions(b.id, b.confirm, b.token));
+          setImmediate(tick);
+          return send(202, { accepted: true });
+        }
         if (route === "/v1/locate-folder") {
           const located = await authorizedWork(() => {
             const v = s.volume(b.id);
@@ -2387,10 +2395,13 @@ export async function start(home, options = {}) {
                   s.forgetVolume(b.id);
                   engine.localSeen.delete(b.id);
                   engine.localDirty.delete(b.id);
-                } else
+                } else {
                   s.db
                     .prepare("UPDATE volumes SET selected=0 WHERE id=?")
                     .run(b.id);
+                  s.db.prepare("DELETE FROM deletion_holds WHERE volume=?").run(b.id);
+                  s.db.prepare("DELETE FROM deletion_log WHERE volume=?").run(b.id);
+                }
                 engine.folderStates.delete(b.id);
                 void engine.reportMachine(true);
                 await releaseReplicaObjects(s);
@@ -2696,7 +2707,7 @@ export async function start(home, options = {}) {
               s.db.exec("BEGIN IMMEDIATE");
               try {
                 s.db.exec(
-                  "DELETE FROM files; DELETE FROM local_files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
+                  "DELETE FROM files; DELETE FROM local_files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty; DELETE FROM deletion_holds; DELETE FROM deletion_log;",
                 );
                 s.db.prepare("INSERT INTO transitions(id) VALUES(?)").run(id);
                 s.db.exec("COMMIT");
@@ -2975,6 +2986,7 @@ export async function start(home, options = {}) {
           "/v1/select",
           "/v1/unselect",
           "/v1/locate-folder",
+          "/v1/review-deletions",
           "/v1/delete-share",
           "/v1/ignore-policy",
           "/v1/pause",

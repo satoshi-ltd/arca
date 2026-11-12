@@ -73,6 +73,8 @@ const contradicts = (indexed, row) =>
   (row.rev === indexed.rev &&
     (row.hash !== indexed.hash || !!row.deleted !== !!indexed.deleted));
 const fileCount = (n) => (n === 1 ? "1 file" : `${n} files`);
+const MASS_DELETE_FILES = 50;
+const DELETION_WINDOW_MS = 60 * 60 * 1000;
 const unreadIssue = (unreadable) =>
   unreadable.size
     ? `Could not read ${fileCount(unreadable.size)} in this folder: ${[...unreadable]
@@ -272,17 +274,21 @@ export class Engine {
                   .prepare("SELECT 1 FROM video_folders WHERE volume=?")
                   .get(v.id)
               : !!this.config.catalog?.find((row) => row.id === v.id)?.video,
-          sync: totals.policyError
-            ? { state: "error", error: totals.policyError, lastCompleted: null }
-            : (this.paused || this.hubUnavailable) && v.selected
-              ? {
-                  state: this.paused ? "paused" : "pending",
-                  lastCompleted: v.last_sync,
-                }
-              : this.folderStates.get(v.id) || {
-                  state: v.selected ? "pending" : "unselected",
-                  lastCompleted: v.last_sync,
-                },
+          sync: (() => {
+            const state = totals.policyError
+              ? { state: "error", error: totals.policyError, lastCompleted: null }
+              : (this.paused || this.hubUnavailable) && v.selected
+                ? {
+                    state: this.paused ? "paused" : "pending",
+                    lastCompleted: v.last_sync,
+                  }
+                : this.folderStates.get(v.id) || {
+                    state: v.selected ? "pending" : "unselected",
+                    lastCompleted: v.last_sync,
+                  };
+            const held = v.selected ? s.heldDeletions(v) : null;
+            return held ? { ...state, held } : state;
+          })(),
           ...totals,
           conflictRevision:
             this.config.role === "hub"
@@ -1303,17 +1309,27 @@ export class Engine {
                 0,
               ),
             });
-            for (const row of [...known.values()].sort((a, b) =>
-              b.path.localeCompare(a.path),
-            ))
-              if (
+            const missing = [...known.values()].filter(
+              (row) =>
                 !row.deleted &&
                 covers(plan.paths, row.path) &&
                 !s.excluded(v.id, row.path, row.directory) &&
                 !disk.has(row.path) &&
                 !diskNames.has(row.path.toLowerCase()) &&
-                !unreadablePath(row.path)
-              ) {
+                !unreadablePath(row.path),
+            );
+            const held = this.holdDeletions(
+              v,
+              missing,
+              disk,
+              (name) => disk.has(name) || diskNames.has(name.toLowerCase()),
+              plan.paths,
+              (name, directory) => s.excluded(v.id, name, directory),
+            );
+            for (const row of missing.sort((a, b) =>
+              b.path.localeCompare(a.path),
+            ))
+              if (!held(row.path)) {
                 try {
                   acknowledge(
                     await this.json("/v1/propose", {
@@ -1508,7 +1524,7 @@ export class Engine {
                     unreadable.set(name, reason);
                   unreadablePath = within(unreadable.keys());
                   for (const name of paths) {
-                    if (unreadablePath(name)) continue;
+                    if (unreadablePath(name) || held(name)) continue;
                     const local = incomingDisk.get(name),
                       known = s.current(v.id, name);
                     if (entryKey(local) !== entryKey(known)) {
@@ -1549,7 +1565,8 @@ export class Engine {
                   if (s.excluded(v.id, row.path, row.directory)) continue;
                   if (
                     blocked.has(row.path.toLowerCase()) ||
-                    unreadablePath(row.path)
+                    unreadablePath(row.path) ||
+                    held(row.path)
                   ) {
                     skipped = true;
                     continue;
@@ -2442,18 +2459,28 @@ export class Engine {
         const diskNames = new Set(
           [...disk.keys()].map((name) => name.toLowerCase()),
         );
-        for (const row of known.sort((a, b) => b.path.localeCompare(a.path))) {
-          await new Promise((resolve) => setImmediate(resolve));
-          checkpoint();
-          if (
+        const missing = known.filter(
+          (row) =>
             !row.deleted &&
             covers(plan.paths, row.path) &&
             !disk.has(row.path) &&
             !diskNames.has(row.path.toLowerCase()) &&
             !unreadablePath(row.path) &&
             !excluded(row.path, !!row.directory) &&
-            s.unwritten(v.id, row.path)?.deleted !== 0
-          )
+            s.unwritten(v.id, row.path)?.deleted !== 0,
+        );
+        const held = this.holdDeletions(
+          v,
+          missing,
+          disk,
+          (name) => disk.has(name) || diskNames.has(name.toLowerCase()),
+          plan.paths,
+          (name, directory) => excluded(name, directory),
+        );
+        for (const row of missing.sort((a, b) => b.path.localeCompare(a.path))) {
+          await new Promise((resolve) => setImmediate(resolve));
+          checkpoint();
+          if (!held(row.path) && s.unwritten(v.id, row.path)?.deleted !== 0)
             s.commit(v.id, row.path, null, this.config.id);
         }
         for (const [name, item] of disk) {
@@ -2517,6 +2544,132 @@ export class Engine {
         status: 409,
         folderOnly: !deviceWide,
       });
+  }
+  holdDeletions(v, missing, disk, present, scope, excluded) {
+    const s = this.store;
+    const dropped = [],
+      waiting = new Map(),
+      confirmed = new Set();
+    for (const hold of s.db
+      .prepare("SELECT path,rev,confirmed FROM deletion_holds WHERE volume=?")
+      .all(v.id)) {
+      const row = s.current(v.id, hold.path);
+      if (
+        !row ||
+        row.deleted ||
+        row.rev !== hold.rev ||
+        excluded(row.path, !!row.directory) ||
+        (covers(scope, row.path) && present(row.path))
+      )
+        dropped.push(hold.path);
+      else if (hold.confirmed) confirmed.add(hold.path);
+      else waiting.set(hold.path, row);
+    }
+    const fresh = missing.filter(
+      (row) => !waiting.has(row.path) && !confirmed.has(row.path),
+    );
+    const wanted = new Set(fresh.filter((row) => !row.directory && row.size > 0).map((row) => row.hash));
+    const arrived = new Map();
+    if (wanted.size)
+      for (const [name, item] of disk)
+        if (item.size > 0 && wanted.has(item.hash)) {
+          const old = s.current(v.id, name);
+          if (!old || old.deleted || old.hash !== item.hash)
+            arrived.set(item.hash, (arrived.get(item.hash) || 0) + 1);
+        }
+    const gone = fresh.filter((row) => {
+      if (row.directory || !arrived.get(row.hash)) return true;
+      arrived.set(row.hash, arrived.get(row.hash) - 1);
+      return false;
+    });
+    const files = gone.filter((row) => !row.directory);
+    const now = Date.now();
+    s.db.prepare("DELETE FROM deletion_log WHERE at<?").run(now - DELETION_WINDOW_MS);
+    const logged = files.length
+      ? s.db
+          .prepare("SELECT COALESCE(SUM(files),0) AS n FROM deletion_log WHERE volume=? AND at>=?")
+          .get(v.id, now - DELETION_WINDOW_MS).n
+      : 0;
+    const counted = logged + files.length;
+    const root = files.length ? s.deviceOf(v.path) : null,
+      devices = new Map();
+    const heldFiles = new Set(
+      (waiting.size ||
+      (counted >= MASS_DELETE_FILES &&
+        counted * 4 >
+          s.db
+            .prepare("SELECT COUNT(*) AS n FROM files WHERE volume=? AND deleted=0 AND directory=0")
+            .get(v.id).n +
+            logged)
+        ? files
+        : files.filter((row) => s.leftDevice(v, row.path, root, devices))
+      ).map((row) => row.path),
+    );
+    const added = gone.filter((row) => heldFiles.has(row.path));
+    for (const [name, row] of waiting) if (!row.directory) heldFiles.add(name);
+    const above = new Set(
+      [...heldFiles].flatMap((name) =>
+        name
+          .split("/")
+          .slice(0, -1)
+          .map((_, index, parts) => parts.slice(0, index + 1).join("/")),
+      ),
+    );
+    const held = new Set(heldFiles);
+    for (const [name, row] of waiting)
+      if (row.directory) {
+        if (above.has(name)) held.add(name);
+        else dropped.push(name);
+      }
+    for (const row of gone)
+      if (row.directory && above.has(row.path) && !held.has(row.path)) {
+        added.push(row);
+        held.add(row.path);
+      }
+    for (const name of confirmed) if (above.has(name)) held.add(name);
+    const propagated = files.filter((row) => !held.has(row.path)).length;
+    if (dropped.length || added.length || propagated) {
+      s.db.exec("BEGIN IMMEDIATE");
+      try {
+        const drop = s.db.prepare("DELETE FROM deletion_holds WHERE volume=? AND path=?");
+        for (const name of dropped) drop.run(v.id, name);
+        const hold = s.db.prepare(
+          "INSERT OR REPLACE INTO deletion_holds(volume,path,rev,confirmed) VALUES(?,?,?,0)",
+        );
+        for (const row of added) hold.run(v.id, row.path, row.rev);
+        if (propagated)
+          s.db
+            .prepare("INSERT INTO deletion_log(volume,at,files) VALUES(?,?,?)")
+            .run(v.id, now, propagated);
+        s.db.exec("COMMIT");
+      } catch (error) {
+        s.db.exec("ROLLBACK");
+        throw error;
+      }
+    }
+    return (name) => held.has(name);
+  }
+  reviewDeletions(id, confirm, token) {
+    const s = this.store,
+      v = s.volume(id);
+    if (!v.selected) fail("This folder is not synchronized on this device", 409);
+    if (confirm) {
+      const rows = s.heldRows(id);
+      if (!rows.length || s.heldDeletions(v, rows)?.token !== token)
+        fail("The missing files changed. Review them again.", 409);
+      const mark = s.db.prepare(
+        "UPDATE deletion_holds SET confirmed=1 WHERE volume=? AND path=? AND rev=? AND confirmed=0",
+      );
+      s.db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const row of rows) mark.run(id, row.path, row.rev);
+        s.db.exec("COMMIT");
+      } catch (error) {
+        s.db.exec("ROLLBACK");
+        throw error;
+      }
+    }
+    this.work.mark(id);
   }
   reportIssues(v, unwritten, unreadable = new Map()) {
     this.folderIssues.set(v.id, { unwritten, unreadable });

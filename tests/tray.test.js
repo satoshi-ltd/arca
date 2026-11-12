@@ -736,3 +736,12 @@ test("a refresh while the popover window is not focused moves no focus", async (
   await settle();
   assert.equal(moved, 0);
 });
+
+test("a folder holding missing files is listed under Needs attention while it stays up to date otherwise", async (t) => {
+  const held = { files: 1204, directories: ["/srv/arca/photos/2023"], more: 0, token: "t" };
+  const ui = await tray(t, { role: "hub", phase: "idle", volumes: [folder("photos", { sync: { state: "synced", held } }), folder("notes")] });
+  assert.equal(ui.$(".tray-heading strong").textContent, "Needs attention");
+  const rows = ui.$$(".tray-folders > button");
+  assert.deepEqual(rows.map((el) => [el.dataset.folder, el.querySelector("small").textContent]), [["photos", "Needs attention"]]);
+  assert.ok(rows[0].matches(".tray-tone-error"));
+});

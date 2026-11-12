@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.40 — 2026-11-11
+
+- When files vanish from a folder all at once (at least 50 and more than a quarter of the folder within an hour, or everything on a disk mounted inside it), the hub and computers now hold those deletions instead of sending them to every device: the folder shows Needs attention, and Review lets you check again after reconnecting the disk or confirm with Delete from every device. Renames and moves are not held.
+- Phones are not covered yet, and the hub does not hold a mass deletion that a device sends it; a slower deletion (under 50 files, or under a quarter of the folder, per hour) still propagates.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.39 — 2026-11-12
 
 - The release pipeline passes on Linux again: a test of a folder's own retry no longer depends on how fast the runner is.

@@ -28,9 +28,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
-- **SYNC-MASS-DELETE** — A sudden mass disappearance waits for a decision before it is deleted everywhere
-  `bug · agent · high`
-  Decided by the maintainer (was DEC-MASS-DELETE): the folder marker is checked only at the root and a scan tombstones every indexed row it did not see, so a subfolder that is its own mount and comes back empty after a reboot, or a folder emptied in Finder, is deleted on every device; Movies & TV has no older version to restore. Accept: a hub or replica scan that would delete at least 50 files and more than a quarter of a folder's files, or everything under a directory that lives on a different device than the folder's root, records nothing for those paths and puts the folder in an attention state until a person confirms the deletion or the files return (Check again rescans); smaller deletions propagate as today; the hub and every replica apply the same rule; tests cover the threshold, the mount case, confirming and the files coming back. The interface follows board UI-MASS-DELETE.
 - **UX-DESK-WEB-APPROVAL-TRAY** — A web sign-in request reaches a closed desktop window
   `feature · agent · normal`
   Idea. Approval reaches only the foreground window. Accept: while a request this device may approve is pending the tray shows it and opens the window on the prompt, with a tray test; the interface follows board UI-UX-DESK-WEB-APPROVAL-TRAY.

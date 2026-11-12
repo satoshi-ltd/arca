@@ -413,6 +413,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sync_dirty(seq INTEGER PRIMARY KEY AUTOINCREMENT,volume TEXT NOT NULL,path TEXT NOT NULL,UNIQUE(volume,path));
       CREATE TABLE IF NOT EXISTS sync_state(volume TEXT PRIMARY KEY,cursor INTEGER NOT NULL DEFAULT 0,full_at INTEGER NOT NULL DEFAULT 0,policy TEXT);
       CREATE TABLE IF NOT EXISTS forgotten(volume TEXT,path TEXT,at INTEGER NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS deletion_holds(volume TEXT NOT NULL,path TEXT NOT NULL,rev INTEGER NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS deletion_log(volume TEXT NOT NULL,at INTEGER NOT NULL,files INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS files_volume_rev ON files(volume,rev);
       CREATE INDEX IF NOT EXISTS files_visible_totals ON files(volume,path,size) WHERE deleted=0 AND directory=0;
       CREATE INDEX IF NOT EXISTS files_current_hash ON files(hash) WHERE deleted=0 AND directory=0;
@@ -708,6 +710,8 @@ export class Store {
         "accepted_proposals",
         "sync_dirty",
         "forgotten",
+        "deletion_holds",
+        "deletion_log",
         "sync_state",
         "files",
         "local_files",
@@ -750,6 +754,8 @@ export class Store {
         "snapshot_sessions",
         "sync_dirty",
         "forgotten",
+        "deletion_holds",
+        "deletion_log",
         "sync_state",
         "pending",
         "files",
@@ -1428,6 +1434,60 @@ export class Store {
         visit(name, stat);
       }
     return result;
+  }
+  heldRows(id) {
+    return this.db
+      .prepare(
+        "SELECT f.path,f.rev,f.directory FROM deletion_holds h JOIN files f ON f.volume=h.volume AND f.path=h.path AND f.rev=h.rev AND f.deleted=0 WHERE h.volume=? AND h.confirmed=0 ORDER BY f.path",
+      )
+      .all(id);
+  }
+  heldDeletions(v, rows = this.heldRows(v.id)) {
+    const files = rows.filter((row) => !row.directory).length;
+    if (!files) return null;
+    const places = new Set(
+      rows.map((row) => (row.directory ? row.path : row.path.split("/").slice(0, -1).join("/"))),
+    );
+    const roots = [...places]
+      .filter((place) => {
+        const parts = place ? place.split("/") : [];
+        return !parts.some((_, length) => places.has(parts.slice(0, length).join("/")));
+      })
+      .sort();
+    return {
+      files,
+      directories: roots.slice(0, 5).map((place) => path.join(v.path, ...place.split("/"))),
+      more: Math.max(0, roots.length - 5),
+      token: digest(rows.map((row) => `${row.path}\0${row.rev}`).join("\n")),
+    };
+  }
+  deviceOf(file) {
+    try {
+      return fs.statSync(file, { bigint: true, throwIfNoEntry: false })?.dev.toString() ?? null;
+    } catch {
+      return null;
+    }
+  }
+  leftDevice(v, name, root, devices = new Map()) {
+    let file;
+    try {
+      file = this.filePath(v, name);
+    } catch {
+      return false;
+    }
+    const read = this.db
+      .prepare("SELECT signature FROM scan_cache WHERE path=?")
+      .get(file)
+      ?.signature.split(":")[0];
+    if (!read || read === root) return false;
+    const parts = name.split("/");
+    for (let length = parts.length - 1; length > 0; length--) {
+      const directory = path.join(v.path, ...parts.slice(0, length));
+      if (!devices.has(directory)) devices.set(directory, this.deviceOf(directory));
+      const device = devices.get(directory);
+      if (device !== null) return device !== read;
+    }
+    return true;
   }
   rows(id) {
     return this.db

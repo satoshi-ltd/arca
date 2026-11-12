@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.39";
+const APP_VERSION = "0.9.40";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1686,6 +1686,8 @@ function stateFor(v) {
   if (status.phase === "paused") return ["Paused", "id", "pause"];
   if (v.sync?.state === "error")
     return [folderProblem(v.sync.error || ""), "er", "circle-alert"];
+  if (v.sync?.held && !["scanning", "syncing"].includes(v.sync.state))
+    return ["Needs attention", "er", "circle-alert"];
   if (v.conflicts) return ["Conflict", "wa", "triangle-alert"];
   if (status.hubUnavailable) return ["Offline", "id", "wifi-off"];
   if (v.sync?.state === "scanning") return ["Scanning", "sy", "busy"];
@@ -2138,7 +2140,7 @@ function viewRefreshSignature(status, view, detailId) {
       volumes.map(({ files, bytes, sync, ...volume }) => ({
         ...volume,
         ...(detailId ? { files, bytes } : {}),
-        sync: sync && { state: sync.state, error: sync.error },
+        sync: sync && { state: sync.state, error: sync.error, held: sync.held?.token },
       })),
       status.phase,
       !!status.hubUnavailable,
@@ -2409,9 +2411,14 @@ function stateWord(v, state) {
   if (state[0] === "Conflict") return countLabel(v.conflicts, "conflict");
   return ["Up to date", "Syncing", "Scanning", "Catalog only"].includes(state[0]) ? "" : state[0];
 }
+const heldLine = (held) =>
+  `${held.files === 1 ? "1 file is" : `${held.files.toLocaleString("en")} files are`} missing from this folder. Nothing has been deleted on other devices.`;
 function folderMetaParts(v, state, p) {
   if (p) return { rest: progressLabel(p) };
-  const error = v.sync?.error || v.policyError;
+  const error =
+    [v.sync?.error || v.policyError, v.sync?.held && heldLine(v.sync.held)]
+      .filter(Boolean)
+      .join(" · ") || null;
   const word = stateWord(v, state);
   const rest =
     state[0] === "Path missing" && v.path
@@ -2477,7 +2484,7 @@ function folderRow(v, available = false) {
             "secondary small-button",
             "folder-input",
           )
-        : v.sync?.error
+        : v.sync?.error || v.sync?.held
           ? button(
               "Review",
               "folder-problem",
@@ -9955,6 +9962,33 @@ async function imageLibrary() {
   await update();
 }
 
+function heldDeletions(folder) {
+  const { files, directories, more } = folder.sync.held;
+  modal(
+    modalHeader(
+      `Delete ${countLabel(files, "file")} from every device?`,
+      `These files are no longer in “${escape(folder.name)}” on this ${status.role === "hub" ? "hub" : "device"}. If a disk was disconnected or a folder was moved, put it back and choose Check again: nothing has been deleted on other devices yet.`,
+      "trash-2",
+    ) +
+      `<ul>${directories.map((place) => `<li class="path">${escape(place)}</li>`).join("")}${more ? `<li>and ${more.toLocaleString("en")} more</li>` : ""}</ul><p class="hint">Deleting is sent to every device. Recovery afterwards depends on this folder’s version retention.</p>`,
+    async () => {
+      await api("/v1/review-deletions", { id: folder.id, confirm: true, token: folder.sync.held.token });
+      await refresh();
+    },
+    "Delete from every device",
+    true,
+  );
+  $("#submit-dialog").classList.add("danger");
+  const recheck = document.createElement("button");
+  recheck.type = "button";
+  recheck.id = "dialog-recheck";
+  recheck.className = "secondary";
+  recheck.dataset.action = "recheck-deletions";
+  recheck.dataset.id = folder.id;
+  recheck.textContent = "Check again";
+  $("#cancel-dialog").after(recheck);
+  $("#cancel-dialog").focus();
+}
 function modalHeader(heading, description, symbol = "folder") {
   return `<div class="modal-title"><div class="tile">${icon(symbol)}</div><div><h2 id="dialog-title">${heading}</h2><p>${description}</p></div></div>`;
 }
@@ -10042,6 +10076,7 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
   }
   $("#dialog-error").hidden = true;
   $("#dialog-extra-actions")?.remove();
+  $("#dialog-recheck")?.remove();
   $("#cancel-dialog").hidden = false;
   $("#dialog-content").onclick = null;
   $("#dialog-content").innerHTML = html;
@@ -10853,9 +10888,16 @@ async function handle(name, id, control) {
     if (keepScroll && $(".page")) $(".page").scrollTop = scroll;
     return;
   }
+  if (name === "recheck-deletions") {
+    void closeDialog();
+    await api("/v1/review-deletions", { id, confirm: false });
+    await refresh();
+    return;
+  }
   if (name === "folder-problem") {
     const folder = status.volumes.find((item) => item.id === id);
     if (!folder) return;
+    if (folder.sync?.held) return heldDeletions(folder);
     modal(
       modalHeader(
         `Synchronization of ${escape(folder.name)} stopped`,

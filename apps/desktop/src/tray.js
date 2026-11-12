@@ -84,7 +84,7 @@ function attentionRows(state) {
   if (state.hubUnavailable || ["paused", "unlinked", "needs-folder"].includes(state.phase)) return [];
   const rows = [];
   for (const v of state.volumes.filter((item) => item.selected)) {
-    if (v.sync?.state === "error")
+    if (v.sync?.state === "error" || v.sync?.held)
       rows.push({ rank: 0, folder: v.id, name: v.name, tone: "error", glyph: "circle-alert", label: "Needs attention" });
     else if (v.conflicts)
       rows.push({ rank: 1, folder: v.id, name: v.name, tone: "conflict", glyph: "triangle-alert", label: plural(v.conflicts, "conflict") });
