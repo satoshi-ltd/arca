@@ -214,7 +214,7 @@ import {
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, count, fileCount, folderSize, unbroken } from "./format";
-import { neededBytes, spaceShort } from "./space";
+import { neededBytes, notEnoughSpace, spaceShort } from "./space";
 import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, entryLabel, revealWindow } from "./browse";
 import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld, streamedOfflineCaption } from "./home-data";
@@ -5011,7 +5011,7 @@ export default function App() {
                         </Text>
                         <Text style={[s.caption, tooBig && s.errorText]}>
                           {tooBig
-                            ? `Not enough space: ${bytes(sheetNeeds)} to download · ${bytes(status.free)} free`
+                            ? notEnoughSpace(sheetNeeds, status.free)
                             : `${Number.isFinite(shownSheet.volume.bytes) ? `Needs ${bytes(shownSheet.volume.bytes)} · ` : ""}${bytes(status.free)} free`}
                         </Text>
                       </View>

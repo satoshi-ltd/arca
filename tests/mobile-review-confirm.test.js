@@ -185,8 +185,9 @@ test("onboarding offers Stream or Keep for media, sizes only what downloads and 
   assert.match(screen, /const folders = catalog\?\.volumes \|\| \[\];/, "Movies & TV libraries are offered too");
   assert.match(screen, /description=\{folder\.policyError \|\| \(modes\[folder\.id\] === "stream" \? "Streams from hub" : folderSize\(folder\)\)\}/);
   assert.match(screen, /\{!!kinds\[folder\.id\] && selected\.includes\(folder\.id\) && \(\s+<SegmentedControl/);
-  assert.match(screen, /\{bytes\(downloadBytes\(chosen, modes\)\)\} to download ·/);
-  assert.match(screen, /label=\{action\.label\}\s+icon=\{action\.icon\}\s+primary\s+disabled=\{!chosen\.length\}[\s\S]{0,60}onPress=\{\(\) => download\(chosen\.map\(\(folder\) => folder\.id\), modes\)\}/);
+  assert.match(screen, /const needed = downloadBytes\(chosen, modes\);/);
+  assert.match(screen, /\{bytes\(needed\)\} to download ·/);
+  assert.match(screen, /label=\{action\.label\}\s+icon=\{action\.icon\}\s+primary\s+disabled=\{!chosen\.length \|\| short\}[\s\S]{0,140}onPress=\{\(\) => download\(chosen\.map\(\(folder\) => folder\.id\), modes\)\}/);
   assert.match(read("App.jsx"), /audioStreams=\{playerAvailable\}/);
   assert.match(read("App.jsx"), /download=\{\(ids, modes\) =>[\s\S]{0,600}await selectFirstFolders\(r, client\.state\(\)\.catalog, ids, modes\);/);
 });

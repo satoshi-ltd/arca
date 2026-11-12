@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { HEADROOM, neededBytes, spaceShort } from "../apps/mobile/src/space.js";
+import { HEADROOM, neededBytes, notEnoughSpace, spaceShort } from "../apps/mobile/src/space.js";
 import { HEADROOM as engineHeadroom } from "../apps/mobile/src/replica.js";
 
 const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
@@ -40,4 +40,15 @@ test("the sheet and the engine share the formula, and a folder that does not fit
   assert.match(app, /neededBytes\(shownSheet\.volume, sheetFolders, volumes\)/);
   assert.match(app, /\[s\.caption, tooBig && s\.errorText\]/);
   assert.match(app, /label="Start syncing"\s+icon="refresh"\s+primary\s+disabled=\{tooBig\}/);
+  assert.match(app, /\? notEnoughSpace\(sheetNeeds, status\.free\)/);
+});
+
+test("onboarding warns before Start syncing when the ticked folders do not fit, with the sheet's check and wording", () => {
+  assert.equal(notEnoughSpace(13.4 * 1024 ** 3, 8.1 * 1024 ** 3), "Not enough space: 13.4 GB to download · 8.1 GB free");
+  const screen = fs.readFileSync(new URL("../apps/mobile/src/Onboarding.jsx", import.meta.url), "utf8");
+  assert.match(screen, /import \{ notEnoughSpace, spaceShort \} from "\.\/space\.js";/);
+  assert.match(screen, /const needed = downloadBytes\(chosen, modes\);\s+const short = spaceShort\(needed, free\);/, "recomputed on every tick and Stream choice");
+  assert.match(screen, /<Text style=\{\[s\.caption, s\.centerText, short && s\.errorText\]\}>\s+\{short \? \(\s+notEnoughSpace\(needed, free\)/);
+  assert.match(screen, /disabled=\{!chosen\.length \|\| short\}\s+reason=\{short \? notEnoughSpace\(needed, free\) : undefined\}/, "screen readers hear why Start syncing is off");
+  assert.match(screen, /<Button\s+label="Skip for now"\s+ghost\s+busy=\{busy\}\s+onPress=\{skip\}/, "Skip for now stays available");
 });

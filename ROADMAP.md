@@ -37,9 +37,6 @@ Data safety first, then the most visible defects and the largest performance cos
 - **UX-ERASE-CONFIRM** — Erase asks for more than one click
   `feature · agent · normal`
   Idea. Delete shared folder, which keeps the files, requires typing the name; Erase this hub, which deletes every folder, file and the history, confirms with one button. Accept: Erase this hub and Erase this device require the typed device name; the interface follows board UI-UX-ERASE-CONFIRM.
-- **UI-MOB-ONBOARD-SPACE** — Onboarding warns before the button when the chosen folders do not fit
-  `ui · agent · normal`
-  accept: the board (phone and Fold).
 - **UI-MOB-PLAYER-LEGIBLE** — The film's progress line and times stay readable over a bright picture
   `ui · agent · normal`
   accept: the board (phone, desktop and web).

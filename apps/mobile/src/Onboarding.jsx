@@ -15,6 +15,7 @@ import {
 import { PairingForm } from "./PairingForm";
 import { bytes, count, folderSize } from "./format";
 import { defaultMode, downloadBytes, mediaKind, startLabel } from "./onboarding";
+import { notEnoughSpace, spaceShort } from "./space.js";
 export function Onboarding({
   step,
   name,
@@ -106,6 +107,8 @@ export function Onboarding({
   const modes = Object.fromEntries(folders.map((folder) => [folder.id, kinds[folder.id] ? chosenModes[folder.id] || defaultMode(kinds[folder.id]) : "keep"]));
   const chosen = folders.filter((folder) => selected.includes(folder.id));
   const action = startLabel(chosen, modes);
+  const needed = downloadBytes(chosen, modes);
+  const short = spaceShort(needed, free);
   return (
     <>
       <View style={s.section}>
@@ -162,19 +165,26 @@ export function Onboarding({
           </React.Fragment>
         ))}
       </View>
-      <Text style={[s.caption, s.centerText]}>
-        {chosen.length === 1 ? chosen[0].name : count(chosen.length, "folder", "folders")} ·{" "}
-        {bytes(downloadBytes(chosen, modes))} to download ·{" "}
-        {Number.isFinite(free)
-          ? `${bytes(free)} free`
-          : "Checking available space"}
+      <Text style={[s.caption, s.centerText, short && s.errorText]}>
+        {short ? (
+          notEnoughSpace(needed, free)
+        ) : (
+          <>
+            {chosen.length === 1 ? chosen[0].name : count(chosen.length, "folder", "folders")} ·{" "}
+            {bytes(needed)} to download ·{" "}
+            {Number.isFinite(free)
+              ? `${bytes(free)} free`
+              : "Checking available space"}
+          </>
+        )}
       </Text>
       <View style={s.flex} />
       <Button
         label={action.label}
         icon={action.icon}
         primary
-        disabled={!chosen.length}
+        disabled={!chosen.length || short}
+        reason={short ? notEnoughSpace(needed, free) : undefined}
         busy={busy}
         onPress={() => download(chosen.map((folder) => folder.id), modes)}
       />

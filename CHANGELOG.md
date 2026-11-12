@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.34 — 2026-11-11
+
+- Onboarding now warns before you start when the chosen folders do not fit on the phone, and keeps Start syncing off until you untick a folder or choose Stream.
+
+Needs: native build
+
 ## 0.9.33 — 2026-11-11
 
 - With limited photo access, Photo uploads now offers Open settings: on iPhone it opens the system's photo selection, on Android the app's settings, and the count refreshes when you come back without asking for access again.

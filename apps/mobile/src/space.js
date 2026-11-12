@@ -1,3 +1,4 @@
+import { bytes } from "./format.js";
 export const HEADROOM = 256 * 1024 ** 2;
 export function neededBytes(volume, folders, volumes) {
   const catalog = new Map(volumes.map((folder) => [folder.id, folder]));
@@ -12,3 +13,5 @@ export function neededBytes(volume, folders, volumes) {
 }
 export const spaceShort = (needed, free) =>
   Number.isFinite(needed) && Number.isFinite(free) && needed + HEADROOM > free;
+export const notEnoughSpace = (needed, free) =>
+  `Not enough space: ${bytes(needed)} to download · ${bytes(free)} free`;
