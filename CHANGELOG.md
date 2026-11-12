@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.27 — 2026-11-11
+
+- Reading the hub's archive no longer counts as a backup, so a device that is not a backup, a phone included, can no longer stop the hub from pruning old versions; phones are refused the archive and backup acknowledgements, and a real backup acknowledges itself before it reads anything.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.26 — 2026-11-11
 
 - A notice goes away when you click or tap it anywhere outside its buttons, on the desktop, the web and the phone, the same way as its ×; Undo and other actions, Details, Copy and selecting text inside it still keep it, and an error shown inside a form stays until you close it.

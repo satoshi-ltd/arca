@@ -39,7 +39,7 @@ import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
-import { acceptReport, assertReportedFolder, machines, playerRoute } from "./machines.js";
+import { acceptReport, assertReportedFolder, machines, playerRoute, refusePhoneBackup } from "./machines.js";
 import { clearPosition, listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { listFavorites, saveFavorites } from "./favorites.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
@@ -1449,12 +1449,7 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/archive") {
         requireHub();
-        if (!admin)
-          s.db
-            .prepare(
-              "INSERT INTO backup_ack(device,revision,enabled) VALUES(?,0,1) ON CONFLICT(device) DO UPDATE SET enabled=1",
-            )
-            .run(device.id);
+        if (!admin) refusePhoneBackup(s, device);
         if (url.searchParams.get("retained") === "1") {
           const after = Number(url.searchParams.get("after") || 0);
           if (!Number.isSafeInteger(after) || after < 0)
@@ -1854,6 +1849,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/backup-ack") {
           requireHub();
           if (admin) fail("Device credential required", 403);
+          refusePhoneBackup(s, device);
           const highest = s.db
             .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM revisions")
             .get().n;

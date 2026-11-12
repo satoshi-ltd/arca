@@ -1170,6 +1170,60 @@ test("damage the hourly check finds holds its revision on the hub until the back
   await assert.rejects(mac.engine.openBackup().json("/v1/backup-ack", { enabled: true, revision: 0, hold: 0 }), /Invalid backup acknowledgement/);
 });
 
+test("reading the archive never makes a replica a backup, so retention still prunes", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("archive-reader");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  const oldRev = hub.engine.store.current(volume.id, "note").rev;
+  write(hub, volume, "note", "second");
+  await hub.sync();
+  const archive = await hub.api("/v1/archive?limit=500&after=0", undefined, mac.invite.token);
+  assert.ok(archive.revisions.some((row) => row.rev === oldRev));
+  await hub.api("/v1/archive?retained=1&after=0", undefined, mac.invite.token);
+  assert.equal(hub.engine.store.db.prepare("SELECT COUNT(*) AS n FROM backup_ack").get().n, 0);
+  const preview = await hub.api("/v1/folder-retention", { id: volume.id, mode: "off" });
+  await hub.api("/v1/folder-retention", { id: volume.id, mode: "off", apply: true, confirmation: preview.confirmation });
+  assert.equal(hub.engine.store.history(volume.id, "note").some((row) => row.rev === oldRev), false);
+});
+
+test("a phone is refused the archive and backup acknowledgements", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const phone = await connect("archive-phone");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  for (const platform of ["android", "ios"]) {
+    await hub.api("/v1/machine-report", { ...machineReport(phone.engine), platform, lastSync: null }, phone.invite.token);
+    await assert.rejects(hub.api("/v1/archive?limit=500&after=0", undefined, phone.invite.token), { status: 403 });
+    await assert.rejects(hub.api("/v1/archive?retained=1&after=0", undefined, phone.invite.token), { status: 403 });
+    await assert.rejects(hub.api("/v1/backup-ack", { enabled: true, revision: 0 }, phone.invite.token), { status: 403 });
+  }
+  assert.equal(hub.engine.store.db.prepare("SELECT COUNT(*) AS n FROM backup_ack").get().n, 0);
+});
+
+test("a backup acknowledges itself before its first archive read and keeps backing up", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("ack-first");
+  write(hub, volume, "note", "first");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "ack-first-backup") });
+  hub.engine.store.db.prepare("DELETE FROM backup_ack").run();
+  const backup = mac.engine.openBackup();
+  const json = backup.json.bind(backup);
+  const seen = [];
+  backup.json = (route, ...rest) => {
+    if (route.startsWith("/v1/archive"))
+      seen.push(hub.engine.store.db.prepare("SELECT revision,enabled FROM backup_ack").get());
+    return json(route, ...rest);
+  };
+  await mac.sync();
+  assert.deepEqual({ ...seen[0] }, { revision: 0, enabled: 1 });
+  assert.equal(backedUp(mac, volume, "note"), "first");
+  const row = hub.engine.store.db.prepare("SELECT revision,enabled FROM backup_ack").get();
+  assert.deepEqual({ ...row }, { revision: hub.engine.store.current(volume.id, "note").rev, enabled: 1 });
+});
+
 test("a backup acknowledgement stores only an integer revision, whatever enabled is", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const mac = await connect("ack-revision");

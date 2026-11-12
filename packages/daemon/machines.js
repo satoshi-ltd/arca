@@ -173,6 +173,13 @@ export function machines(engine) {
     ],
   };
 }
+export function refusePhoneBackup(store, device) {
+  const row = store.db
+    .prepare("SELECT report FROM machine_reports WHERE device=?")
+    .get(device.id);
+  if (["ios", "android"].includes(row && JSON.parse(row.report).platform))
+    fail("A phone never keeps a backup of the hub", 403);
+}
 export const UNREPORTED_FOLDER = "Start syncing this folder on this device first.";
 export function assertReportedFolder(
   store,

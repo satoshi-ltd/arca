@@ -1691,6 +1691,10 @@ export class Engine {
         }
         if (this.config.role === "backup") {
           const failed = new Map();
+          if (!this.backupAcknowledged) {
+            await this.json("/v1/backup-ack", { enabled: true, revision: 0 });
+            this.backupAcknowledged = true;
+          }
           if (!this.scrubbedAt || Date.now() - this.scrubbedAt > 3600000) {
             this.scrubbedAt = Date.now();
             if ((await this.scrubBackup()).length)

@@ -30,9 +30,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
 
-- **SEC-ARCHIVE-FLOOR** — Only a device that backs up holds the hub's history
-  `bug · agent · high`
-  `GET /v1/archive` marks whichever replica credential calls it, a phone included, as an enabled backup at revision 0, which puts the retention floor at 0: one request from any linked device stops version pruning on the hub until that device is removed. It fails safe (nothing is lost) and was traced by the review of 0.9.12, not run. Accept: asking for the archive does not enable a backup acknowledgement by itself (only `/v1/backup-ack {enabled: true}` does), phones are refused as SPEC says they never back up, and a test shows retention still prunes after a replica that is not a backup read the archive.
 - **HUB-LOCATE-REQUEUE** — Locating a folder the hub had stopped syncing does not record deletions
   `bug · agent · high`
   `/v1/locate-folder` goes through `addVolume`, whose upsert sets `selected=1` without the `reselected` re-queue that Start syncing does, so files uploaded while the hub was stopped could be committed as deleted by the next scan. Suspected from reading, not run. Accept: a test stops the hub's copy, uploads a file from a replica, moves the retained directory, locates it and sees the file materialized and no deletion recorded.
