@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.45 — 2026-11-12
+
+- The History folder filter, Settings selects and the tray's ⋯ menu now open in the same frame as every ⋯ menu: rounder corners, roomier padding, no extra outline, and the standard green focus ring when moving with the keyboard. The selected option keeps its highlight under the pointer and the focus ring.
+
+Needs: desktop build · hub redeploy
+
 ## 0.9.44 — 2026-11-11
 
 - A web sign-in waiting for this desktop's approval now shows in the tray even while the window is closed: the heading reads Needs your approval, a Review row opens Arca on the prompt, and the menu-bar icon takes its alert badge until the request is decided or expires.

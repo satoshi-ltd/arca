@@ -2239,7 +2239,7 @@ html:has(.tray-body) {
   border: 0;
   text-align: left;
   font-size: var(--text-control);
-  line-height: 18px;
+  line-height: var(--text-control-line);
 }
 .tray-folders button {
   padding: var(--space-2) var(--space-3);
@@ -2279,7 +2279,7 @@ html:has(.tray-body) {
 }
 .tray-menu button {
   padding: var(--space-2) var(--space-2);
-  border-radius: var(--r-small);
+  border-radius: var(--r-control);
 }
 .tray-menu svg {
   width: 14px;
@@ -2431,7 +2431,10 @@ html:has(.tray-body) {
   background: var(--hover);
 }
 .tray-menu.tray-more-menu {
-  padding-top: 0;
+  padding: var(--space-2);
+  border-radius: var(--r-surface);
+  background: var(--notice-surface);
+  box-shadow: 0 0 0 1px var(--line);
 }
 #connection {
   background: transparent;
@@ -3228,10 +3231,9 @@ summary {
   max-width: min(320px, calc(100vw - 48px));
   max-height: min(280px, 50vh);
   overflow-y: auto;
-  padding: var(--space-1);
+  padding: var(--space-2);
   background: var(--notice-surface);
-  border: 1px solid var(--div);
-  border-radius: var(--r-control);
+  border-radius: var(--r-surface);
   box-shadow: var(--shadow-menu);
   animation: menu-enter var(--motion-fast) var(--motion-ease);
 }
@@ -3248,7 +3250,7 @@ summary {
   min-height: var(--control-height);
   padding: var(--space-2) var(--space-3);
   border: 0;
-  border-radius: var(--r-small);
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--ink);
   text-align: left;
@@ -3265,12 +3267,12 @@ summary {
 .dropdown-menu [aria-selected="true"] .icon {
   visibility: visible;
 }
-.dropdown-menu [role="option"]:hover,
-.dropdown-menu [role="option"]:focus-visible {
+.dropdown-menu [role="option"]:not([aria-selected="true"]):is(:hover, :focus-visible) {
   background: var(--track);
-  outline: 1px solid var(--green);
-  outline-offset: -1px;
-  box-shadow: none;
+}
+.dropdown-menu [role="option"]:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
 }
 
 @media (max-width: 760px) {

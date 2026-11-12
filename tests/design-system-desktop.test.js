@@ -70,6 +70,25 @@ test("menus round like every other surface and keep control-radius items inside 
   assert.match(rule(".empty"), /border: 1px dashed var\(--line\);\s+border-radius: var\(--r-surface\);/);
 });
 
+test("dropdowns and the tray's ⋯ menu share the ⋯ menu's frame and its control-radius rows", () => {
+  const frame = /padding: var\(--space-2\);[^}]*border-radius: var\(--r-surface\);[^}]*box-shadow: var\(--shadow-menu\);/;
+  const dropdown = rule(".dropdown-menu");
+  assert.match(dropdown, frame);
+  assert.doesNotMatch(dropdown, /border:/, "the shadow ring is the only edge");
+  assert.match(dropdown, /min-width: 100%;/, "a dropdown keeps its trigger's width");
+  assert.match(rule('.dropdown-menu [role="option"]'), /border-radius: var\(--r-control\);/);
+  assert.match(rule('.dropdown-menu [aria-selected="true"]'), /background: var\(--tint\);/);
+  assert.match(rule('.dropdown-menu [aria-selected="true"] .icon'), /visibility: visible;/);
+  assert.match(css, /\}\n\.dropdown-menu \[role="option"\]:focus-visible \{\s+outline: 2px solid var\(--green\);\s+outline-offset: -2px;\s+\}/);
+  assert.doesNotMatch(css.slice(css.indexOf("\n.dropdown-menu {"), css.indexOf("\n.machine-role {")), /outline: 1px|border: 1px/);
+  assert.match(rule('.dropdown-menu [role="option"]:not([aria-selected="true"]):is(:hover, :focus-visible)'), /background: var\(--track\);/, "the selected row keeps its tint under the pointer and the focus ring");
+  assert.doesNotMatch(css, /\.dropdown-menu \[role="option"\]:(hover|focus-visible)[,\s][^}]*background:/);
+  assert.match(rule(".tray-menu.tray-more-menu"), /padding: var\(--space-2\);\s+border-radius: var\(--r-surface\);\s+background: var\(--notice-surface\);\s+box-shadow: 0 0 0 1px var\(--line\);/, "the tray ⋯ sits in the clipped popover, so it keeps only the ring");
+  assert.match(css, /\}\n\.tray-menu button \{\s+padding: var\(--space-2\) var\(--space-2\);\s+border-radius: var\(--r-control\);/);
+  assert.match(rule(".tray-folders button,\n.tray-menu button"), /line-height: var\(--text-control-line\);/);
+  assert.doesNotMatch(css.slice(css.indexOf("\n.tray-body {"), css.indexOf("\n#connection {")), /line-height: \d+px/);
+});
+
 test("the desktop sidebar fits the status line and both sync controls on one row", () => {
   const tokens = read("apps/desktop/src/tokens.css");
   const css = read("apps/desktop/src/style.css");
@@ -98,6 +117,5 @@ test("every row on a card hovers with the hover tone, menu rows with the track t
   for (const row of ['.history-row[role="button"]:hover', ".browser-file-row:hover", ".music-row:hover", ".music-track:not(.music-track-head, .music-track-missing):hover", ".video-episode:hover", ".palette-open:hover", ".tray-folders button:hover", ".folder-card:hover", ".photo-viewer .photo-info button:hover", ".photo-viewer .photo-info button:hover:not(:disabled)"])
     assert.equal(hover(row), "hover", row);
   assert.equal(hover(".tray-menu button:hover"), "track");
-  assert.equal(hover('.dropdown-menu [role="option"]:focus-visible'), "track");
   assert.equal(hover(".nav-item:hover"), "surface");
 });

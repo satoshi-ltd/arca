@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-11-11 · Phase 1 release.
+Updated 2026-11-12 · Phase 1 release.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -29,7 +29,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
 
-
+- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
+  `feature · agent · normal`
+  The video scrubber is 32 dp and seeks only on release with no thumb; the Now Playing track has no thumb or drag; the sleep chip is 32 dp; segments, switches and breadcrumbs are 44 dp with no slop; the Now Playing artist and album links, the "Using local Wi-Fi?" link and the viewer bar buttons are under the touch height. Accept: both scrubbers get a visible thumb, drag seeking and a hit area of at least the touch height, and the listed targets reach 48 dp on Android; component tests check the hit areas; the interface follows board UI-MOB-MEDIA-TARGETS.
+- **UI-MOB-MEDIA-TARGETS** — Both players show where you are and let you drag there
+  `ui · agent · normal`
+  accept: the board (phone and Fold).
 
 ## In progress
 
@@ -52,7 +57,7 @@ Each carries a recommendation; a yes or no is enough.
   `addVolume` accepts any existing directory (a mount point such as `/Volumes/Disk`, or `~/Documents`) and writes the marker; Erase later removes it wholesale, including files Arca never synced; a server web session can also place a share, a moved folder or a backup at any absolute server path. Choose between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's). Erase already names the folders the OS refused to delete; folders skipped because they lost their marker are still unreported and should be named in the same result.
 - **DEC-HISTORY-DEFAULT** — Should new folders default to Off for all folders or only galleries?
   `decision · maintainer · normal`
-  Today folders without a stored choice default to 30 days, galleries included; Movies & TV has no history. Off removes the only backstop for a false deletion or overwrite, so decide it after the Data safety tasks below, or prefer a short non-zero default. If changed: every existing folder first gets its effective retention written explicitly, new folders, the catalog and settings apply the new default, tests cover implicit and explicit policies, and SPEC is updated.
+  Today folders without a stored choice default to 30 days, galleries included; Movies & TV has no history. Off removes the only backstop for a false deletion or overwrite, so decide it after the high-priority deletion proposals (MOB-MASS-DELETE, HUB-HOLD-PROPOSED-DELETES), or prefer a short non-zero default. If changed: every existing folder first gets its effective retention written explicitly, new folders, the catalog and settings apply the new default, tests cover implicit and explicit policies, and SPEC is updated.
 - **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
   `decision · maintainer · normal`
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit, show app-owned state JSON, and let a person delete a synced folder's directory, which stops that folder with “Local folder is unavailable” until it is started again. Keep and document, or disable.
@@ -67,7 +72,7 @@ Each carries a recommendation; a yes or no is enough.
   The kit draws the Fold with the centred search dialog, preview panes and a Files Preview column, but the app shows them only from 1100 dp, so the Fold gets the phone search and no preview. Either let the Fold use them or redraw the kit to show what ships.
 - **DEC-CONVERTING-LEGACY** — Keep the `converting` gallery mode?
   `decision · maintainer · low`
-  It is no longer only a legacy transition: `gallery.js` writes `converting` on purpose when Change album… repairs a damaged record, so missing indexed files are restored before any scan. Recommendation: keep it, close this decision, and fold SPEC's "Interrupted conversions" bullet into "Damaged records".
+  It is no longer only a legacy transition: `gallery.js` writes `converting` on purpose when Change album… repairs a damaged record, so missing indexed files are restored before any scan. Recommendation: keep it, close this decision, and fold SPEC's "Interrupted conversions" bullet into "Damaged records"; MOB-CONVERTING-STUCK makes the mode always finish.
 - **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
   `decision · maintainer · low`
   Gallery mode `local` is accepted by `parseGallery` and nulled by `galleryConfig`, and nothing writes it; Add photos in an ordinary folder goes through `importFile`. Recommendation: remove both tokens and SPEC's "same receipt pipeline" sentence; a phone still holding a `local` record reads as damaged and stops that folder until Change album…, with no deletion.
@@ -101,9 +106,6 @@ Agent tasks that end with JavaScript and contract tests and run only after a mai
 ## Proposed
 
 Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. They are ordered by priority (data safety and stalls first) and, within a priority, by effort: small is one function and its tests, medium a few files or one subsystem, large a design change or native work. Unless an entry says reproduced, its cause was traced in the code and not run, so its first step is the failing test its accept describes. No task in this lane is approved for implementation.
-
-### High priority — small effort
-
 
 ### High priority — medium effort
 
@@ -172,7 +174,7 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
   Synced files carry no quarantine or Mark-of-the-Web, so the OS never warns. Not yet in the list: `com pif cpl msc vbe jse wsf wsh url chm reg msp application appref-ms fileloc inetloc webloc mpkg jar py pyw settingcontent-ms appx msix appinstaller diagcab xll iso img vhd vhdx scf library-ms psm1 psd1 ps1xml jnlp mobileconfig`; an extensionless Unix file with an executable bit opens in Terminal on macOS. Accept: the desktop and Rust lists gain these kinds, a Unix file with `mode & 0o111` and no extension is revealed, with tests; SPEC lists them and says the phone opens a synced `.apk` in the installer on purpose.
 - **PERF-APPROVAL-POLL** — A device that cannot approve web sign-ins does not ask for them every three seconds
   `feature · agent · normal`
-  Desktop and phone poll `/v1/web-approvals` every 3 s while visible, authorised or not, although SPEC limits the poll to clients with that authority. Accept: after one unauthorised answer no further request is sent, and an authorised client polls only after an events signal or at a slower bounded cadence; tests count requests on desktop and phone.
+  Desktop and phone poll `/v1/web-approvals` every 3 s while visible, authorised or not, although SPEC limits the poll to clients with that authority. Since 0.9.44 `/v1/events` returns an `approvals` generation only to a device that may approve, which is the signal to drive the request. Accept: after one unauthorised answer no further request is sent, and an authorised client polls only after an events signal or at a slower bounded cadence; tests count requests on desktop and phone.
 - **UX-FIELD-ERRORS** — A wrong code or address is flagged at its field
   `bug · agent · normal`
   "Enter all six digits." and "Enter the full hub address…" are shown as the operation error card "Could not complete action" instead of inline, and the code cells stay filled after a rejected code. Accept: submitting Connect, Change address or the wizard with an invalid field sets `aria-invalid`, shows the error-tone message tied by `aria-describedby` and no notice card; a rejected code clears its cells.
@@ -278,9 +280,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 - **HUB-DEVICE-ID** — Pairing the same device again keeps one hub registration
   `feature · agent · normal`
   Each device keeps a persistent device ID and a client-held secret and sends both with `/pair`; the hub rotates that registration's token instead of adding a device, and a missing ID keeps today's behaviour. Device IDs are visible to every linked device and web-approval authority is keyed by them, so the ID alone must never rotate a registration. Accept: re-pairing with the same ID and secret leaves one roster entry, the same ID with a wrong secret adds a device and grants nothing, and an older client still pairs.
-- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
-  `feature · agent · normal`
-  The video scrubber is 32 dp and seeks only on release with no thumb; the Now Playing track has no thumb or drag; the sleep chip is 32 dp; segments, switches and breadcrumbs are 44 dp with no slop; the Now Playing artist and album links, the "Using local Wi-Fi?" link and the viewer bar buttons are under the touch height. Accept: both scrubbers get a visible thumb, drag seeking and a hit area of at least the touch height, and the listed targets reach 48 dp on Android; component tests check the hit areas; the interface follows board UI-MOB-MEDIA-TARGETS.
 - **MOB-MEDIA-INSETS** — Player and viewer controls clear the cutout and the gesture bar
   `bug · agent · normal`
   `VideoPlayer.jsx` places its top and bottom bars and the Audio and Subtitles panel at 0 with no safe-area insets (and the picture is rotated on a portrait phone, so the insets must be mapped); the photo viewer applies only top and bottom insets, so its bar sits under a notch in landscape. Accept: a `layout.js` helper gives both their four margins, tested for portrait, landscape and the rotated player.
