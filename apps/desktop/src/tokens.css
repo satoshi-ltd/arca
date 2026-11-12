@@ -132,6 +132,7 @@
   --backdrop: rgba(18, 26, 22, 0.32);
   --media: #000000;
   --onMedia: #ffffff;
+  --mediaGlyph: rgba(255, 255, 255, 0.6);
   --switchThumb: #ffffff;
   --paper: #f4f6f1;
   --surface: #ffffff;

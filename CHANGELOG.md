@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.38 — 2026-11-11
+
+- The film player's progress line and times stay readable over a bright picture, on the phone, the desktop and the web.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.9.37 — 2026-11-11
 
 - Erase this hub and Erase this device now ask you to type the device name before the red button works, as Delete shared folder already did; the phone asks the same way.

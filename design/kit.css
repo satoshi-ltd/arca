@@ -1082,6 +1082,9 @@ body.kit {
 .kit-vlib-player > .video-player {
   position: absolute;
 }
+.kit-vlib-player .video-element.kit-video-bright {
+  background: var(--onMedia);
+}
 .kit-window .video-card.kit-hover .video-quick-watched {
   opacity: 1;
 }

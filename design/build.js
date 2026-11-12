@@ -66,6 +66,7 @@ const colorNames = [
   ["backdrop", "backdrop"],
   ["media", "media"],
   ["onMedia", "onMedia"],
+  ["mediaGlyph", "mediaGlyph"],
   ["switchThumb", "switchThumb"],
   ["paper", "paper"],
   ["surface", "surface"],

@@ -2665,7 +2665,7 @@
   height: 4px;
   overflow: hidden;
   border-radius: 2px;
-  background: var(--m-media-control);
+  background: var(--m-media-glyph);
 }
 .m-video-track i {
   display: block;
@@ -2679,7 +2679,7 @@
   display: flex;
   justify-content: space-between;
   font: var(--m-touch-caption-font)/var(--m-touch-caption-line) var(--font-mono);
-  color: var(--m-media-caption);
+  color: var(--m-on-media);
 }
 .m-video-cue-box {
   position: absolute;
@@ -2997,10 +2997,4 @@
 }
 .m-video-picture.m-video-bright {
   background: var(--m-on-media);
-}
-.m-video-track.m-video-track-strong {
-  background: var(--m-media-glyph);
-}
-.m-video-times.m-video-times-strong {
-  color: var(--m-on-media);
 }

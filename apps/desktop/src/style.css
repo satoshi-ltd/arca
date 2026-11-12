@@ -6647,11 +6647,17 @@ label.toggle {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-6) var(--space-4) var(--space-3);
-  background: linear-gradient(transparent, var(--mediaFade));
+  background: linear-gradient(transparent, var(--mediaFade) var(--space-6));
   transition: opacity var(--motion-fast) var(--motion-ease);
 }
 .video-controls .music-seek {
   color: var(--onMedia);
+}
+.video-controls .music-seek .music-range::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--green) var(--music-fill), var(--mediaGlyph) var(--music-fill));
+}
+.video-controls .music-seek .music-range::-moz-range-track {
+  background: linear-gradient(to right, var(--green) var(--music-fill), var(--mediaGlyph) var(--music-fill));
 }
 .video-buttons {
   display: flex;

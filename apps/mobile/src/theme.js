@@ -533,10 +533,10 @@ export function styles(
     videoRoundBig: { width: 72, height: 72, borderRadius: r.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.mediaControl },
     videoBottom: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: sp[6], paddingBottom: sp[4], paddingTop: sp[2], backgroundColor: c.mediaBar },
     videoScrub: { height: 32, justifyContent: "center" },
-    videoScrubTrack: { height: 4, borderRadius: r.pill, backgroundColor: c.mediaControl, overflow: "hidden" },
+    videoScrubTrack: { height: 4, borderRadius: r.pill, backgroundColor: c.mediaGlyph, overflow: "hidden" },
     videoScrubFill: { height: "100%", backgroundColor: c.onMedia },
     videoTimes: { flexDirection: "row", justifyContent: "space-between" },
-    videoTime: { color: c.mediaCaption, fontFamily: "FragmentMono_400Regular", fontSize: g.touchCaptionFont },
+    videoTime: { color: c.onMedia, fontFamily: "FragmentMono_400Regular", fontSize: g.touchCaptionFont },
     videoPanel: {
       position: "absolute",
       top: 0,

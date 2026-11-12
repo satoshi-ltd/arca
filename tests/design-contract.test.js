@@ -644,3 +644,62 @@ test("the onboarding rail drops its brand below the macOS window controls only i
   assert.match(css, /\n\.mac-native \.onboarding-rail \{\s+padding-top: var\(--window-controls-drop\);\s+\}/);
   assert.ok(css.indexOf("\n.mac-native .onboarding-rail {") > css.indexOf("\n.onboarding-rail {"), "the native rule comes after the base rule");
 });
+
+test("the film player's unplayed track and times stay legible over a white frame on the phone, desktop and web", async () => {
+  const { palettes, desktopColors } = await import("../packages/core/design-tokens.js");
+  const parse = (value) => {
+    const rgba = value.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/);
+    if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])];
+    const hex = value.slice(1);
+    return [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16)).concat(hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1);
+  };
+  const over = (top, [r, g, b], strength = 1) => {
+    const [tr, tg, tb, alpha] = parse(top);
+    const a = alpha * strength;
+    return [tr * a + r * (1 - a), tg * a + g * (1 - a), tb * a + b * (1 - a)];
+  };
+  const read = (file) => fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const tokens = read("tokens.css");
+  const css = read("style.css").replace(/\r\n/g, "\n");
+  const px = (value) => {
+    const token = value.match(/^var\(--([\w-]+)\)$/);
+    return token ? Number(tokens.match(new RegExp(`--${token[1]}:\\s*([\\d.]+)px;`))[1]) : Number.parseFloat(value);
+  };
+  assert.match(read("app.js"), /<div class="video-controls"><div class="music-seek">/, "the seek row is the first row, so it starts at the top padding");
+  const controls = css.match(/\n\.video-controls \{([^}]*)\}/)[1];
+  const [padTop, , padBottom] = controls.match(/padding: ([^;]+);/)[1].split(" ").map(px);
+  const stops = controls.match(/background: linear-gradient\((.+)\);/)[1].split(/,\s*(?![^(]*\))/);
+  assert.equal(stops.length, 2);
+  assert.equal(stops[0], "transparent");
+  const fade = stops[1].match(/^var\(--mediaFade\)(?: (.+))?$/);
+  assert.ok(fade, "the gradient ends on the media fade");
+  const fullAt = fade[1] ? px(fade[1]) : padTop + px("var(--control-height)") + padBottom;
+  const seekTint = Math.min(1, padTop / fullAt);
+  const luminance = (rgb) => {
+    const [r, g, b] = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (high + 0.05) / (low + 0.05);
+  };
+  const white = [255, 255, 255];
+  for (const scheme of ["light", "dark"]) {
+    const c = palettes[scheme];
+    for (const [where, tint, strength] of [["phone", c.mediaBar, 1], ["desktop at the top of the seek row", desktopColors.light.mediaFade, seekTint]]) {
+      const bar = over(tint, white, strength);
+      assert.ok(ratio(over(c.mediaGlyph, bar), bar) >= 3, `${scheme} ${where}: the unplayed track reaches 3:1 against the bar`);
+      assert.ok(ratio(parse(c.onMedia), bar) >= 4.5, `${scheme} ${where}: the times reach 4.5:1 against the bar`);
+    }
+  }
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  assert.match(theme, /videoScrubTrack: \{[^}]*backgroundColor: c\.mediaGlyph,/);
+  assert.match(theme, /videoTime: \{ color: c\.onMedia,/);
+  assert.equal(tokens.match(/--mediaGlyph:\s*([^;]+);/)?.[1], palettes.light.mediaGlyph);
+  for (const track of ["::-webkit-slider-runnable-track", "::-moz-range-track"])
+    assert.match(css, new RegExp(`\\n\\.video-controls \\.music-seek \\.music-range${track} \\{\\s*background: linear-gradient\\(to right, var\\(--green\\) var\\(--music-fill\\), var\\(--mediaGlyph\\) var\\(--music-fill\\)\\);`));
+  assert.match(css, /\n\.video-controls \.music-seek \{\s*color: var\(--onMedia\);/);
+});
