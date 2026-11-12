@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.36";
+const APP_VERSION = "0.9.37";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -11180,6 +11180,7 @@ async function handle(name, id, control) {
     (name === "destroy-hub" && status.role === "hub")
   ) {
     const destroyingHub = status.role === "hub";
+    const erasedName = status.name;
     const paths = [
       ...new Set(
         [
@@ -11196,7 +11197,7 @@ async function handle(name, id, control) {
           : "Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.",
         "trash-2",
       ) +
-        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place."} An interrupted cleanup can be retried.</p>`,
+        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place."} An interrupted cleanup can be retried.</p><label for="confirm-device-name">Type the ${destroyingHub ? "hub" : "device"} name to confirm</label><input id="confirm-device-name" name="confirmedName" autocomplete="off" required>`,
       async () => {
         try {
           localStorage.setItem("arca-erase-pending", "true");
@@ -11227,7 +11228,13 @@ async function handle(name, id, control) {
       destroyingHub ? "Erase this hub" : "Erase this device",
       true,
     );
-    $("#submit-dialog").classList.add("danger");
+    const submit = $("#submit-dialog");
+    submit.classList.add("danger");
+    submit.disabled = true;
+    $('#dialog [name="confirmedName"]').addEventListener("input", (e) => {
+      submit.disabled = e.target.value !== erasedName;
+    });
+    $("#cancel-dialog").focus();
     return;
   }
   if (name === "change-hub-address" && status.role === "replica" && status.hub) {

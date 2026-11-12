@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.9.36 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.9.37 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -1280,15 +1280,15 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
             </dialog>
           </div>
         <div class="kit-dialog-stage">
-            <dialog open class="wide-dialog confirmation-dialog" aria-labelledby="erase-device-title">
-              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-device-title">Erase this device?</h2><p>Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.</p></div></div><ul><li class="path">/Users/javi/arca/documents</li><li class="path">/Users/javi/arca/photos-yuri</li><li class="path">/Users/javi/arca/music</li></ul><p class="hint">This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place. An interrupted cleanup can be retried.</p></div>
-              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Erase this device</button></div>
+            <dialog open class="wide-dialog" aria-labelledby="erase-device-title">
+              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-device-title">Erase this device?</h2><p>Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.</p></div></div><ul><li class="path">/Users/javi/arca/documents</li><li class="path">/Users/javi/arca/photos-yuri</li><li class="path">/Users/javi/arca/music</li></ul><p class="hint">This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place. An interrupted cleanup can be retried.</p><label for="confirm-device-name">Type the device name to confirm</label><input id="confirm-device-name" name="confirmedName" autocomplete="off" required></div>
+              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger" disabled>Erase this device</button></div>
             </dialog>
           </div>
         <div class="kit-dialog-stage">
-            <dialog open class="wide-dialog confirmation-dialog" aria-labelledby="erase-hub-title">
-              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-hub-title">Erase this hub and all its folders?</h2><p>Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. The hub returns to setup, where you can set up a hub or connect to one.</p></div></div><ul><li class="path">/srv/arca/documents</li><li class="path">/srv/arca/photos-yuri</li><li class="path">/srv/arca/music</li></ul><p class="hint">This cannot be undone. No deletions are sent to other devices. An interrupted cleanup can be retried.</p></div>
-              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Erase this hub</button></div>
+            <dialog open class="wide-dialog" aria-labelledby="erase-hub-title">
+              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-hub-title">Erase this hub and all its folders?</h2><p>Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. The hub returns to setup, where you can set up a hub or connect to one.</p></div></div><ul><li class="path">/srv/arca/documents</li><li class="path">/srv/arca/photos-yuri</li><li class="path">/srv/arca/music</li></ul><p class="hint">This cannot be undone. No deletions are sent to other devices. An interrupted cleanup can be retried.</p><label for="confirm-hub-name">Type the hub name to confirm</label><input id="confirm-hub-name" name="confirmedName" autocomplete="off" required></div>
+              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger" disabled>Erase this hub</button></div>
             </dialog>
           </div>
       

@@ -1076,12 +1076,18 @@ export function ConfirmDialog({
   label,
   icon = "alert",
   destructive = false,
+  confirmName,
+  confirmLabel,
   closing = false,
   onExited,
   onConfirm,
   onCancel,
 }) {
   const { s } = useDesign();
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    if (!closing) setTyped("");
+  }, [closing, confirmName]);
   return (
     <Sheet centered onClose={onCancel} closing={closing} onExited={onExited}>
       <View style={s.confirmHeader}>
@@ -1095,11 +1101,15 @@ export function ConfirmDialog({
           <Text style={s.text}>{message}</Text>
         </View>
       </View>
+      {confirmName != null && (
+        <Field label={confirmLabel} value={typed} onChangeText={setTyped} autoComplete="off" />
+      )}
       <View style={s.confirmActions}>
         <Button
           label={label}
           primary
           danger={destructive}
+          disabled={confirmName != null && typed !== confirmName}
           onPress={onConfirm}
         />
         <Button label="Cancel" onPress={onCancel} />

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.37 — 2026-11-11
+
+- Erase this hub and Erase this device now ask you to type the device name before the red button works, as Delete shared folder already did; the phone asks the same way.
+
+Needs: desktop build · native build · hub redeploy
+
 ## 0.9.36 — 2026-11-11
 
 - The main window says when a timed pause ends: the status card reads "Until 15:30 · last sync …" under Paused, adding the day when it ends tomorrow.

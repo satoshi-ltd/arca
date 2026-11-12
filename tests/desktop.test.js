@@ -4325,6 +4325,22 @@ test("a version preview that waits on the hub shows a clock whose tooltip and la
   }
 });
 
+function typeEraseName(w, label, name) {
+  const dialog = w.document.querySelector("#dialog");
+  const field = dialog.querySelector('input[name="confirmedName"]');
+  const submit = dialog.querySelector("#submit-dialog");
+  assert.equal(dialog.querySelector(`label[for="${field.id}"]`).textContent, label);
+  assert.equal(field.previousElementSibling.tagName, "LABEL");
+  assert.ok(dialog.querySelector("ul").compareDocumentPosition(field) & w.Node.DOCUMENT_POSITION_FOLLOWING, "the field sits under the path list");
+  assert.equal(w.document.activeElement, dialog.querySelector("#cancel-dialog"), "Cancel has focus on open");
+  assert.equal(submit.disabled, true);
+  for (const [value, off] of [[name.toUpperCase(), true], [` ${name}`, true], [name.slice(0, -1), true], [name, false]]) {
+    field.value = value;
+    field.dispatchEvent(new w.Event("input", { bubbles: true }));
+    assert.equal(submit.disabled, off, `typed ${JSON.stringify(value)}`);
+  }
+}
+
 for (const [storageDenied, protectedFolder] of [[false, false], [true, false], [false, true]])
 test(`desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion${storageDenied ? " with storage denied" : ""}${protectedFolder ? " with a folder the system protects" : ""}`, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
@@ -4434,12 +4450,14 @@ test(`desktop destroy confirmation cancels safely and returns to first-run onboa
   assert.ok(
     w.document.querySelector("#submit-dialog").classList.contains("danger"),
   );
+  typeEraseName(w, "Type the device name to confirm", "replica");
   w.document.querySelector("#cancel-dialog").click();
   assert.ok(fs.existsSync(destination));
   assert.ok(replica.engine.config.hub);
   await until(() => w.document.body.getAttribute("aria-busy") === "false");
   w.document.querySelector('[data-action="destroy-replica"]').click();
   await until(() => w.document.querySelector("#dialog").open);
+  typeEraseName(w, "Type the device name to confirm", "replica");
   const storageMethods = new Map();
   if (storageDenied)
     for (const method of ["getItem", "setItem", "removeItem"]) {
@@ -5736,12 +5754,14 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
   assert.ok(
     w.document.querySelector("#submit-dialog").classList.contains("danger"),
   );
+  typeEraseName(w, "Type the hub name to confirm", "hub");
   w.document.querySelector("#cancel-dialog").click();
   assert.ok(fs.existsSync(destination));
   assert.equal(hub.engine.config.role, "hub");
   await until(() => w.document.body.getAttribute("aria-busy") === "false");
   w.document.querySelector('[data-action="destroy-hub"]').click();
   await until(() => w.document.querySelector("#dialog").open);
+  typeEraseName(w, "Type the hub name to confirm", "hub");
   w.document.querySelector("#submit-dialog").click();
   await until(
     () =>

@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.9.36 · Phase 1 release.**
+**v0.9.37 · Phase 1 release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -931,7 +931,7 @@ Conflict review, reachable from conflict rows and file details, shows Original f
 - **Settings → Network** groups Tailscale (mode and labelled addresses), Local network (the Allow HTTP toggle with concise encryption text, coexisting with Tailscale) and Machine discovery (refresh, and a statement that detection does not pair). Save failures restore the previous value. The three sections come right after Access to this hub on a hub and after Local synchronization on a device, ahead of Browser session, Desktop preferences, backup, History, Photos and Movies & TV; the web page and the desktop app share the order.
 - **Backup** shows Completed with date and content size on one line (size only after a completed backup), Copying history · n versions with a Running pill while copying, Full backup waiting for hub with an Offline pill when unreachable and Needs attention only for real failures. Hub summaries distinguish Reported (date and version) from Pending. Devices shows full backup as the Full backup segment of the device's role chip and refreshes when backup state or acknowledgements change; Settings patches backup status without replacing editable fields.
 - **Recovery** calls it Full hub backup, shows a neutral Available pill (a local copy is recoverable, not verified, so it never takes the green fill) with the last local sync date, uses "Replace hub [name]", "Make this device the hub" and "Replace hub and reconnect", and explains an empty recovery catalog.
-- **Danger zone** ends Settings with the role's Erase this device or Erase this hub card: "Deletes all local folders and resets this device. Hub files and other devices are kept." for replicas. Confirmation lists the saved folder paths and backup path, states irreversible deletion including unsynced changes, and mentions a possibly remaining hub entry.
+- **Danger zone** ends Settings with the role's Erase this device or Erase this hub card: "Deletes all local folders and resets this device. Hub files and other devices are kept." for replicas. Confirmation lists the saved folder paths and backup path, states irreversible deletion including unsynced changes, and mentions a possibly remaining hub entry. Under the path list sits Delete shared folder's typed-name field, labelled "Type the hub name to confirm" or "Type the device name to confirm"; the red Erase button stays disabled until the field holds exactly the device's name as the dialog opened, and Cancel has focus on open. The phone's Erase this device confirmation asks the same way: its sheet adds the "Type the device name to confirm" field under the text and keeps Erase this device disabled until the name matches. The routes still take only `confirmed: true`; the name is checked in the interface.
 
 ### Onboarding and access
 

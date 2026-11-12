@@ -32,6 +32,23 @@ test("erase and stop syncing start with the real numbers and keep the safety sen
   assert.match(copy.stopSyncing({ name: "p", files: 1, size: 1, pending: 0, sourceOnly: true }).message, /album link/);
 });
 
+test("Erase this device asks for the device name in its sheet and keeps the action off until it matches", () => {
+  const erase = copy.eraseDevice({ folders: 1, size: 10, pending: 0, name: "Pixel 9" });
+  assert.equal(erase.confirmName, "Pixel 9");
+  assert.equal(erase.confirmLabel, "Type the device name to confirm");
+  assert.equal(copy.stopSyncing({ name: "docs", files: 1, size: 1, pending: 0, sourceOnly: false }).confirmName, undefined, "only Erase asks for a name");
+  const components = read("components.jsx");
+  const dialog = components.slice(components.indexOf("export function ConfirmDialog("), components.indexOf("export function SelectionBar("));
+  assert.match(dialog, /\{confirmName != null && \(\s*<Field label=\{confirmLabel\} value=\{typed\} onChangeText=\{setTyped\}/);
+  assert.match(dialog, /disabled=\{confirmName != null && typed !== confirmName\}\s*onPress=\{onConfirm\}/);
+  assert.match(dialog, /useEffect\(\(\) => \{\s*if \(!closing\) setTyped\(""\);\s*\}, \[closing, confirmName\]\);/, "a confirmation reopened during the exit animation starts with an empty name");
+  assert.match(read("motion.js"), /return \[value \|\| kept, release\];/, "the retained dialog instance is reused while it leaves, so its typed name must reset");
+  assert.ok(dialog.indexOf("{message}") < dialog.indexOf("<Field") && dialog.indexOf("<Field") < dialog.indexOf("s.confirmActions"), "the field sits under the copy, above the actions");
+  const app = read("App.jsx");
+  assert.match(app, /confirmCopy\.eraseDevice\(\{[\s\S]*?pending: await pendingFiles\(held\.map\(\(f\) => f\.id\)\),\s*name,\s*\}\)/);
+  assert.match(app, /confirmName=\{shownConfirmation\.confirmName\}\s*confirmLabel=\{shownConfirmation\.confirmLabel\}/);
+});
+
 test("the confirmation dialog stacks the action over Cancel and never infers danger from the label", () => {
   const components = read("components.jsx");
   const dialog = components.slice(components.indexOf("export function ConfirmDialog("), components.indexOf("export function ActionRow("));

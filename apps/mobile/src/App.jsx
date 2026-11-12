@@ -2326,6 +2326,7 @@ export default function App() {
         folders: held.length,
         size: held.reduce((total, f) => total + (f.bytes || 0), 0),
         pending: await pendingFiles(held.map((f) => f.id)),
+        name,
       }),
       () =>
         run(
@@ -4420,6 +4421,8 @@ export default function App() {
               label={shownConfirmation.label}
               icon={shownConfirmation.icon}
               destructive={shownConfirmation.destructive}
+              confirmName={shownConfirmation.confirmName}
+              confirmLabel={shownConfirmation.confirmLabel}
               closing={!confirmation}
               onExited={releaseConfirmation}
               onConfirm={() => settle(true)}

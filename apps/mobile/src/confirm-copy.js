@@ -100,12 +100,14 @@ export const stopVideo = ({ name, files, size, kept }) => ({
   destructive: true,
 });
 
-export const eraseDevice = ({ folders, size, pending }) => ({
+export const eraseDevice = ({ folders, size, pending, name }) => ({
   title: "Erase this device?",
   message:
     `${count(folders, "folder", "folders")} · ${bytes(size)} on this phone will be deleted; ${hubLine(pending)} ` +
     "Permanently deletes every downloaded folder, any unsynced changes and this phone’s pairing and saved settings. The app returns to first-run setup. Hub files and history and other devices are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately.",
   label: "Erase this device",
+  confirmName: name,
+  confirmLabel: "Type the device name to confirm",
   icon: "trash",
   destructive: true,
 });
