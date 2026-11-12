@@ -1,4 +1,5 @@
 import * as MediaLibrary from "expo-media-library/legacy";
+import { Linking, Platform } from "react-native";
 import { native } from "./private-network";
 
 export const mediaLibrary = {
@@ -8,6 +9,11 @@ export const mediaLibrary = {
     ](false, videos ? ["photo", "video"] : ["photo"]);
   },
   albums: () => MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true }),
+  allowMore: () =>
+    Platform.OS === "ios"
+      ? MediaLibrary.presentPermissionsPickerAsync()
+      : Linking.openSettings(),
+  changes: (listener) => MediaLibrary.addListener(listener),
   page(source) {
     return MediaLibrary.getAssetsAsync({
       first: 100,

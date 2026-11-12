@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.33 — 2026-11-11
+
+- With limited photo access, Photo uploads now offers Open settings: on iPhone it opens the system's photo selection, on Android the app's settings, and the count refreshes when you come back without asking for access again.
+
+Needs: native build
+
 ## 0.9.32 — 2026-11-11
 
 - Tapping a photo when 100 are already selected now says that 100 is the most you can select at once, instead of seeming to ignore the tap.

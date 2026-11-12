@@ -1,6 +1,6 @@
 import { Scaffold } from "./components";
-import React, { useEffect, useState } from "react";
-import { Image, Linking, Pressable, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { AppState, Image, Linking, Pressable, View } from "react-native";
 import { Text } from "./Text";
 import {
   Button,
@@ -83,23 +83,32 @@ export function GallerySetup({ gallery, source, locked, enable }) {
   const [error, setError] = useState("");
   const [denied, setDenied] = useState(false);
   const [library, setLibrary] = useState(null);
-  async function load(includeVideos = videos) {
+  const loads = useRef(0);
+  async function load(includeVideos = videos, request = true) {
+    const id = ++loads.current;
     setLoading(true);
     setError("");
     setDenied(false);
     try {
-      setOptions(await gallery.options(includeVideos));
+      const next = await gallery.options(includeVideos, request);
+      if (id !== loads.current) return;
+      setOptions(next);
       setVideos(includeVideos);
     } catch (error) {
+      if (id !== loads.current) return;
+      const refused = error.code === "PHOTO_PERMISSION";
       setError(error.message);
-      setDenied(error.code === "PHOTO_PERMISSION");
+      setDenied(refused);
+      if (refused) setOptions(null);
     } finally {
-      setLoading(false);
+      if (id === loads.current) setLoading(false);
     }
   }
   useEffect(() => {
     load();
   }, [gallery]);
+  const reload = useRef(load);
+  reload.current = load;
   useEffect(() => {
     if (!options) return;
     let active = true;
@@ -131,6 +140,21 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     };
   }, [gallery, options, albums[0]?.id, videos]);
   const limited = options?.permission.accessPrivileges === "limited";
+  useEffect(() => {
+    if (!limited) return;
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => reload.current(undefined, false), 500);
+    };
+    const app = AppState.addEventListener("change", (state) => state === "active" && refresh());
+    const library = gallery.media.changes(refresh);
+    return () => {
+      clearTimeout(timer);
+      app.remove();
+      library.remove();
+    };
+  }, [gallery, limited]);
   const allLabel = limited ? "Allowed photos" : "All photos";
   const libraryCount = library?.videos === videos ? library.count : null;
   const allNote = allPhotosNote({ videos, limited, count: libraryCount });
@@ -237,11 +261,13 @@ export function GallerySetup({ gallery, source, locked, enable }) {
       {!options && loading && <Scaffold label="Loading albums" />}
       {options && (
         <>
-          {options.permission.accessPrivileges === "limited" && (
-            <InlineMessage tone="warning">
-              Limited photo access: only selected photos are accessible. Allow
-              more in system settings.
-            </InlineMessage>
+          {limited && (
+            <>
+              <InlineMessage tone="warning">
+                Limited photo access: only selected photos are accessible.
+              </InlineMessage>
+              <Button label="Open settings" onPress={() => gallery.media.allowMore().catch(() => {})} />
+            </>
           )}
           {!!preview.length && (
             <View style={s.galleryGrid}>

@@ -998,7 +998,7 @@ test("the gallery api forwards the request options so slow hub previews get thei
   assert.match(app, /function galleryAPI\(route, body, options\) \{\s+return client\.api\(route, body, options\);\s+\}/);
 });
 
-test("the photo-uploads screen names what All photos uploads, confirms the switch and offers Open settings only when access is refused", () => {
+test("the photo-uploads screen names what All photos uploads, confirms the switch and offers Open settings when access is refused", () => {
   const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const picker = read("GallerySource.jsx");
   const app = read("App.jsx");
@@ -1006,7 +1006,7 @@ test("the photo-uploads screen names what All photos uploads, confirms the switc
   assert.match(picker, /!albums\.length\s+\? allNote/, "the summary row carries it too");
   assert.match(picker, /setLibrary\(\{ count: page\.totalCount \?\? null, videos \}\)/, "the count comes from the preview query");
   assert.match(picker, /\{denied && \(\s+<Button label="Open settings"/);
-  assert.match(picker, /setDenied\(error\.code === "PHOTO_PERMISSION"\)/);
+  assert.match(picker, /const refused = error\.code === "PHOTO_PERMISSION";[\s\S]{0,60}setDenied\(refused\);/);
   assert.match(picker, /enable\(\{ albums, videos \}, \{ count: libraryCount, limited \}\)/);
   assert.match(app, /const switchedToAll = all && !!source && sourceAlbums\(source\)\.length > 0;/);
   assert.match(app, /source && source\.mode !== "damaged" && !switchedToAll/, "switching a saved selection to All photos asks first");

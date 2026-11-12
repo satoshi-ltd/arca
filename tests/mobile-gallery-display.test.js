@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { Gallery } from "../apps/mobile/src/gallery.js";
 import {
   galleryDisplay,
   nativeGallerySources,
@@ -190,4 +191,35 @@ test("Photo uploads lets the user tick any number of albums and summarizes the c
   assert.doesNotMatch(setup, /albumId: album\?\.id/, "the single-album save is gone");
   assert.match(setup, /description="Unavailable"[\s\S]{0,120}onPress=\{\(\) => toggle\(held\)\}/, "a selected album that is gone can be unticked");
   assert.match(read("App.jsx"), /Object\.keys\(galleryConfig\(f\)\.cursors \|\| \{\}\)\.length/, "the folder status reads the per-album cursors");
+});
+
+test("under limited photo access Photo uploads offers Open settings below the warning and reloads when the person returns", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const setup = read("GallerySource.jsx");
+  assert.match(setup, /\{limited && \(\s+<>\s+<InlineMessage tone="warning">\s+Limited photo access: only selected photos are accessible\.\s+<\/InlineMessage>\s+<Button label="Open settings" onPress=\{\(\) => gallery\.media\.allowMore\(\)\.catch\(\(\) => \{\}\)\} \/>/);
+  assert.doesNotMatch(setup, /Allow\s+more in system settings/);
+  assert.match(setup, /if \(!limited\) return;\s+let timer;\s+const refresh = \(\) => \{\s+clearTimeout\(timer\);\s+timer = setTimeout\(\(\) => reload\.current\(undefined, false\), 500\);\s+\};\s+const app = AppState\.addEventListener\("change", \(state\) => state === "active" && refresh\(\)\);\s+const library = gallery\.media\.changes\(refresh\);/, "returning from settings or the system picker reloads the count, debounced and without asking again");
+  assert.match(setup, /clearTimeout\(timer\);\s+app\.remove\(\);\s+library\.remove\(\);/);
+  assert.match(setup, /const next = await gallery\.options\(includeVideos, request\);\s+if \(id !== loads\.current\) return;/, "a superseded load never lands");
+  assert.match(setup, /if \(id !== loads\.current\) return;\s+const refused = error\.code === "PHOTO_PERMISSION";[\s\S]{0,120}if \(refused\) setOptions\(null\);/, "access refused on return leaves only the refused state");
+  assert.match(setup, /const reload = useRef\(load\);\s+reload\.current = load;/);
+  const media = read("media-library.js");
+  assert.match(media, /allowMore: \(\) =>\s+Platform\.OS === "ios"\s+\? MediaLibrary\.presentPermissionsPickerAsync\(\)\s+: Linking\.openSettings\(\),/, "iPhone opens the system photo selection, Android the app settings");
+  assert.match(media, /changes: \(listener\) => MediaLibrary\.addListener\(listener\),/);
+});
+
+test("refreshing Photo uploads only reads the photo permission, so Android never reopens its picker in a loop", async () => {
+  const asked = [];
+  const media = {
+    permission: async (videos, request) => {
+      asked.push(request);
+      return { granted: false, accessPrivileges: "limited" };
+    },
+    albums: async () => [],
+  };
+  const gallery = new Gallery({}, media);
+  await gallery.options(false, false);
+  await gallery.options(true);
+  assert.deepEqual(asked, [false, true]);
 });

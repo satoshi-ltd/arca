@@ -84,8 +84,8 @@ export class Gallery {
       );
     return permission;
   }
-  async options(videos = false) {
-    const permission = await this.permission(videos, true);
+  async options(videos = false, request = true) {
+    const permission = await this.permission(videos, request);
     return { permission, albums: await this.media.albums() };
   }
   async configure(volume, options, confirmed = false) {
