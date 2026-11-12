@@ -250,7 +250,7 @@ test("a folder whose retry comes due is tried again on its own, without Sync now
   const syncIgnore = replica.engine.syncIgnore;
   const retried = [];
   replica.engine.syncIgnore = async (v, ...rest) => {
-    if (v?.id === broken.id && !folder.broken) retried.push(started);
+    if (v?.id === broken.id && !folder.broken) retried.push(Date.now());
     return syncIgnore(v, ...rest);
   };
   await replica.api("/v1/sync", { background: true });
@@ -260,11 +260,11 @@ test("a folder whose retry comes due is tried again on its own, without Sync now
   replica.engine.work.mark(broken.id);
   await waitFor(() => Date.now() - started >= 2500 && replica.engine.status().phase !== "syncing", 20000);
   assert.deepEqual(retried, [], "the cycles that followed the edit skipped the folder");
-  const at = Date.now() + 2500;
+  const at = Date.now() + 5000;
   replica.engine.folderBackoff.folders.get(broken.id).at = at;
   write(hub, healthy, "nudge.txt", "starts an event-driven cycle");
   await hub.sync();
-  await waitFor(() => hub.engine.store.current(broken.id, "later.txt"), 10000);
-  assert.ok(retried[0] >= at, "the retry ran in a cycle scheduled for the folder's retry time");
+  await waitFor(() => hub.engine.store.current(broken.id, "later.txt"), 20000);
+  assert.ok(retried.length && retried[0] >= at, "the folder was retried once its retry time came, not before");
   assert.equal(replica.engine.folderBackoff.waiting(broken.id), null);
 });

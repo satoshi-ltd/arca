@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.39 — 2026-11-12
+
+- The release pipeline passes on Linux again: a test of a folder's own retry no longer depends on how fast the runner is.
+
 ## 0.9.38 — 2026-11-11
 
 - The film player's progress line and times stay readable over a bright picture, on the phone, the desktop and the web.
