@@ -80,9 +80,9 @@ Each carries a recommendation; a yes or no is enough.
 - **DEC-LAST-CHANGE-SCOPE** — Is a folder's Last change the newest event or the newest saved version?
   `decision · maintainer · low`
   The cell shows the first activity row that is not a deletion, a conflict copy or a directory, so after deleting a file it still shows the previous saved file and its author. Recommendation: count deletions (a new activity filter on the hub, gated for older hubs, and a "Deleted <name>" rendering on desktop and phone) and keep conflict copies out; the cheap alternative is renaming the label to "Last saved version".
-- **VERIFY-UPDATER-SIGNED-VERSION** — The first desktop build made with Tauri CLI 2.12 signs for its version
+- **VERIFY-UPDATER-SIGNED-VERSION** — An installed desktop app updates itself to a release signed for its version
   `verify · maintainer · high`
-  Since 0.9.13 the app requires the version in the update signature and the release refuses to publish a manifest without it; that the CLI writes it was checked in its macOS binary and in its source, never on a real signature, because signing needs the private key. Before the first release from this line: after `npm ci` and a signed desktop build, decode one `.sig` (`base64 -d`, then the `trusted comment:` line) and confirm it ends in `version:x.y.z` for the built version; confirm the build itself still succeeds on macOS, Windows and Linux with the 2.12 CLI, and that Open folder and Reveal still work from the Linux AppImage, which no longer bundles its own xdg-open; then confirm an installed 0.9.12 or earlier app updates to it. If a signature has no version, the `updater` job fails and `desktop-latest` keeps the previous manifest: nobody is offered a broken update.
+  Release 0.9.41, the first built with Tauri CLI 2.12, published signatures whose trusted comment ends in `version:0.9.41` on macOS, Windows, the Debian package and the AppImage, and the `updater` job accepted them. Left for a real device: an installed 0.9.40 or earlier app updates itself to the newest release, and Open folder and Reveal work from the Linux AppImage, which no longer bundles its own xdg-open.
 
 ### Native work waiting for a build
 
