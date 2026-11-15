@@ -236,7 +236,9 @@ if (
     {
       repository,
       siteUrl: process.env.SITE_URL,
-      appStore: process.env.APP_STORE_URL,
+      appStore:
+        process.env.APP_STORE_URL ||
+        "https://apps.apple.com/us/app/arca-personal-drive/id6820444805",
       playStore:
         process.env.PLAY_STORE_URL ||
         "https://play.google.com/store/apps/details?id=com.satoshilimited.arca",

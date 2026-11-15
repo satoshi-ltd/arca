@@ -88,6 +88,11 @@ test("site build uses package.json version without metadata, release.json when p
     path.join(root, "site/dist/index.html"),
     "utf8",
   );
+  assert.match(
+    fallbackHtml,
+    /<a class="store" href="https:\/\/apps\.apple\.com\/us\/app\/arca-personal-drive\/id6820444805"/,
+  );
+  assert.doesNotMatch(fallbackHtml, /store-soon/);
   for (const suffix of [
     "macos-arm64.dmg",
     "windows-x64.exe",
