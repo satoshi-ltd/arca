@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.49 — 2026-11-16
+
+- On macOS, clicking the menu-bar icon with either button opens Arca's own popover instead of the system menu, which newer macOS draws in its own style; Windows and Linux keep their menu.
+- Clicking Arca's Dock icon shows the window again when it was closed or minimized, so it no longer takes the menu-bar icon to bring it back.
+
+Needs: desktop build
+
 ## 0.9.48 — 2026-11-15
 
 - A folder that stops syncing because the disk is full now reports how much space to free in its status (`needed`), on the hub and on replicas: every file that did not fit counted once, on the disk it needs, including the second copy a replica writes into the folder after downloading, so freeing that amount lets the next sync finish.

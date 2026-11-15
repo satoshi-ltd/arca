@@ -784,3 +784,23 @@ test("the native tray takes its attention icon while a web sign-in waits", () =>
   assert.match(source, /status\["webApprovals"\]\.as_u64\(\)\.unwrap_or\(0\) > 0/);
   assert.match(source, /fn a_pending_web_sign_in_raises_the_alert_until_it_ends\(\)/, "the Rust test exists");
 });
+
+test("on macOS the tray opens the popover from both buttons and never attaches the native menu", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(source, /fn attaches_native_menu\(\) -> bool \{\s*!cfg!\(target_os = "macos"\)\s*\}/, "only Windows and Linux keep the native menu");
+  assert.match(source, /let tray_builder = if attaches_native_menu\(\) \{ tray_builder\.menu\(&menu\) \} else \{ tray_builder \};/, "the menu is attached through that one rule");
+  assert.doesNotMatch(source, /\.tooltip\("Arca · your files, on your devices"\)\s*\.menu\(&menu\)/, "the menu is never attached unconditionally");
+  assert.match(source, /fn opens_popover\(button: tauri::tray::MouseButton\) -> bool \{\s*button == tauri::tray::MouseButton::Left \|\| \(cfg!\(target_os = "macos"\) && button == tauri::tray::MouseButton::Right\)\s*\}/, "a right click opens the popover on macOS");
+  assert.match(source, /if !opens_popover\(button\) \{return;\}/, "the tray click handler asks that rule for every button");
+  assert.match(source, /fn macos_opens_the_popover_from_both_buttons_and_attaches_no_native_menu\(\)/, "the Rust test exists");
+});
+
+test("a Dock click shows the main window again when it is hidden or minimized", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(source, /\.build\(tauri::generate_context!\(\)\)\s*\.expect\("Unable to launch Arca"\)\s*\.run\(\|app, event\| \{\s*#\[cfg\(target_os = "macos"\)\]\s*if let tauri::RunEvent::Reopen \{ \.\. \} = event \{\s*if reopen_shows_window\(main_window_showing\(app\)\) \{\s*show_main_window\(app\);/, "the Reopen event shows the window");
+  assert.match(source, /fn reopen_shows_window\(main_showing: bool\) -> bool \{\s*!main_showing\s*\}/, "a visible window is left alone");
+  assert.match(source, /w\.is_visible\(\)\.unwrap_or\(false\) && !w\.is_minimized\(\)\.unwrap_or\(false\)/, "hidden and minimized both count as not showing");
+  assert.match(source, /fn show_main_window[\s\S]*?w\.show\(\);\s*let _ = w\.unminimize\(\);\s*let _ = w\.set_focus\(\);[\s\S]*?t\.hide\(\)/, "one function shows, unminimizes, focuses and closes the popover");
+  assert.match(source, /"open" => \{\s*show_main_window\(app\);\s*\}/, "Open Arca uses it too");
+  assert.match(source, /fn a_dock_click_shows_the_window_only_while_it_is_not_showing\(\)/, "the Rust test exists");
+});

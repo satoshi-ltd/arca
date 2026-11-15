@@ -497,10 +497,33 @@ fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     if !result.status.success(){return Err(String::from_utf8_lossy(&result.stderr).to_string());}
     let mut p=preferences();p["launchAtLogin"]=json!(enabled);save_preferences(&p)
 }
+fn show_main_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    let w = app.get_webview_window("main")?;
+    let _ = w.show();
+    let _ = w.unminimize();
+    let _ = w.set_focus();
+    if let Some(t) = app.get_webview_window("tray") { let _ = t.hide(); }
+    Some(w)
+}
+fn attaches_native_menu() -> bool {
+    !cfg!(target_os = "macos")
+}
+fn opens_popover(button: tauri::tray::MouseButton) -> bool {
+    button == tauri::tray::MouseButton::Left || (cfg!(target_os = "macos") && button == tauri::tray::MouseButton::Right)
+}
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn reopen_shows_window(main_showing: bool) -> bool {
+    !main_showing
+}
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn main_window_showing(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        .unwrap_or(false)
+}
 #[tauri::command]
 fn show_main(app: tauri::AppHandle, folder: Option<String>) {
-    if let Some(w)=app.get_webview_window("main") { let _=w.show();let _=w.set_focus(); if let Some(folder)=folder {let _=w.emit("open-folder-detail",folder);} }
-    if let Some(w)=app.get_webview_window("tray") {let _=w.hide();}
+    if let Some(w) = show_main_window(&app) { if let Some(folder)=folder {let _=w.emit("open-folder-detail",folder);} }
 }
 #[tauri::command]
 fn hide_tray(app: tauri::AppHandle) {
@@ -840,14 +863,16 @@ fn main() {
             let sync = MenuItem::with_id(app, "sync", "Sync now", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "Pause sync", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&status_item, &open, &sync, &pause, &quit])?;
-            TrayIconBuilder::with_id("arca")
+            let tray_builder = TrayIconBuilder::with_id("arca")
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
                 .icon_as_template(true)
                 .show_menu_on_left_click(false)
-                .tooltip("Arca · your files, on your devices")
-                .menu(&menu)
+                .tooltip("Arca · your files, on your devices");
+            let tray_builder = if attaches_native_menu() { tray_builder.menu(&menu) } else { tray_builder };
+            tray_builder
                 .on_tray_icon_event(|tray,event| {
-                    if let tauri::tray::TrayIconEvent::Click {button:tauri::tray::MouseButton::Left,button_state:tauri::tray::MouseButtonState::Up,position,..}=event {
+                    if let tauri::tray::TrayIconEvent::Click {button,button_state:tauri::tray::MouseButtonState::Up,position,..}=event {
+                        if !opens_popover(button) {return;}
                         if let Some(w)=tray.app_handle().get_webview_window("tray") {
                             if w.is_visible().unwrap_or(false) {let _=w.hide();}
                             else {show_tray_at(&w,(position.x,position.y));}
@@ -856,10 +881,7 @@ fn main() {
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        show_main_window(app);
                     }
                     "sync" => {
                         tauri::async_runtime::spawn(async {
@@ -934,8 +956,18 @@ fn main() {
                 let _ = window.hide();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("Unable to launch Arca");
+        .build(tauri::generate_context!())
+        .expect("Unable to launch Arca")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if reopen_shows_window(main_window_showing(app)) {
+                    show_main_window(app);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]
@@ -947,6 +979,19 @@ mod tray_tests {
         for key in ["", "short", "dQw4w9WgXcQx", "dQw4w9WgX/Q", "dQw4w9Wg&cQ", "dQw4w9Wg cQ"] {
             assert_eq!(trailer_url(key), None);
         }
+    }
+    #[test]
+    fn a_dock_click_shows_the_window_only_while_it_is_not_showing() {
+        assert!(reopen_shows_window(false));
+        assert!(!reopen_shows_window(true));
+    }
+    #[test]
+    fn macos_opens_the_popover_from_both_buttons_and_attaches_no_native_menu() {
+        use tauri::tray::MouseButton;
+        assert!(opens_popover(MouseButton::Left));
+        assert!(!opens_popover(MouseButton::Middle));
+        assert_eq!(opens_popover(MouseButton::Right), cfg!(target_os = "macos"));
+        assert_eq!(attaches_native_menu(), !cfg!(target_os = "macos"));
     }
     #[test]
     fn all_tray_assets_decode() {

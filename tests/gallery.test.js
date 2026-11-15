@@ -2053,8 +2053,11 @@ test("an older gallery update trigger is replaced by the current definition when
     END`);
   const { Store } = await import("../packages/daemon/storage.js");
   const reopened = new Store(f.s.home);
-  t.after(() => reopened.db.close());
-  assert.match(reopened.db.prepare("SELECT sql FROM sqlite_master WHERE name='gallery_metadata_generation_update'").get().sql, /OLD\.hash IS NOT NEW\.hash/);
+  try {
+    assert.match(reopened.db.prepare("SELECT sql FROM sqlite_master WHERE name='gallery_metadata_generation_update'").get().sql, /OLD\.hash IS NOT NEW\.hash/);
+  } finally {
+    reopened.db.close();
+  }
   const version = () => f.s.db.prepare("PRAGMA schema_version").get().schema_version;
   const before = version();
   new Store(f.s.home).db.close();
