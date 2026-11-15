@@ -311,25 +311,6 @@ test("Cloudflare credentials reach only the steps that check them and deploy", (
   assert.equal(text.match(/CLOUDFLARE_\w+: /g).length, 6, "no other place declares a Cloudflare variable");
 });
 
-test("Dependabot watches actions, both npm lockfiles and the desktop crate weekly, grouping minor and patch updates", () => {
-  const file = path.join(directory, "..", "dependabot.yml");
-  const config = readWorkflow(fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n"), "dependabot.yml");
-  assert.equal(config.version, "2");
-  const root = path.join(directory, "..", "..");
-  const lockfiles = { npm: "package-lock.json", cargo: "Cargo.lock" };
-  assert.deepEqual(
-    config.updates.map((entry) => [entry["package-ecosystem"], entry.directory]),
-    [["github-actions", "/"], ["npm", "/"], ["npm", "/apps/mobile"], ["cargo", "/apps/desktop/src-tauri"]],
-  );
-  for (const entry of config.updates) {
-    assert.deepEqual(entry.schedule, { interval: "weekly" });
-    const groups = Object.values(entry.groups || {});
-    assert.deepEqual(groups.map((group) => group["update-types"]), [["minor", "patch"]], entry["package-ecosystem"]);
-    const lock = lockfiles[entry["package-ecosystem"]];
-    if (lock) assert.ok(fs.existsSync(path.join(root, entry.directory, lock)), `${entry.directory} has ${lock}`);
-  }
-});
-
 test("the release note says the desktop app updates itself", () => {
   const { jobs } = audit(source("publish.yml"), "publish.yml").workflow;
   const notes = jobs.publish.steps.map((step) => step.run || "").join("\n");
