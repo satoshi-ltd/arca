@@ -179,12 +179,14 @@ export function searchLocal(store, params, music = null, video = null) {
     if (!wanted("photos") && !wanted("files")) continue;
     const rows = store.db
       .prepare(
-        `SELECT f.path,f.hash,f.size,f.rev FROM ${source} f
-         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL AND instr(arca_fold(f.path),?)>0
+        `SELECT f.path,f.hash,f.size,f.rev,m.camera FROM ${source} f
+         LEFT JOIN gallery_metadata m ON m.hash=f.hash AND m.camera IS NOT NULL AND ?=1 AND arca_search_media(f.path)=1
+         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL AND instr(arca_fold(f.path || coalesce(' ' || m.camera,'')),?)>0
          ORDER BY f.rev DESC LIMIT ${CANDIDATES}`,
       )
-      .all(volume.id, tokens[0]);
-    for (const row of rows) if (matches(fold(row.path))) take(row, rank(row.path.split("/").pop(), query));
+      .all(Number(wanted("photos")), volume.id, tokens[0]);
+    for (const row of rows)
+      if (matches(fold(row.camera ? `${row.path} ${row.camera}` : row.path))) take(row, rank(row.path.split("/").pop(), query));
   }
   const order = new Intl.Collator("en", { sensitivity: "base", numeric: true });
   for (const group of SEARCH_TYPES) {

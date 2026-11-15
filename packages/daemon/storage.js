@@ -139,20 +139,97 @@ export async function hashFileAsync(file) {
 export async function fingerprintMatches(file, hash) {
   return quickHashFile(file) === hash || (await hashFileAsync(file)) === hash;
 }
-export function requireSpace(location, additionalBytes) {
+const SPACE_RESERVE = 16 * 1024 * 1024;
+function existingDirectory(location) {
   let directory = location;
   while (!fs.existsSync(directory)) {
     const parent = path.dirname(directory);
     if (parent === directory) fail("Storage location is unavailable", 507);
     directory = parent;
   }
+  return directory;
+}
+const freeBytes = (directory) => {
   const disk = fs.statfsSync(directory, { bigint: true });
-  const required = BigInt(Math.max(0, additionalBytes)) + 16n * 1024n * 1024n;
-  if (disk.bavail * disk.bsize < required)
-    fail(
-      "Insufficient free disk space; synchronization will retry when space is available",
-      507,
+  return Number(disk.bavail * disk.bsize);
+};
+export function requireSpace(location, additionalBytes) {
+  if (!Number.isSafeInteger(additionalBytes)) fail("Invalid free space request", 500);
+  const directory = existingDirectory(location);
+  const bytes = Math.max(0, additionalBytes);
+  const free = freeBytes(directory);
+  if (free < bytes + SPACE_RESERVE)
+    throw Object.assign(
+      new Error(
+        "Insufficient free disk space; synchronization will retry when space is available",
+      ),
+      { status: 507, bytes, location: directory },
     );
+}
+export class SpaceShortfall {
+  disks = new Map();
+  files = new Map();
+  add(name, demands) {
+    const call = new Map();
+    for (const [location, bytes] of demands) {
+      if (!Number.isSafeInteger(bytes) || bytes < 0) continue;
+      let directory, device;
+      try {
+        directory = existingDirectory(location);
+        device = fs.statSync(directory).dev;
+      } catch {
+        continue;
+      }
+      const entry = call.get(device);
+      if (entry) entry.bytes += bytes;
+      else call.set(device, { directory, bytes });
+    }
+    const file = this.files.get(name) ?? new Map();
+    this.files.set(name, file);
+    for (const [device, { directory, bytes }] of call) {
+      const previous = file.get(device);
+      if (previous >= bytes) continue;
+      file.set(device, bytes);
+      const disk = this.disks.get(device);
+      if (!disk) this.disks.set(device, { directory, bytes, files: 1 });
+      else {
+        disk.bytes += bytes - (previous ?? 0);
+        if (previous === undefined) disk.files++;
+      }
+    }
+  }
+  forget(name) {
+    const file = this.files.get(name);
+    if (!file) return;
+    this.files.delete(name);
+    for (const [device, bytes] of file) {
+      const disk = this.disks.get(device);
+      disk.bytes -= bytes;
+      if (--disk.files === 0) this.disks.delete(device);
+    }
+  }
+  fail(name, error) {
+    if (error?.status === 507 && typeof error.location === "string")
+      this.add(name, [[error.location, error.bytes]]);
+  }
+  needed() {
+    let needed = 0;
+    for (const disk of this.disks.values()) {
+      let free;
+      try {
+        free = freeBytes(existingDirectory(disk.directory));
+      } catch {
+        continue;
+      }
+      needed += Math.max(0, disk.bytes + SPACE_RESERVE - free);
+    }
+    return needed > 0 ? { needed } : {};
+  }
+}
+export function neededSpace(error) {
+  const shortfall = new SpaceShortfall();
+  shortfall.fail("", error);
+  return shortfall.needed();
 }
 const WEEK = 7 * 86400000;
 const reverifyAfter = (hash) => WEEK + (parseInt(hash.slice(0, 8), 16) % WEEK);
@@ -466,6 +543,16 @@ export class Store {
         .some((column) => column.name === "modified")
     )
       this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
+    const metadataColumns = this.db
+      .prepare("PRAGMA table_info(gallery_metadata)")
+      .all()
+      .map((column) => column.name);
+    if (!metadataColumns.includes("camera"))
+      this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN camera TEXT");
+    if (!metadataColumns.includes("camera_checked"))
+      this.db.exec(
+        "ALTER TABLE gallery_metadata ADD COLUMN camera_checked INTEGER NOT NULL DEFAULT 0",
+      );
     if (
       !this.db
         .prepare("PRAGMA table_info(sync_state)")
@@ -485,8 +572,20 @@ export class Store {
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS added_dates(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,added TEXT NOT NULL,PRIMARY KEY(volume,path))",
     );
+    const generationUpdate = `CREATE TRIGGER gallery_metadata_generation_update AFTER UPDATE ON gallery_metadata
+      WHEN OLD.hash IS NOT NEW.hash OR OLD.captured IS NOT NEW.captured OR OLD.date_checked IS NOT NEW.date_checked OR OLD.modified IS NOT NEW.modified BEGIN
+        INSERT INTO row_generations(name,generation) VALUES('gallery',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+      END`;
+    if (
+      this.db
+        .prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='gallery_metadata_generation_update'")
+        .get()?.sql !== generationUpdate
+    ) {
+      this.db.exec("DROP TRIGGER IF EXISTS gallery_metadata_generation_update");
+      this.db.exec(generationUpdate);
+    }
     for (const [table, writes] of [
-      ["gallery_metadata", ["INSERT", "UPDATE"]],
+      ["gallery_metadata", ["INSERT"]],
       ["gallery_members", ["INSERT", "DELETE"]],
       ["gallery_assets", ["INSERT", "UPDATE", "DELETE"]],
       ["added_dates", ["INSERT", "UPDATE", "DELETE"]],
@@ -1986,7 +2085,7 @@ export class Store {
             )
             .run(p.row.volume, p.row.path, p.row.rev);
         } catch (error) {
-          failures.push({ path: p.row.path, volume: p.row.volume, error });
+          failures.push({ path: p.row.path, volume: p.row.volume, rev: p.row.rev, error });
         }
         continue;
       }
@@ -1999,7 +2098,7 @@ export class Store {
         }
         this.materialize(p.row, p.expected);
       } catch (error) {
-        failures.push({ path: p.row.path, volume: p.row.volume, error });
+        failures.push({ path: p.row.path, volume: p.row.volume, rev: p.row.rev, error });
       }
     }
     if (failures.length)

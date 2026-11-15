@@ -285,6 +285,70 @@ test("low free space is rejected before changing a destination", async (t) => {
   }
 });
 
+test("a write that does not fit reports its bytes, and the shortfall counts each file once per disk", async (t) => {
+  const { v } = fixture(t);
+  const { requireSpace, neededSpace, SpaceShortfall } = await import("../packages/daemon/storage.js");
+  const MiB = 1024 * 1024;
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), "arca-other-disk-"));
+  t.after(() => fs.rmSync(other, { recursive: true, force: true }));
+  const { statfsSync, statSync } = fs;
+  let otherGone = false;
+  fs.statfsSync = (where) => {
+    if (otherGone && where.startsWith(other)) throw Object.assign(new Error("EIO"), { code: "EIO" });
+    return { bavail: where.startsWith(other) ? 100n * 256n : 10n * 256n, bsize: 4096n };
+  };
+  fs.statSync = (where, options) => {
+    const stats = statSync(where, options);
+    return where.startsWith(other) ? Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, { dev: -1 }) : stats;
+  };
+  try {
+    const errors = [];
+    for (const size of [20 * MiB, 30 * MiB])
+      try {
+        requireSpace(v.path, size);
+      } catch (error) {
+        errors.push(error);
+      }
+    assert.deepEqual(errors.map((error) => [error.status, error.bytes]), [[507, 20 * MiB], [507, 30 * MiB]]);
+    assert.doesNotThrow(() => requireSpace(other, 50 * MiB));
+    assert.throws(() => requireSpace(v.path, Number.NaN), /Invalid free space request/);
+    assert.throws(() => requireSpace(v.path, 1.5), /Invalid free space request/);
+    assert.deepEqual(neededSpace(errors[0]), { needed: 26 * MiB });
+    const space = new SpaceShortfall();
+    space.fail("a", errors[0]);
+    space.fail("a", errors[0]);
+    space.fail("b", errors[1]);
+    assert.deepEqual(space.needed(), { needed: 56 * MiB }, "a file failing twice in one cycle counts once");
+    space.fail("a", errors[1]);
+    space.fail("a", errors[0]);
+    assert.deepEqual(space.needed(), { needed: 66 * MiB }, "a larger demand for the same file replaces the smaller one");
+    space.add("c", [[path.join(other, "missing", "c.bin"), 50 * MiB]]);
+    assert.deepEqual(space.needed(), { needed: 66 * MiB }, "bytes on another disk never meet this disk's free space");
+    space.add("d", [[other, 60 * MiB]]);
+    assert.deepEqual(space.needed(), { needed: 92 * MiB }, "each short disk adds its own shortfall");
+    otherGone = true;
+    assert.deepEqual(space.needed(), { needed: 66 * MiB }, "a disk that cannot be read is left out, not the others");
+    otherGone = false;
+    const gone = new SpaceShortfall();
+    gone.fail("a", errors[1]);
+    gone.fail("b", errors[0]);
+    gone.forget("a");
+    assert.deepEqual(gone.needed(), { needed: 26 * MiB }, "a forgotten file takes back its bytes");
+    gone.forget("b");
+    gone.forget("b");
+    assert.deepEqual(gone.needed(), {}, "a disk with no file left adds nothing, not even the margin");
+    gone.fail("b", errors[0]);
+    assert.deepEqual(gone.needed(), { needed: 26 * MiB }, "and a file counts again when it fails again");
+    const many = new SpaceShortfall();
+    for (let index = 0; index < 200000; index++) many.fail(`file-${index}`, errors[0]);
+    assert.deepEqual(many.needed(), { needed: 200000 * 20 * MiB + 6 * MiB });
+    assert.deepEqual(neededSpace(new Error("ENOSPC: no space left on device")), {}, "an error without a known amount adds nothing");
+  } finally {
+    fs.statfsSync = statfsSync;
+    fs.statSync = statSync;
+  }
+});
+
 test("adopting an existing folder preserves files and never mkdirs that folder", (t) => {
   const { engine: e } = fixture(t);
   const target = path.join(e.store.home, "..", `arca-existing-${Date.now()}`);

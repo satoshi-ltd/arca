@@ -17,7 +17,15 @@ export { mediaKind, galleryDate };
 // Revisit videos checked before container capture dates were supported.
 const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
   (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;
+const needsIndex = `(${needsCaptureDate} OR (arca_media_kind(f.path)='image' AND m.camera_checked=0))`;
 const bytewise = (a, b) => (a === b ? 0 : Buffer.compare(Buffer.from(a), Buffer.from(b)));
+const cameraPart = (value) => (typeof value === "string" ? value.replace(/\0/g, "").trim().slice(0, 256).replace(/[\uD800-\uDBFF]$/, "") : "");
+export function cameraName(make, model) {
+  const brand = cameraPart(make),
+    name = cameraPart(model);
+  if (!name) return brand || null;
+  return brand && !name.toLowerCase().startsWith(brand.toLowerCase()) ? `${brand} ${name}` : name;
+}
 const cursor = (row) => (row.date ?? "!") + "|" + row.path;
 // Derivatives are disposable and bounded; original objects remain untouched.
 export class Gallery {
@@ -31,6 +39,7 @@ export class Gallery {
     this.running = 0;
     this.pending = new Map();
     this.indexing = new Map();
+    this.indexAfter = new Map();
     this.volumes = new Set();
     this.kept = new Map();
     store.db.exec(
@@ -179,9 +188,12 @@ export class Gallery {
   }
   async index(volume) {
     if (this.indexing.has(volume)) return this.indexing.get(volume);
-    const job = this.indexBatch(volume).finally(() =>
-      this.indexing.delete(volume),
-    );
+    const job = this.indexBatch(volume)
+      .catch((error) => {
+        this.indexAfter.delete(volume);
+        throw error;
+      })
+      .finally(() => this.indexing.delete(volume));
     this.indexing.set(volume, job);
     return job;
   }
@@ -190,17 +202,16 @@ export class Gallery {
     const rows = s.db
       .prepare(
         `SELECT f.hash,min(f.path) AS path FROM ${s.fileSource()} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
-      WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND ${needsCaptureDate} GROUP BY f.hash LIMIT 64`,
+      WHERE f.volume=? AND f.hash>? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND ${needsIndex} GROUP BY f.hash ORDER BY f.hash LIMIT 64`,
       )
-      .all(volume);
-    let handled = 0;
+      .all(volume, this.indexAfter.get(volume) ?? "");
     for (const row of rows) {
       let captured = null;
+      let camera = null;
       const video = mediaKind(row.path) === "video";
       const source = s.localContent(volume, row.path, row.hash);
       // A file edited since its last scan is dated after the rescan gives it a new hash.
       if (!source && s.config.role !== "hub") continue;
-      handled++;
       try {
         if (!source) fail("Content is not available locally", 404);
         if (video) captured = await videoCaptureDate(source, row.path);
@@ -214,10 +225,11 @@ export class Gallery {
                 meta.exif.subarray(0, 6).toString() === "Exif\0\0" ? 6 : 0,
               ),
               {
-                pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
+                pick: ["DateTimeOriginal", "CreateDate", "ModifyDate", "Make", "Model"],
                 reviveValues: false,
               },
             );
+            camera = cameraName(tags?.Make, tags?.Model);
             captured =
               ["DateTimeOriginal", "CreateDate", "ModifyDate"]
                 .map((tag) => tags?.[tag])
@@ -241,12 +253,14 @@ export class Gallery {
       if (this.closed) return false;
       s.db
         .prepare(
-          "INSERT INTO gallery_metadata(hash,captured,date_checked) VALUES(?,?,?) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured),date_checked=excluded.date_checked",
+          "INSERT INTO gallery_metadata(hash,captured,date_checked,camera,camera_checked) VALUES(?,?,?,?,1) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured),date_checked=excluded.date_checked,camera=coalesce(excluded.camera,gallery_metadata.camera),camera_checked=1",
         )
-        .run(row.hash, captured, video ? 2 : 1);
+        .run(row.hash, captured, video ? 2 : 1, camera);
       await new Promise((resolve) => setImmediate(resolve));
     }
-    return rows.length === 64 && handled > 0;
+    if (rows.length === 64) this.indexAfter.set(volume, rows.at(-1).hash);
+    else this.indexAfter.delete(volume);
+    return rows.length === 64;
   }
   // Every gallery read shares these rows; they are kept until a counter that a write to any table they read from bumps has moved.
   media(volume) {

@@ -1959,3 +1959,153 @@ test("HEIC previews render at most two at a time and refuse images above the pix
   assert.equal(four.length, 4);
   assert.equal(heicPeak(), 2, "four requests never decode more than two at once");
 });
+
+test("search finds photos by camera make and model, read once for photos indexed before", async (t) => {
+  const f = await fixture(t);
+  const shot = (exif, color) => sharp({ create: { width: 8, height: 8, channels: 3, background: color } }).withExif(exif).jpeg().toBuffer();
+  fs.writeFileSync(path.join(f.v.path, "IMG_1.jpg"), await shot({ IFD0: { Make: "Canon", Model: "Canon EOS R5" }, IFD2: { DateTimeOriginal: "2024:05:06 07:08:09" } }, "red"));
+  fs.writeFileSync(path.join(f.v.path, "IMG_2.jpg"), await shot({ IFD0: { Make: "FUJIFILM", Model: "X100V" } }, "blue"));
+  fs.writeFileSync(path.join(f.v.path, "IMG_3.jpg"), await shot({ IFD0: { Software: "editor" } }, "green"));
+  fs.writeFileSync(path.join(f.v.path, "canon-notes.txt"), "not a photo");
+  await f.daemon.engine.cycle();
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  const photos = async (q) =>
+    (await f.api(`/v1/search?${new URLSearchParams({ q, type: "photos", limit: "10" })}`)).groups.find((group) => group.type === "photos")?.rows.map((row) => row.name) ?? [];
+  assert.deepEqual(await photos("canon"), ["IMG_1.jpg"], "the make matches, and a file that is no photo stays out");
+  assert.deepEqual(await photos("eos r5"), ["IMG_1.jpg"]);
+  assert.deepEqual(await photos("fujifilm x100v"), ["IMG_2.jpg"], "make and model together");
+  assert.deepEqual(await photos("x100v img"), ["IMG_2.jpg"], "a word of the name and a word of the camera");
+  assert.deepEqual(await photos("nikon"), []);
+  const files = async (q) =>
+    (await f.api(`/v1/search?${new URLSearchParams({ q, type: "files", limit: "10" })}`)).groups.find((group) => group.type === "files")?.rows.map((row) => row.name) ?? [];
+  assert.deepEqual(await files("canon"), ["canon-notes.txt"], "a camera never makes a photo a file result");
+  const hash = f.s.current(f.v.id, "IMG_1.jpg").hash;
+  assert.equal(f.s.db.prepare("SELECT camera FROM gallery_metadata WHERE hash=?").get(hash).camera, "Canon EOS R5", "a model that names its make keeps it once");
+  f.s.db.prepare("UPDATE gallery_metadata SET camera=NULL,camera_checked=0 WHERE hash=?").run(hash);
+  assert.deepEqual(await photos("canon"), []);
+  const generation = () => f.s.db.prepare("SELECT generation FROM row_generations WHERE name='gallery'").get().generation;
+  const before = generation();
+  const reads = [];
+  const localContent = f.s.localContent.bind(f.s);
+  f.s.localContent = (volume, name, hash) => (reads.push(name), localContent(volume, name, hash));
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  assert.deepEqual(reads, ["IMG_1.jpg"], "only the photo whose camera is unknown is read again");
+  assert.equal(generation(), before, "a camera alone does not make galleries read their rows again");
+  assert.deepEqual(await photos("canon"), ["IMG_1.jpg"], "a photo indexed before cameras were read is read again");
+  assert.equal(f.s.db.prepare("SELECT captured FROM gallery_metadata WHERE hash=?").get(hash).captured, "2024-05-06T07:08:09");
+  assert.equal(f.s.db.prepare("SELECT count(*) AS n FROM gallery_metadata WHERE camera_checked=0").get().n, 0, "every photo is marked as read");
+  reads.length = 0;
+  assert.equal(await f.daemon.engine.gallery.index(f.v.id), false);
+  assert.deepEqual(reads, [], "each photo is read once");
+  f.s.db.prepare("UPDATE gallery_metadata SET captured=NULL WHERE hash=?").run(hash);
+  assert.equal(generation(), before + 1, "a date change still moves the counter");
+});
+
+test("a camera name keeps at most 256 characters without splitting a character", async () => {
+  const { cameraName } = await import("../packages/daemon/gallery.js");
+  assert.equal(cameraName(`${"a".repeat(255)}📷`, ""), "a".repeat(255));
+  assert.equal(cameraName("Canon\0 ", " Canon EOS R5 "), "Canon EOS R5");
+  assert.equal(cameraName("", "X100V"), "X100V");
+  assert.equal(cameraName(null, null), null);
+});
+
+test("camera matches share the folder's 2000 search candidates with path matches", async (t) => {
+  const f = await fixture(t);
+  const insert = f.s.db.prepare("INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,1,0,?,0,?)");
+  const meta = f.s.db.prepare("INSERT INTO gallery_metadata(hash,camera,camera_checked,date_checked) VALUES(?,?,1,1)");
+  f.s.db.exec("BEGIN");
+  for (let index = 0; index < 1500; index++) {
+    const named = `canon-${index}.jpg`, shot = `IMG_${index}.jpg`;
+    insert.run(f.v.id, named, `n${String(index).padStart(63, "0")}`, index + 1, named.toLowerCase());
+    insert.run(f.v.id, shot, `c${String(index).padStart(63, "0")}`, index + 1, shot.toLowerCase());
+    meta.run(`c${String(index).padStart(63, "0")}`, "Canon EOS R5");
+  }
+  f.s.db.exec("COMMIT");
+  const result = await f.api(`/v1/search?${new URLSearchParams({ q: "canon", type: "photos" })}`);
+  assert.equal(result.groups.find((group) => group.type === "photos").count, 2000);
+});
+
+test("a replica reads cameras past photos whose content it does not have yet", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.v.path, "IMG_LAST.jpg"), await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).withExif({ IFD0: { Make: "Canon", Model: "EOS R5" } }).jpeg().toBuffer());
+  await f.daemon.engine.cycle();
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  const hash = f.s.current(f.v.id, "IMG_LAST.jpg").hash;
+  f.s.db.prepare("UPDATE gallery_metadata SET camera=NULL,camera_checked=0 WHERE hash=?").run(hash);
+  const insert = f.s.db.prepare("INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,1,0,?,0,?)");
+  for (let index = 0; index < 130; index++) {
+    const name = `missing-${index}.jpg`;
+    insert.run(f.v.id, name, `0${String(index).padStart(63, "0")}`, 100000 + index, name);
+  }
+  const role = f.s.config.role;
+  f.s.config.role = "replica";
+  t.after(() => (f.s.config.role = role));
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  assert.equal(f.s.db.prepare("SELECT camera FROM gallery_metadata WHERE hash=?").get(hash).camera, "Canon EOS R5");
+  assert.equal(f.s.db.prepare("SELECT count(*) AS n FROM gallery_metadata WHERE hash LIKE '0%'").get().n, 0, "photos without content stay unread");
+});
+
+test("an older gallery update trigger is replaced by the current definition when the store opens", async (t) => {
+  const f = await fixture(t);
+  f.s.db.exec(`DROP TRIGGER gallery_metadata_generation_update;
+    CREATE TRIGGER gallery_metadata_generation_update AFTER UPDATE ON gallery_metadata WHEN 1 BEGIN
+      INSERT INTO row_generations(name,generation) VALUES('gallery',1) ON CONFLICT(name) DO UPDATE SET generation=generation+1;
+    END`);
+  const { Store } = await import("../packages/daemon/storage.js");
+  const reopened = new Store(f.s.home);
+  t.after(() => reopened.db.close());
+  assert.match(reopened.db.prepare("SELECT sql FROM sqlite_master WHERE name='gallery_metadata_generation_update'").get().sql, /OLD\.hash IS NOT NEW\.hash/);
+  const version = () => f.s.db.prepare("PRAGMA schema_version").get().schema_version;
+  const before = version();
+  new Store(f.s.home).db.close();
+  assert.equal(version(), before, "an unchanged trigger is left alone");
+});
+
+test("a camera pass that fails midway starts again from the first photo it did not finish", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.v.path, "IMG_FIRST.jpg"), await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).withExif({ IFD0: { Make: "Canon", Model: "EOS R5" } }).jpeg().toBuffer());
+  await f.daemon.engine.cycle();
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  const hash = f.s.current(f.v.id, "IMG_FIRST.jpg").hash;
+  f.s.db.prepare("UPDATE gallery_metadata SET camera=NULL,camera_checked=0 WHERE hash=?").run(hash);
+  const insert = f.s.db.prepare("INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,1,0,?,0,?)");
+  for (let index = 0; index < 130; index++) {
+    const name = `later-${index}.jpg`;
+    insert.run(f.v.id, name, `ffff${String(index).padStart(60, "0")}`, 100000 + index, name);
+  }
+  const role = f.s.config.role;
+  f.s.config.role = "replica";
+  t.after(() => (f.s.config.role = role));
+  const localContent = f.s.localContent;
+  f.s.localContent = () => {
+    f.s.localContent = localContent;
+    throw new Error("EIO");
+  };
+  await assert.rejects(f.daemon.engine.gallery.index(f.v.id), /EIO/);
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  assert.equal(f.s.db.prepare("SELECT camera FROM gallery_metadata WHERE hash=?").get(hash).camera, "Canon EOS R5");
+});
+
+test("a camera pass that fails after a full batch forgets its cursor, so photos synced meanwhile are not skipped", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.v.path, "IMG_FIRST.jpg"), await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).withExif({ IFD0: { Make: "Canon", Model: "EOS R5" } }).jpeg().toBuffer());
+  await f.daemon.engine.cycle();
+  while (await f.daemon.engine.gallery.index(f.v.id));
+  const insert = f.s.db.prepare("INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,1,0,?,0,?)");
+  for (let index = 0; index < 130; index++) {
+    const name = `later-${index}.jpg`;
+    insert.run(f.v.id, name, `ffff${String(index).padStart(60, "0")}`, 100000 + index, name);
+  }
+  const role = f.s.config.role;
+  f.s.config.role = "replica";
+  t.after(() => (f.s.config.role = role));
+  assert.equal(await f.daemon.engine.gallery.index(f.v.id), true);
+  assert.equal(f.daemon.engine.gallery.indexAfter.has(f.v.id), true, "a full batch leaves a cursor");
+  const localContent = f.s.localContent;
+  f.s.localContent = () => {
+    f.s.localContent = localContent;
+    throw new Error("EIO");
+  };
+  await assert.rejects(f.daemon.engine.gallery.index(f.v.id), /EIO/);
+  assert.equal(f.daemon.engine.gallery.indexAfter.has(f.v.id), false, "a failed pass starts over from the first photo");
+});

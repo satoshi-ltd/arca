@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.48 — 2026-11-15
+
+- A folder that stops syncing because the disk is full now reports how much space to free in its status (`needed`), on the hub and on replicas: every file that did not fit counted once, on the disk it needs, including the second copy a replica writes into the folder after downloading, so freeing that amount lets the next sync finish.
+- Search finds photos by the camera that took them: `canon`, `eos r5` or `x100v img` match the EXIF make and model of photos in gallery folders on the hub and on desktop and server replicas; photos indexed before are read once more in the background.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.47 — 2026-11-12
 
 - In a gallery, Shift-click or Shift+Space selects every photo between the last one you picked and this one, and the selection bar can download what you selected: one photo as itself, several as one ZIP named after the folder, up to 10,000 at a time.

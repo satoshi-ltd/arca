@@ -4100,3 +4100,171 @@ test("a hub scan keeps working when a later version adds columns to its tables",
   await hub.sync();
   assert.equal(hub.engine.store.current(volume.id, "after-upgrade.txt").deleted, 0);
 });
+
+test("a replica without room for the hub's files reports the bytes to free, and freeing exactly that lets the cycle finish", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const tight = await connect("tight");
+  const exact = await connect("exact");
+  await tight.sync();
+  await exact.sync();
+  write(hub, volume, "a.bin", "a".repeat(1000));
+  write(hub, volume, "b.bin", "b".repeat(2000));
+  await hub.sync();
+  const disks = [tight, exact].map((replica) => {
+    const s = replica.engine.store;
+    const roots = [s.objects, s.uploads, s.volume(volume.id).path];
+    const used = () => {
+      const files = new Set();
+      for (const root of roots)
+        for (const name of fs.readdirSync(root, { recursive: true })) {
+          const file = path.join(root, name);
+          if (fs.statSync(file).isFile()) files.add(file);
+        }
+      return [...files].reduce((total, file) => total + fs.statSync(file).size, 0);
+    };
+    return { replica, roots, used, capacity: 0 };
+  });
+  const MiB = 1024 * 1024;
+  for (const disk of disks) disk.capacity = disk.used() + 10 * MiB;
+  const statfs = fs.statfsSync;
+  t.after(() => (fs.statfsSync = statfs));
+  fs.statfsSync = (where, options) => {
+    const disk = disks.find((candidate) => candidate.roots.some((root) => where.startsWith(root)));
+    return disk ? { ...statfs(where, options), bavail: BigInt(Math.max(0, disk.capacity - disk.used())), bsize: 1n } : statfs(where, options);
+  };
+  const state = async (replica) => (await replica.api("/v1/status")).volumes.find((row) => row.id === volume.id).sync;
+  for (const { replica } of disks) await replica.sync().catch(() => {});
+  const missing = await state(tight);
+  assert.equal(missing.state, "error");
+  assert.match(missing.error, /Insufficient free disk space/);
+  assert.equal(missing.needed, 2 * 3000 + 6 * MiB, "each file needs its object and then its working copy on the same disk");
+  assert.equal((await state(exact)).needed, missing.needed);
+  disks[0].capacity += missing.needed - 1;
+  disks[1].capacity += missing.needed;
+  for (const { replica } of disks) await replica.sync().catch(() => {});
+  assert.equal((await state(tight)).state, "error", "one byte less is not enough");
+  const synced = await state(exact);
+  assert.equal(synced.state, "synced");
+  assert.equal("needed" in synced, false, "the amount leaves with the error");
+  assert.equal(read(exact, volume, "b.bin"), "b".repeat(2000));
+});
+
+test("a replica that downloaded a file but has no room to write it counts the file once, with only its working copy left to write", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("tight");
+  await replica.sync();
+  write(hub, volume, "a.bin", "a".repeat(1000));
+  await hub.sync();
+  const s = replica.engine.store;
+  const roots = [s.objects, s.uploads, s.volume(volume.id).path];
+  const used = () => {
+    const files = new Set();
+    for (const root of roots)
+      for (const name of fs.readdirSync(root, { recursive: true })) {
+        const file = path.join(root, name);
+        if (fs.statSync(file).isFile()) files.add(file);
+      }
+    return [...files].reduce((total, file) => total + fs.statSync(file).size, 0);
+  };
+  const MiB = 1024 * 1024;
+  let capacity = used() + 16 * MiB + 1500;
+  const statfs = fs.statfsSync;
+  t.after(() => (fs.statfsSync = statfs));
+  fs.statfsSync = (where, options) =>
+    roots.some((root) => where.startsWith(root)) ? { ...statfs(where, options), bavail: BigInt(Math.max(0, capacity - used())), bsize: 1n } : statfs(where, options);
+  const state = async () => (await replica.api("/v1/status")).volumes.find((row) => row.id === volume.id).sync;
+  await replica.sync().catch(() => {});
+  let sync = await state();
+  assert.match(sync.error, /Insufficient free disk space/);
+  assert.equal(sync.needed, 500);
+  await replica.sync().catch(() => {});
+  sync = await state();
+  assert.equal(sync.error.match(/a\.bin: Insufficient/g).length, 2, "recovery and the page both failed on it");
+  assert.equal(sync.needed, 500, "a pending row that recovery and the page both retry counts once");
+  capacity += sync.needed;
+  await replica.sync().catch(() => {});
+  assert.equal((await state()).state, "synced");
+  assert.equal(read(replica, volume, "a.bin"), "a".repeat(1000));
+});
+
+test("a hub that cannot write a replica's file to its own folder reports the bytes to free until it can", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("writer");
+  await replica.sync();
+  const root = hub.engine.store.volume(volume.id).path;
+  const used = () =>
+    fs
+      .readdirSync(root, { recursive: true })
+      .map((name) => path.join(root, name))
+      .filter((file) => fs.statSync(file).isFile())
+      .reduce((total, file) => total + fs.statSync(file).size, 0);
+  const MiB = 1024 * 1024;
+  let capacity = used() + 16 * MiB + 500;
+  const statfs = fs.statfsSync;
+  t.after(() => (fs.statfsSync = statfs));
+  fs.statfsSync = (where, options) =>
+    where.startsWith(root) ? { ...statfs(where, options), bavail: BigInt(Math.max(0, capacity - used())), bsize: 1n } : statfs(where, options);
+  const state = async () => (await hub.api("/v1/status")).volumes.find((row) => row.id === volume.id).sync;
+  write(replica, volume, "big.bin", "x".repeat(1000));
+  const scanHub = hub.engine.scanHub;
+  hub.engine.scanHub = async () => {};
+  await replica.sync().catch(() => {});
+  hub.engine.scanHub = scanHub;
+  let sync = await state();
+  assert.match(sync.error, /big\.bin: Insufficient free disk space/);
+  assert.equal(sync.needed, 500, "the accepted upload that did not fit");
+  write(replica, volume, "big.bin", "y".repeat(700));
+  hub.engine.scanHub = async () => {};
+  await replica.sync().catch(() => {});
+  hub.engine.scanHub = scanHub;
+  sync = await state();
+  assert.equal(sync.needed, 200, "a newer upload of the same file replaces what the older one needed");
+  await hub.sync().catch(() => {});
+  sync = await state();
+  assert.match(sync.error, /big\.bin: Insufficient free disk space/);
+  assert.equal(sync.needed, 200, "the hub's own retry reports it too");
+  capacity += sync.needed;
+  await hub.sync().catch(() => {});
+  sync = await state();
+  assert.equal(sync.state, "synced");
+  assert.equal("needed" in sync, false);
+  assert.equal(read(hub, volume, "big.bin"), "y".repeat(700));
+});
+
+test("a replica whose unwritten file has a newer, smaller version on the hub counts only the newer one", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("tight");
+  await replica.sync();
+  write(hub, volume, "a.bin", "a".repeat(1000));
+  await hub.sync();
+  const s = replica.engine.store;
+  const roots = [s.objects, s.uploads, s.volume(volume.id).path];
+  const used = () => {
+    const files = new Set();
+    for (const root of roots)
+      for (const name of fs.readdirSync(root, { recursive: true })) {
+        const file = path.join(root, name);
+        if (fs.statSync(file).isFile()) files.add(file);
+      }
+    return [...files].reduce((total, file) => total + fs.statSync(file).size, 0);
+  };
+  const MiB = 1024 * 1024;
+  let capacity = used() + 16 * MiB + 1500;
+  const statfs = fs.statfsSync;
+  t.after(() => (fs.statfsSync = statfs));
+  fs.statfsSync = (where, options) =>
+    roots.some((root) => where.startsWith(root)) ? { ...statfs(where, options), bavail: BigInt(Math.max(0, capacity - used())), bsize: 1n } : statfs(where, options);
+  const state = async () => (await replica.api("/v1/status")).volumes.find((row) => row.id === volume.id).sync;
+  await replica.sync().catch(() => {});
+  assert.equal((await state()).needed, 500);
+  write(hub, volume, "a.bin", "b".repeat(400));
+  await hub.sync();
+  await replica.sync().catch(() => {});
+  const sync = await state();
+  assert.equal(sync.error.match(/a\.bin: Insufficient/g).length, 2, "recovery tried the older version and the page the newer one");
+  assert.equal(sync.needed, 300, "only the newer version's working copy, not the older version's larger one");
+  capacity += sync.needed;
+  await replica.sync().catch(() => {});
+  assert.equal((await state()).state, "synced");
+  assert.equal(read(replica, volume, "a.bin"), "b".repeat(400));
+});

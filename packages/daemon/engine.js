@@ -55,6 +55,8 @@ import {
   validPath,
   atomic,
   requireSpace,
+  neededSpace,
+  SpaceShortfall,
   requirePersistentBackup,
   syncDirectory,
   overlapPath,
@@ -669,7 +671,8 @@ export class Engine {
           "INSERT OR IGNORE INTO accepted_proposals(id,volume,device,base) VALUES(?,?,?,?)",
         )
         .run(op, volume, device.id, base);
-    let refused = null;
+    let refused = null,
+      refusal = null;
     const accept = (entry, ...rest) => {
       remember();
       try {
@@ -677,6 +680,7 @@ export class Engine {
       } catch (error) {
         if (!error.accepted) throw error;
         refused = `${name}: ${error.message}`;
+        refusal = error;
         return error.accepted;
       }
     };
@@ -830,6 +834,9 @@ export class Engine {
     }
     if (refused) {
       const known = this.folderIssues.get(volume);
+      const space = known?.space ?? new SpaceShortfall();
+      space.forget(name);
+      space.fail(name, refusal);
       this.reportIssues(
         s.volume(volume),
         [
@@ -839,6 +846,7 @@ export class Engine {
           refused,
         ],
         known?.unreadable,
+        space,
       );
     }
     s.db.prepare("INSERT OR REPLACE INTO proposals(id,response) VALUES(?,?)").run(
@@ -1206,6 +1214,7 @@ export class Engine {
             });
             this.progress = { volume: v.id, path: null };
             const issues = [];
+            const space = new SpaceShortfall();
             const blocked = new Map();
             const isolate = (name, error) => {
               if (
@@ -1215,6 +1224,7 @@ export class Engine {
               )
                 throw error;
               issues.push(`${name}: ${error.message}`);
+              space.fail(name, error);
             };
             const remote = (name, error) => {
               if (
@@ -1233,12 +1243,15 @@ export class Engine {
                 awaited.set(name.toLowerCase(), { name, rev: result.row.rev });
               else this.recordAccepted(result, v.id, name, key);
             };
+            const recovered = new Map();
             try {
               s.recover(v.id);
             } catch (error) {
               if (!error.failures) throw error;
-              for (const failure of error.failures)
+              for (const failure of error.failures) {
+                recovered.set(failure.path, failure.rev);
                 isolate(failure.path, failure.error);
+              }
             }
             if (catalog.volumes.find((row) => row.id === v.id)?.policyError)
               fail(
@@ -1577,6 +1590,7 @@ export class Engine {
                     bytesDone: 0,
                     bytesTotal: 0,
                   });
+                  if (recovered.has(row.path) && recovered.get(row.path) !== row.rev) space.forget(row.path);
                   const local = disk.get(row.path);
                   if (row.modified && !row.deleted)
                     s.rememberFileDate(row.hash, row.modified);
@@ -1589,6 +1603,11 @@ export class Engine {
                     try {
                       await this.download(row.hash, row.size);
                     } catch (error) {
+                      if (error.status === 507 && typeof error.location === "string")
+                        space.add(row.path, [
+                          [error.location, error.bytes],
+                          [path.dirname(path.join(v.path, row.path)), row.size],
+                        ]);
                       isolate(row.path, error);
                       skipped = true;
                       continue;
@@ -1679,6 +1698,7 @@ export class Engine {
                       .filter(Boolean)
                       .join("; "),
                     lastCompleted: v.last_sync,
+                    ...space.needed(),
                   }
                 : {
                     state: "synced",
@@ -1701,6 +1721,7 @@ export class Engine {
               state: "error",
               error: e.message,
               lastCompleted: v.last_sync,
+              ...neededSpace(e),
             });
             if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
             folderErrors.push(`${v.name}: ${e.message}`);
@@ -1831,6 +1852,7 @@ export class Engine {
         this.folderStates.set(this.progress.volume, {
           state: "error",
           error: e.message,
+          ...neededSpace(e),
         });
       if (e.hubUnavailable && this.progress?.volume)
         this.folderStates.set(this.progress.volume, {
@@ -2435,12 +2457,15 @@ export class Engine {
       });
       try {
         const issues = [];
+        const space = new SpaceShortfall();
         try {
           s.recover(v.id);
         } catch (error) {
           if (!error.failures) throw error;
-          for (const failure of error.failures)
+          for (const failure of error.failures) {
             issues.push(`${failure.path}: ${failure.error.message}`);
+            space.fail(failure.path, failure.error);
+          }
         }
         const disk = await this.scanner.scan(v, plan.paths, true);
         checkpoint();
@@ -2516,7 +2541,7 @@ export class Engine {
           s.db
             .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
             .run(time, v.id);
-        if (issues.length || unread.length) this.reportIssues(v, issues, unreadable);
+        if (issues.length || unread.length) this.reportIssues(v, issues, unreadable, space);
         else {
           this.folderIssues.delete(v.id);
           this.folderStates.set(v.id, { state: "synced", lastCompleted: time });
@@ -2534,6 +2559,7 @@ export class Engine {
           state: "error",
           error: e.message,
           lastCompleted: v.last_sync,
+          ...neededSpace(e),
         });
         if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
         errors.push(`${v.name}: ${e.message}`);
@@ -2671,14 +2697,15 @@ export class Engine {
     }
     this.work.mark(id);
   }
-  reportIssues(v, unwritten, unreadable = new Map()) {
-    this.folderIssues.set(v.id, { unwritten, unreadable });
+  reportIssues(v, unwritten, unreadable = new Map(), space = new SpaceShortfall()) {
+    this.folderIssues.set(v.id, { unwritten, unreadable, space });
     this.folderStates.set(v.id, {
       state: "error",
       error: [unreadIssue(unreadable), unwritten.length && `Could not write ${fileCount(unwritten.length)} to this folder: ${unwritten.slice(0, 3).join("; ")}`]
         .filter(Boolean)
         .join("; "),
       lastCompleted: v.last_sync,
+      ...space.needed(),
     });
   }
   renameShare(id, name) {
