@@ -155,7 +155,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.49";
+const APP_VERSION = "0.9.50";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3104,7 +3104,7 @@ async function renderView(
     ].filter(([, list]) => list.length);
     if (shown.length)
       for (const [label, list] of kinds)
-        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v, v.selected ? false : "streamed")).join("")}</div>`);
+        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v, status.role === "hub" || v.selected ? false : "streamed")).join("")}</div>`);
     else html += section(
       status.role === "hub"
         ? "Shared folders"

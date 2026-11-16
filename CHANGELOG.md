@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.50 — 2026-11-16
+
+- A hub's folder list never says Streaming: a folder the hub itself had stopped syncing locally was labelled as streamed since 0.8.20, which is a replica's word. It now reads like any other hub folder.
+
+Needs: desktop build · hub redeploy
+
 ## 0.9.49 — 2026-11-16
 
 - On macOS, clicking the menu-bar icon with either button opens Arca's own popover instead of the system menu, which newer macOS draws in its own style; Windows and Linux keep their menu.

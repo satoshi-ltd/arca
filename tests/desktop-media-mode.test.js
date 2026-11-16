@@ -182,6 +182,20 @@ const section = (ui, name) => ui.$$("#content section").find((el) => el.querySel
 const shown = (el) => !!el && !el.closest("[hidden]");
 const submit = (ui) => ui.$("#submit-dialog");
 
+test("Folders on a hub never read Streaming, whatever the hub's own working copy is doing", async (t) => {
+  const hub = { ...replicaStatus(), id: "helios", name: "helios", role: "hub", hub: null, hubId: null, hubName: null, volumes: [
+    { id: "ph", name: "photos", gallery: true, selected: 0, sync: { state: "unselected" }, ...counted },
+    { id: "doc", name: "documents", selected: 1, sync: { state: "synced" }, ...counted },
+  ] };
+  const ui = await boot(t, { status: hub });
+  await until(() => row(ui, "photos") && row(ui, "documents"));
+  for (const name of ["photos", "documents"]) {
+    assert.equal(row(ui, name).querySelector(".tag"), null, `${name} carries no tag on a hub`);
+    assert.doesNotMatch(row(ui, name).getAttribute("aria-label"), /Streaming/, `${name} is never announced as streaming`);
+    assert.doesNotMatch(row(ui, name).textContent, /Streaming/);
+  }
+});
+
 test("Folders on a replica list only started libraries in their kind, and a Movies & TV library not started waits under On hub · not selected like an Audio one", async (t) => {
   const ui = await boot(t, { status: replicaStatus({ pod: "stream", kep: "keep" }) });
   await until(() => row(ui, "films"));
