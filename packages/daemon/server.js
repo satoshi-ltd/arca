@@ -256,6 +256,13 @@ export async function start(home, options = {}) {
   };
   engine.gallery = new Gallery(s);
   engine.gallery.resume();
+  const folderHasRules = (id) => {
+    try {
+      return s.visibleRules(id).hasRules;
+    } catch {
+      return false;
+    }
+  };
   const music = () => (engine.music ||= new Music(s));
   music().resume();
   const video = () => (engine.video ||= new Video(s, { tmdb: options.tmdb }));
@@ -1434,6 +1441,7 @@ export async function start(home, options = {}) {
               .get(v.id),
             music: music().isMusic(v.id),
             video: video().isVideo(v.id),
+            rules: folderHasRules(v.id),
             conflicts: s.unresolvedConflicts(v.id),
             conflictRevision: s.conflictRevision(v.id),
             ...totals.get(v.id),
@@ -1458,6 +1466,7 @@ export async function start(home, options = {}) {
                       .get(v.id),
                     music: music().isMusic(v.id),
                     video: video().isVideo(v.id),
+                    rules: folderHasRules(v.id),
                     ...totals.get(v.id),
                   };
                 }),

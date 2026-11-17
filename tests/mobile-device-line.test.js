@@ -38,8 +38,10 @@ test("segments wrap only between each other, never inside one and never with a l
   assert.match(read("theme.js"), /deviceLine: \{ overflow: "hidden" \},\s+deviceSegs: \{ flexDirection: "row", flexWrap: "wrap", marginLeft: -sp\[3\] \},\s+deviceSeg: \{ flexDirection: "row" \},\s+deviceSep: \{ width: 12, textAlign: "center" \},/, "a wrapped line's first separator sits in the clipped margin");
   assert.equal(
     machineLabel({ name: "nas", role: "Replica", backup: true, segments: deviceSegments({ platform: "android", version: "0.7.35", hubVersion: "0.7.38" }) }),
-    "nas, Replica, Full backup, Android, v0.7.35, older than the hub’s v0.7.38",
+    "nas, Full backup, Android, v0.7.35, older than the hub’s v0.7.38",
   );
+  assert.equal(machineLabel({ name: "salon-tv", role: "Player", segments: [] }), "salon-tv, Player", "only an exception names its role");
+  assert.equal(machineLabel({ name: "nas", role: "replica", segments: [] }), "nas", "the hub's lowercase replica role is not an exception either");
 });
 
 test("phone and Fold device rows end in their role chip after the row's action and show no Linked or sync state", () => {
@@ -52,6 +54,8 @@ test("phone and Fold device rows end in their role chip after the row's action a
   assert.match(row, /segment\.warning && s\.stateWordWarning/);
   const chip = components.slice(components.indexOf("export function RoleChip("), components.indexOf("export function MachineRow("));
   assert.match(chip, /hub && s\.hubTag/);
+  assert.match(chip, /const named = !\/\^replica\$\/i\.test\(role\);\s+if \(!named && !backup\) return null;/, "an ordinary replica draws no chip, however the hub spells its role");
+  assert.match(chip, /named && s\.backupTag/, "a full backup alone is a whole tag, joined only to a named role");
   assert.match(chip, /backup && \(\s+<View accessible accessibilityLabel="Full backup"/);
   const theme = read("theme.js");
   assert.match(theme, /roleTagJoined: \{ borderTopRightRadius: 0, borderBottomRightRadius: 0 \}/);
@@ -126,11 +130,11 @@ test("Fold cells always show the version, flag an older one unless removed, and 
   );
   assert.equal(
     machineLabel({ name: "Yuri", role: "Replica", segments: [], presence: { connected: false, label: "Seen Oct 7, 10:01" } }),
-    "Yuri, Replica, Seen Oct 7, 10:01",
+    "Yuri, Seen Oct 7, 10:01",
   );
   assert.equal(
     machineLabel({ name: "nas", role: "Replica", segments: [{ parts: ["Linux"] }], version: "v0.7.39" }),
-    "nas, Replica, Linux, v0.7.39",
+    "nas, Linux, v0.7.39",
   );
 });
 

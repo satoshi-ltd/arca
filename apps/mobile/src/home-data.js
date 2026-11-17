@@ -65,7 +65,7 @@ export const historyCaption = (row, size) =>
         : "Conflict copy retained"
       : size;
 const DEVICE_WARNINGS = ["Paused", "Offline", "Disconnected"];
-export const deviceLabel = (name, device) => [name, "Replica", device.word, device.last].filter(Boolean).join(", ");
+export const deviceLabel = (name, device) => [name, device.word, device.last].filter(Boolean).join(", ");
 
 export const hubChecking = (replica) => !!(replica.checking && replica.busy);
 export const pullHeld = ({ busy, checking }) => !!(busy || checking);

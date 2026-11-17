@@ -2998,6 +2998,7 @@ export class Engine {
       gallery: !!v.gallery,
       music: !!v.music,
       video: !!v.video,
+      rules: v.rules === true ? true : undefined,
       historyRetention:
         v.historyRetention ??
         this.config.catalog?.find((saved) => saved.id === v.id)

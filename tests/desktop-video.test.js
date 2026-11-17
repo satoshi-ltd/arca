@@ -729,7 +729,8 @@ test("hub Settings shows TMDB with its state, one Content dropdown, Titles with 
   await until(() => ui.$("#video-settings .settings-card") && ui.idle());
   const section = ui.$("#video-settings");
   assert.ok(section.querySelector(".settings-card").classList.contains("video-settings-card"));
-  assert.equal(ui.$$("#content .section-label").map((el) => el.textContent).filter((label) => ["Photos", "Movies & TV", "Movies & shows", "Images", "Video"].includes(label)).join(","), "Photos,Movies & TV");
+  assert.equal(ui.$$("#content .section-label").map((el) => el.textContent).filter((label) => ["Photos", "Movies & TV", "Media", "Movies & shows", "Images", "Video"].includes(label)).join(","), "Media", "Photos and Movies & TV share one Media section");
+  assert.ok(ui.$("#content #image-settings + #video-settings"));
   assert.equal(section.querySelector("select"), null, "no native select");
   const rows = [...section.querySelectorAll(".setting-row")];
   assert.deepEqual(rows.map((row) => row.querySelector("strong").textContent), ["TMDB", "Content", "Titles"]);
@@ -793,8 +794,7 @@ test("TMDB states: no key shows only the row and Add key…, matching disables R
   const replica = await boot(t, { route: "#/settings", status: { ...hubStatus(), id: "mac", role: "replica", hub: "http://casa", hubId: "hub" } });
   await until(() => replica.$$("#content section").length && replica.idle());
   assert.equal(replica.$("#video-settings"), null, "only the hub configures TMDB");
-  const video = replica.$$("#content section").find((el) => el.querySelector(".section-label")?.textContent === "Movies & TV");
-  assert.equal(video.querySelector(".hint").textContent, "Movies & TV settings live on the hub’s web page.");
+  assert.equal(replica.$$("#content section").some((el) => /^(Movies & TV|Media)$/.test(el.querySelector(".section-label")?.textContent)), false, "a device has no media settings and no pointer to them");
   assert.equal(replica.routes.some((route) => route.startsWith("/v1/video/settings")), false);
   assert.equal(replica.$("#video-kids-mode"), null, "there is no Kids mode");
 });

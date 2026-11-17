@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.52 — 2026-11-17
+
+- Settings on desktop and web is shorter: a device shows six groups and a hub seven, with every control kept (Network gathers Tailscale, discovery and, on a hub, authorized devices and Allow HTTP; Theme joins This device; Photos and Movies & TV share Media; Recovery joins Service), and the Synchronization row, which repeated the status card, and the pointer to the hub's page are gone.
+- A device is no longer labelled Replica: the status card, Devices, the phone's This device row and the Fold name only exceptions (Hub, Player, Full backup alone, This device). The status card says “2 conflicts” whole instead of cutting “Conflicts to review”, and shows its backup line only while a full backup is on or a hub holds reports.
+- Start syncing shows its space message alone and adds “Files excluded by .arcaignore stay local.” only when the folder's `.arcaignore` holds a rule (a hub reports it in its catalog); View folder, Library and Photos are secondary buttons, so a library keeps one primary.
+- Empty states lose their dashed frame on desktop, web, phone and Fold: an icon, a heading and a line.
+- Phone fields take the desktop's soft fill inside their edge, and a switch's description is the same size as every other row's.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.9.51 — 2026-11-17
 
 - Notices go where they belong: a lasting condition (hub unreachable, cannot reach this device) is a banner at the top of the page on desktop and web and under the header on the phone, never a card over the list; the floating stack keeps at most two cards that need you (one on the phone) and one result, a new result replaces the last, and the same one twice within two seconds shows once.

@@ -48,12 +48,17 @@ export function compileIgnore(text) {
     throw new Error(".arcaignore exceeds 64 KiB");
   validateIgnore(text);
   const rules = ignore({ ignorecase: true }).add(text);
-  const hasRules = text.trim().length > 0;
-  return (name, directory = false) => {
+  const hasRules = text.split(/\r?\n/).some((line) => {
+    const rule = line.trim();
+    return rule && !rule.startsWith("#");
+  });
+  const match = (name, directory = false) => {
     if (builtinExcluded(name)) return true;
     // Internal bookkeeping and unsupported file types remain safety invariants.
     if (name.split("/").some((part) => part.startsWith(".arca-"))) return true;
     if (name === IGNORE_FILE) return false;
     return hasRules && rules.ignores(name + (directory && !name.endsWith("/") ? "/" : ""));
   };
+  match.hasRules = hasRules;
+  return match;
 }

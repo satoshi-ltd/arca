@@ -226,10 +226,8 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       w.document.querySelector("#last-sync").textContent,
       /Last sync|Not synced yet/,
     );
-    assert.equal(
-      w.document.querySelector("#backup-summary").textContent.trim(),
-      "No backup reported",
-    );
+    assert.equal(w.document.querySelector("#backup-summary").hidden, true, "a hub with no backup reported draws no backup line");
+    assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "");
     const tooltipControl = w.document.querySelector(
       '#sync-controls [data-action="pause"]',
     );
@@ -842,10 +840,7 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   assert.equal(w.document.querySelectorAll("#node-name").length, 0);
   assert.equal(w.document.querySelector("#managed-role").textContent, "Hub");
   assert.equal(w.document.querySelector("#status-device [data-icon]").dataset.icon, "server");
-  assert.equal(
-    w.document.querySelector("#backup-summary").textContent.trim(),
-    "No backup reported",
-  );
+  assert.equal(w.document.querySelector("#backup-summary").hidden, true);
   assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 0);
   assert.equal(w.localStorage.length, 0);
   w.document.querySelector('[data-action="logout"]').click();
@@ -1332,7 +1327,7 @@ test("the status card opens with the device glyph, name and role, and the lockup
     return {
       glyph: row.firstElementChild.dataset.icon,
       name: row.querySelector("#managed-name").textContent,
-      role: row.querySelector("#managed-role").textContent,
+      role: row.querySelector("#managed-role")?.textContent ?? null,
       label: document.querySelector(".status-card").getAttribute("aria-label"),
       first: document.querySelector(".status-card").firstElementChild.id,
       brand: document.querySelector(".brand").textContent.trim(),
@@ -1340,7 +1335,7 @@ test("the status card opens with the device glyph, name and role, and the lockup
     };
   };
   const app = await open({ role: "replica", name: "macbook-pro", phase: "idle", lastSync: new Date().toISOString(), hub: "http://127.0.0.1:49999", hubName: "Casa" }, true);
-  assert.deepEqual(app, { glyph: "monitor", name: "macbook-pro", role: "Replica", label: "macbook-pro, Replica, Up to date", first: "status-device", brand: "arca", dot: "status-dot ok" });
+  assert.deepEqual(app, { glyph: "monitor", name: "macbook-pro", role: null, label: "macbook-pro, Up to date", first: "status-device", brand: "arca", dot: "status-dot ok" });
   const offline = await open({ role: "hub", name: "casa", phase: "idle", hubUnavailable: true, hub: "", hubName: "" }, true);
   assert.equal(offline.glyph, "server", "the hub is a server even in its desktop app");
   assert.equal(offline.role, "Hub");
@@ -1348,8 +1343,8 @@ test("the status card opens with the device glyph, name and role, and the lockup
   assert.equal(offline.dot, "status-dot wa");
   const server = await open({ role: "replica", name: "nas", phase: "idle", lastSync: new Date().toISOString(), hub: "http://127.0.0.1:49999", hubName: "Casa" }, false);
   assert.equal(server.glyph, "server", "a replica seen through its own web is a server replica");
-  assert.equal(server.role, "Replica");
-  assert.equal(server.label, "nas, Replica, Up to date");
+  assert.equal(server.role, null, "a replica carries no role word, only a hub does");
+  assert.equal(server.label, "nas, Up to date");
 });
 
 test("the Search Arca active row stays visible on the dialog surface in dark", () => {
@@ -2072,7 +2067,7 @@ test("a paused replica's Devices rows carry roles and full backup, never sync, p
   assert.equal(other.querySelector(".pill"), null, "no Linked or Offline pill");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
   assert.equal(other.querySelector(".tag.full-backup"), null, "a device that is not a backup has no full-backup segment");
-  assert.equal(other.querySelector(".row-end > .role-set").textContent, "Replica");
+  assert.equal(other.querySelector(".row-end > .role-set"), null, "an ordinary replica carries no role chip");
   const nas = rows.find((row) => /nas/.test(row.textContent));
   assert.equal(nas.querySelector(".role-set .tag.full-backup").textContent, "Full backup", "the hub's backup server carries the full-backup segment");
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Backs up hub|Linked/);
@@ -2265,14 +2260,14 @@ test("a replica's device rows read the OS under the name, then version, folders 
   assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform]]);
   const running = /const APP_VERSION = "([^"]+)";/.exec(fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8"))[1];
   assert.deepEqual(cells(own), [`v${running}`, ["2 folders", "3.0 GB"], "Connected"], "only selected folders count, this device runs its own version and is always Connected");
-  assert.equal(own.querySelector(".role-set").textContent, "Replica");
+  assert.equal(own.querySelector(".role-set"), null, "this device, an ordinary replica, is tagged This device and nothing else");
   assert.deepEqual(segments(named("nas")), ["Linux"]);
   assert.deepEqual(cells(named("nas")), ["v0.7.38", ["9 folders", "401.0 GB"], "Connected"], "the freshest of last contact and report decides, within two minutes of the hub's clock");
   assert.equal(named("nas").querySelector(".device-older"), null, "a current version is shown without the warning");
   const suffixed = named("nas").querySelector(".device-version > span");
   assert.equal(suffixed.dataset.tooltip, "v0.7.38-beta.12+build.2026", "the cell shows the x.y.z core and keeps the full version in its tooltip");
   assert.equal(suffixed.getAttribute("aria-label"), "v0.7.38-beta.12+build.2026");
-  assert.equal(named("nas").querySelector(".role-set").textContent, "ReplicaFull backup");
+  assert.equal(named("nas").querySelector(".role-set").textContent, "Full backup", "a replica that keeps a full backup shows that chip alone");
   assert.ok(named("nas").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
   const yuri = named("Yuri");
   assert.deepEqual(segments(yuri), ["Android"]);
@@ -2288,10 +2283,12 @@ test("a replica's device rows read the OS under the name, then version, folders 
   const tablet = named("Tablet");
   assert.deepEqual(cells(tablet), ["v0.6.99", ["3 folders", "5.0 GB"], seenAt(at(90))], "a removed device never reads Connected");
   assert.equal(tablet.querySelector(".device-older"), null, "a removed device never shows the up-arrow");
-  assert.deepEqual([...tablet.querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"], "Removed sits just before the chip");
+  assert.deepEqual([...tablet.querySelector(".row-end").children].map((el) => el.className), ["pill er"], "Removed ends the row of an ordinary replica");
   assert.ok(tablet.querySelector(".tile.large.er"));
   for (const row of rows) {
-    assert.equal(row.querySelector(".row-end").lastElementChild.className, "role-set", "every row ends in its role chip");
+    const end = row.querySelector(".row-end").lastElementChild;
+    const chip = end?.className === "role-set";
+    assert.equal(chip, /Hub|Full backup/.test(row.textContent.replace(/\s+/g, " ")) && !!end, "only an exception, the hub or a full backup, ends in a role chip");
     assert.ok(row.querySelector(".row-end").classList.contains("device-end"));
     assert.ok(row.querySelector(".connection-line").classList.contains("device-line"));
   }
@@ -2621,11 +2618,11 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
   assert.deepEqual(cells(named("nas")), ["v0.7.38", ["9 folders", "401.0 GB"], seenAt(at(600))]);
   assert.deepEqual(cells(named("Tablet")), ["", "", seenAt(at(7200))], "a removed device keeps when it was last seen");
   assert.deepEqual(cells(named("new-laptop")), ["", "", ""], "an invitation never seen leaves its cells empty");
-  assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu file-actions-menu", "role-set"]);
-  assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu file-actions-menu", "role-set"], "⋯ sits just before the chip");
+  assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu file-actions-menu"], "an invitation is an ordinary replica: no chip");
+  assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu file-actions-menu"], "an ordinary replica ends in its ⋯ alone");
   assert.equal(mac.querySelector(".pill"), null, "a peer Tailscale reports down shows no Offline pill");
-  assert.equal(named("nas").querySelector(".role-set").textContent, "ReplicaFull backup");
-  assert.deepEqual([...named("Tablet").querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"]);
+  assert.equal(named("nas").querySelector(".role-set").textContent, "Full backup", "a replica that keeps a full backup shows that chip alone");
+  assert.deepEqual([...named("Tablet").querySelector(".row-end").children].map((el) => el.className), ["pill er"]);
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Running|Offline|100\.84\.10\.2/);
 });
 
@@ -5333,7 +5330,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-select").length === 2);
   await until(() => w.document.querySelector(".page").scrollTop === 123);
-  assert.ok(w.document.querySelector('[data-action="gallery-mode"]').classList.contains("primary"));
+  assert.ok(w.document.querySelector('[data-action="gallery-mode"]').classList.contains("secondary"), "the mode switch is never the screen's primary");
   assert.equal(
     w.document.querySelector('[aria-label="Open photo.jpg"]'),
     null,

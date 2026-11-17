@@ -91,7 +91,7 @@ export function rosterPresence(machines, { offline = false, connectionId } = {})
 export const machineLabel = ({ name, role, self, backup, segments, address, state, presence, version }) =>
   [
     name,
-    role,
+    !/^replica$/i.test(role) && role,
     self && "this device",
     backup && "Full backup",
     ...segments.map((segment) => segment.label || segment.parts.join(" · ")),

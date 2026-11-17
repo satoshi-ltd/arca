@@ -327,6 +327,8 @@ test("a music folder opens on its Artists tab; Albums is a grid; Recent falls ba
   assert.deepEqual(ui.cards(), ["Blue Train", "Kind of Blue", "Loose"]);
   assert.match(ui.text(".detail-title p"), /^4 tracks · 3 albums · /);
   assert.equal(ui.text('.heading-actions [data-action="music-mode"]'), "View folder");
+  assert.ok($('.heading-actions [data-action="music-mode"]').classList.contains("secondary"), "leaving the library is never the screen's primary");
+  assert.equal($(".heading-actions .primary"), null, "the header holds no primary button");
   assert.ok($(".heading-actions .folder-actions-menu"), "the hub keeps its Folder actions menu");
   assert.equal($(".music-page input"), null, "the library has no search field");
   await until(() => $(".music-card .music-cover img"));

@@ -250,20 +250,20 @@ test("a timed pause leads the status card's second line with its end, and names 
   assert.equal(timed("#last-sync").hidden, false);
   assert.equal(timed("#last-sync").title, "Until 23:59 · last sync 2 min ago", "the tooltip reads the whole line");
   assert.equal(timed("#last-sync").dataset.prefix, "Until 23:59 · last sync ");
-  assert.equal(timed(".status-card").getAttribute("aria-label"), "macbook-pro, Replica, Paused until 23:59");
-  assert.equal(timed("#status-device").title, "macbook-pro · Replica · Paused until 23:59");
+  assert.equal(timed(".status-card").getAttribute("aria-label"), "macbook-pro, Paused until 23:59");
+  assert.equal(timed("#status-device").title, "macbook-pro · Paused until 23:59");
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(8, 0, 0, 0);
   const day = tomorrow.toLocaleDateString("en", { weekday: "short" });
   const later = await open(tomorrow.getTime());
   assert.equal(later("#last-sync").textContent, `Until ${day} ${clock(tomorrow)} · last sync 2 min ago`);
-  assert.equal(later(".status-card").getAttribute("aria-label"), `macbook-pro, Replica, Paused until ${day} 08:00`);
+  assert.equal(later(".status-card").getAttribute("aria-label"), `macbook-pro, Paused until ${day} 08:00`);
   const forever = await open(null);
   assert.equal(forever("#last-sync").textContent, "Last sync 2 min ago");
   assert.equal(forever("#last-sync").title, "Last sync 2 min ago");
-  assert.equal(forever(".status-card").getAttribute("aria-label"), "macbook-pro, Replica, Paused");
-  assert.equal(forever("#status-device").title, "macbook-pro · Replica · Paused");
+  assert.equal(forever(".status-card").getAttribute("aria-label"), "macbook-pro, Paused");
+  assert.equal(forever("#status-device").title, "macbook-pro · Paused");
 });
 
 test("the end of a pause shows the day only when it is not today, and the tray shares the clock", async () => {
@@ -466,4 +466,42 @@ test("the desktop window opens wide enough for the Devices list to show its colu
   const px = (name) => Number(new RegExp(`${name}: (\\d+)px;`).exec(tokens)[1]);
   const list = conf.app.windows[0].width - px("--sidebar-width") - 2 * px("--space-6") - 16;
   assert.ok(list > 840, `the list is ${list} px at the default window width`);
+});
+
+test("the status card names open conflicts by their count, whole, and every state label fits beside the two controls", async (t) => {
+  const idle = (volumes) => ({ id: "mac", name: "macbook-pro", role: "replica", phase: "idle", hub: "http://casa:17831", hubName: "casa", lastSync: new Date().toISOString(), volumes });
+  const open = async (volumes) => {
+    const w = await boot(t, idle(volumes), { "/v1/remote": () => ({ volumes: [] }) });
+    await until(() => w.document.querySelector("#connection")?.textContent && !w.document.querySelector("#status-device").hidden);
+    return w.document;
+  };
+  assert.equal((await open([{ ...base, id: "a", name: "a", conflicts: 1 }])).querySelector("#connection").textContent, "1 conflict");
+  const several = await open([{ ...base, id: "a", name: "a", conflicts: 2 }, { ...base, id: "b", name: "b", conflicts: 3 }]);
+  assert.equal(several.querySelector("#connection").textContent, "5 conflicts");
+  assert.equal(several.querySelector("#connection").className, "wa");
+  const shell = source("app.js");
+  const labels = [...shell.slice(shell.indexOf("function updateShell()"), shell.indexOf('$("#connection").innerHTML')).matchAll(/\["([A-Z][^"]+)", "(?:id|ok|wa|er|sy)"/g)].map((match) => match[1]);
+  assert.ok(labels.length >= 8, `found the state labels: ${labels}`);
+  for (const label of [...labels, "99 conflicts"]) assert.ok(label.length <= 17, `“${label}” fits the room the 240 px card leaves beside Pause and Sync now`);
+});
+
+test("the status card draws its backup line only while a full backup is on or a hub holds reports", async (t) => {
+  const device = (backup) => ({ id: "mac", name: "macbook-pro", role: "replica", phase: "idle", hub: "http://casa:17831", hubName: "casa", lastSync: new Date().toISOString(), backup, volumes: [{ ...base, id: "docs", name: "docs" }] });
+  const line = async (status) => {
+    const w = await boot(t, status, { "/v1/remote": () => ({ volumes: [] }) });
+    await until(() => w.document.querySelector("#connection")?.textContent && !w.document.querySelector("#status-device").hidden);
+    return w.document.querySelector("#backup-summary");
+  };
+  const off = await line(device({ enabled: false }));
+  assert.equal(off.hidden, true, "no backup, no line");
+  assert.equal(off.textContent, "");
+  const on = await line(device({ enabled: true, lastSync: new Date().toISOString() }));
+  assert.equal(on.hidden, false);
+  assert.equal(on.textContent.trim(), "Full backup enabled");
+  assert.equal((await line(device({ enabled: true, error: "disk full" }))).textContent.trim(), "Full backup needs attention");
+  const hubStatus = (devices) => ({ id: "hub", name: "Casa", role: "hub", phase: "idle", hub: "", lastSync: new Date().toISOString(), devices, volumes: [{ ...base, id: "docs", name: "docs" }] });
+  assert.equal((await line(hubStatus([]))).hidden, true, "a hub nobody backs up to draws no line");
+  const reported = await line(hubStatus([{ id: "nas", name: "nas", role: "replica", backup_enabled: 1, backup_updated: new Date().toISOString(), revoked: 0 }]));
+  assert.equal(reported.textContent.trim(), "1 backup reported");
+  assert.equal((await line(hubStatus([{ id: "nas", name: "nas", role: "replica", backup_enabled: 1, backup_updated: null, revoked: 0 }]))).textContent.trim(), "Backup pending");
 });

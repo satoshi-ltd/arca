@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.51";
+const APP_VERSION = "0.9.52";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -984,11 +984,6 @@ function icons() {
       el.replaceWith(svg);
     }
   });
-}
-function syncStatePill() {
-  if (status.role !== "hub" && !status.hub) return pill("Disconnected", "id", "wifi-off");
-  if (status.phase === "paused") return pill("Paused", "id", "pause");
-  return pill("Enabled", "ok", "check");
 }
 function pill(label, state = "id", symbol = "circle-dashed") {
   return `<span class="pill ${state}${symbol === "busy" ? " busy-status" : ""}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
@@ -2059,22 +2054,22 @@ function updateShell() {
     : deviceUnreachable || (status.hubUnavailable && status.phase !== "paused")
       ? ["Offline", "wa", "wifi-off"]
       : status.phase === "idle" && conflicts
-        ? ["Conflicts to review", "wa", "triangle-alert"]
+        ? [conflicts === 1 ? "1 conflict" : `${conflicts} conflicts`, "wa", "triangle-alert"]
         : status.phase === "idle" && !status.lastSync
           ? ["Checking sync", "id", "clock"]
           : states[status.phase]) || ["Checking sync", "id", "clock"];
   $("#connection").innerHTML =
     (symbol === "busy" ? busyIcon() : icon(symbol)) + escape(label);
   $("#connection").className = color;
-  const role = status.role === "hub" ? "Hub" : "Replica";
+  const role = status.role === "hub" ? "Hub" : "";
   const device = $("#status-device");
-  device.innerHTML = `${icon(managedGlyph())}<b id="managed-name">${escape(status.name)}</b><span id="managed-role" class="machine-role">${role}</span><span class="status-dot ${color}" aria-hidden="true"></span>`;
+  device.innerHTML = `${icon(managedGlyph())}<b id="managed-name">${escape(status.name)}</b>${role ? `<span id="managed-role" class="machine-role">${role}</span>` : ""}<span class="status-dot ${color}" aria-hidden="true"></span>`;
   const until = label === "Paused" && status.pauseUntil ? pauseEnd(status.pauseUntil) : "";
   const spoken = until ? `Paused until ${until}` : label;
-  device.title = `${status.name} · ${role} · ${spoken}`;
+  device.title = [status.name, role, spoken].filter(Boolean).join(" · ");
   device.hidden = false;
   const card = device.closest(".status-card");
-  card.setAttribute("aria-label", `${status.name}, ${role}, ${spoken}`);
+  card.setAttribute("aria-label", [status.name, role, spoken].filter(Boolean).join(", "));
   card.hidden = false;
   const synced =
     status.role !== "hub" && !status.hub
@@ -2099,15 +2094,16 @@ function updateShell() {
     (device) => !device.revoked && device.backup_enabled,
   );
   const reported = hubBackups.filter((device) => device.backup_updated).length;
-  const backupLabel =
-    status.role === "hub"
-      ? reported
-        ? `${reported} ${reported === 1 ? "backup" : "backups"} reported`
-        : hubBackups.length
-          ? "Backup pending"
-          : "No backup reported"
-      : status.backup?.enabled
-        ? status.backup.progress
+  const showBackup =
+    status.role === "hub" ? !!(reported || hubBackups.length) : !!(status.hub && status.backup?.enabled);
+  backup.hidden = !showBackup;
+  if (showBackup) {
+    const backupLabel =
+      status.role === "hub"
+        ? reported
+          ? `${reported} ${reported === 1 ? "backup" : "backups"} reported`
+          : "Backup pending"
+        : status.backup.progress
           ? "Backing up…"
           : status.backup.waiting
             ? "Full backup waiting for hub"
@@ -2115,25 +2111,14 @@ function updateShell() {
               ? "Full backup needs attention"
               : status.backup.lastSync
                 ? "Full backup enabled"
-                : "Full backup pending"
-        : "Full backup off";
-  backup.hidden = status.role !== "hub" && !status.hub;
-  backup.dataset.action =
-    status.role === "hub" ? "machines" : "backup-settings";
-  backup.innerHTML =
-    icon(
+                : "Full backup pending";
+    backup.dataset.action = status.role === "hub" ? "machines" : "backup-settings";
+    backup.innerHTML = icon(status.role === "hub" && !reported ? "shield" : "shield-check") + `<span>${backupLabel}</span>`;
+    backup.title =
       status.role === "hub"
-        ? reported
-          ? "shield-check"
-          : "shield"
-        : status.backup?.enabled
-          ? "shield-check"
-          : "shield",
-    ) + `<span>${backupLabel}</span>`;
-  backup.title =
-    status.role === "hub"
-      ? "View backup reports from your devices"
-      : "Manage this device’s additional full copy of the hub and its history";
+        ? "View backup reports from your devices"
+        : "Manage this device’s additional full copy of the hub and its history";
+  } else backup.replaceChildren();
   $("#conflict-count").textContent = conflicts;
   $("#conflict-count").hidden = !conflicts;
   markNav();
@@ -5374,7 +5359,7 @@ function galleryModeButton(volume) {
     folderTab === "gallery" ? "View folder" : "Photos",
     "gallery-mode",
     volume.id,
-    "primary gallery-mode-toggle",
+    "secondary gallery-mode-toggle",
     folderTab === "gallery" ? "folder" : "images",
   );
 }
@@ -5559,7 +5544,7 @@ function musicModeButton(volume) {
     folderTab === "library" ? "View folder" : "Library",
     "music-mode",
     volume.id,
-    "primary",
+    "secondary",
     folderTab === "library" ? "folder" : "music",
   );
 }
@@ -7289,7 +7274,7 @@ function videoModeButton(volume) {
     folderTab === "video" ? "View folder" : "Library",
     "video-mode",
     volume.id,
-    "primary",
+    "secondary",
     folderTab === "video" ? "folder" : "clapperboard",
   );
 }
@@ -9343,8 +9328,9 @@ function deviceCells({ version, hubVersion, folders, size, revoked = false, seen
   return `<div class="device-cells"><div class="device-cell device-version">${versionCell}</div><div class="device-cell device-folders">${totals}</div><div class="device-cell device-seen">${seenCell}</div></div>`;
 }
 function roleChip(role, backup = false) {
-  const label = role === "hub" ? "Hub" : role === "player" ? "Player" : !role || role === "replica" ? "Replica" : role;
-  return `<span class="role-set"><span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
+  const label = role === "hub" ? "Hub" : role === "player" ? "Player" : role && role !== "replica" ? role : "";
+  if (!label && !backup) return "";
+  return `<span class="role-set">${label ? `<span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>` : ""}${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
 }
 const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, cells = "", end = "", tone = "", dashed = false }) =>
   `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : role === "player" ? "tv" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
@@ -9782,24 +9768,33 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       return;
   }
   if (view !== "settings" || serial !== renderSerial) return;
-  let html = title("Settings", "") + '<div class="page">';
-  if (status.role !== "hub") html += hubConnectionSection();
-  html += section(
-    "This device",
-    `<div class="settings-card">${setting("Device name", 'Shown to other devices and in history.<span class="message message-error" id="machine-name-error" role="alert" hidden></span>', `<input id="machine-name" aria-label="Device name" aria-describedby="machine-name-error" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
+  const hub = status.role === "hub";
+  const card = (rows, extra = "") => `<div class="settings-card${extra}">${rows}</div>`;
+  const themeRow = setting(
+    "Theme",
+    "Use light, dark or your system appearance.",
+    segmented(
+      "Theme",
+      ["light", "dark", "system"].map((t) => ({
+        action: "theme",
+        id: t,
+        label: t[0].toUpperCase() + t.slice(1),
+        symbol: t === "light" ? "sun" : t === "dark" ? "moon" : "monitor",
+        active: preference === t,
+      })),
+    ),
   );
-  html += section(
-    status.role === "hub" ? "Hub synchronization" : "Local synchronization",
-    `<div class="settings-card">${setting("Synchronization", status.role === "hub" ? "Synchronizes this hub’s working folders with connected devices." : "Synchronizes the folders selected on this device.", syncStatePill())}</div>`,
-  );
-  if (status.role === "hub")
-    html += section(
-      "Access to this hub",
-      `<div class="settings-card">${setting("Authorized devices", "Issue pairing codes and remove devices from this hub.", button("Manage devices", "machines", "", "secondary small-button", "monitor-smartphone"))}</div>`,
-    );
-  html += section(
-    "Tailscale",
-    `<div class="settings-card">${setting(
+  const deviceRows =
+    setting("Device name", 'Shown to other devices and in history.<span class="message message-error" id="machine-name-error" role="alert" hidden></span>', `<input id="machine-name" aria-label="Device name" aria-describedby="machine-name-error" maxlength="100" value="${escape(status.name)}">`) +
+    setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy")) +
+    (native
+      ? (status.platform === "darwin" ? setting("Launch at login", "Start synchronization when you sign in to this Mac.", '<div id="service-control"><span class="hint">Checking service…</span></div>') : "") +
+        setting("System notifications", "Show system notifications for conflicts, hub errors and stopped backups.", toggleControl("notifications-enabled", "Enable system notifications"))
+      : "") +
+    themeRow;
+  const networkRows =
+    (hub ? setting("Authorized devices", "Issue pairing codes and remove devices from this hub.", button("Manage devices", "machines", "", "secondary small-button", "monitor-smartphone")) : "") +
+    setting(
       "Connection mode",
       network
         ? network.mode === "tailscale"
@@ -9813,79 +9808,55 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           label: m === "tailscale" ? "Tailscale" : "Standalone",
           symbol: m === "tailscale" ? "shield-check" : "cable",
           active: network?.mode === m,
-          disabled:
-            m === "tailscale" && network?.tailscale.state !== "connected",
+          disabled: m === "tailscale" && network?.tailscale.state !== "connected",
         })),
       ),
-    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")}${status.port ? ` · port ${status.port}` : ""}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
-  );
-  if (status.role === "hub")
-    html += section(
-      "Local network",
-      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Anyone on that network could read your files and sign-in details, so use it only on a network you trust.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
-    );
-  html += section(
-    "Device discovery",
-    `<div class="settings-card">${setting("Find devices on Tailscale", "Look for Arca on connected devices. Finding a device does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
-  );
+    ) +
+    setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")}${status.port ? ` · port ${status.port}` : ""}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi")) +
+    (hub
+      ? setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Anyone on that network could read your files and sign-in details, so use it only on a network you trust.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))
+      : "") +
+    setting("Find devices on Tailscale", "Look for Arca on connected devices. Finding a device does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"));
+  const serviceRows =
+    setting(`v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy")) +
+    setting("Runtime", `<span class="mono">Port ${status.port || "Not reported"} · Node ${escape(status.nodeVersion || "Not reported")}</span>`, "") +
+    setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "") +
+    (status.role === "replica" && status.hub
+      ? setting("Become the replacement hub", "Requires complete copies of every known shared folder and the old hub stopped.", button("Review…", "promote", "", "secondary small-button")) +
+        setting("Reconnect to a hub", "Local files remain. Hub backup must be disabled first.", button("Reconnect…", "replacement-hub", "", "secondary small-button", "link"))
+      : "");
+  let html = title("Settings", "") + '<div class="page">';
+  if (!hub) html += hubConnectionSection();
+  html += section("This device", card(deviceRows));
+  html += section("Network", card(networkRows));
   if (!native)
     html += section(
       "Browser session",
       `<div class="settings-card">${setting("This browser", `Signed in to ${escape(status.name)}. Signing out does not stop synchronization.`, button("Sign out", "logout", "", "secondary small-button", "log-out"))}${setting("Other browser sessions", `Sign out every browser managing ${escape(status.name)}. Device connections are kept.`, button("Sign out all browsers…", "logout-all", "", "secondary small-button", "log-out"))}</div>`,
     );
-  if (native)
-    html += section(
-      "Desktop preferences",
-      `<div class="settings-card">${status.platform === "darwin" ? setting("Launch at login", "Start synchronization when you sign in to this Mac.", '<div id="service-control"><span class="hint">Checking service…</span></div>') : ""}${setting("System notifications", "Show system notifications for conflicts, hub errors and stopped backups.", toggleControl("notifications-enabled", "Enable system notifications"))}</div>`,
-    );
   html += section(
-    status.role === "hub" ? "Hub backup" : "Full backup on this device",
-    status.role === "hub"
+    hub ? "Hub backup" : "Full backup on this device",
+    hub
       ? backupSummary()
       : !status.hub
         ? '<div class="panel"><p>Connect to a hub first.</p></div>'
-        : `<div class="settings-card">${setting(`Keep a full backup of the hub here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle"))}${setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input"))}${backupCompletionSetting()}</div>`,
+        : card(
+            setting(`Keep a full backup of the hub here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle")) +
+              setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input")) +
+              backupCompletionSetting(),
+          ),
   );
-  if (status.role === "hub")
+  if (hub) {
     html += section(
       "History",
-      `<div class="settings-card">${setting("Older versions", `${Number(status.historyRevisions || 0).toLocaleString("en")} kept across your folders. Each folder decides how long it keeps them.`, button("Clean up…", "retention", "", "secondary small-button", "trash-2"))}</div><p class="hint">Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.</p>`,
+      `${card(setting("Older versions", `${Number(status.historyRevisions || 0).toLocaleString("en")} kept across your folders. Each folder decides how long it keeps them.`, button("Clean up…", "retention", "", "secondary small-button", "trash-2")))}<p class="hint">Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.</p>`,
     );
-  if (status.role === "hub")
     html += section(
-      "Photos",
-      '<div id="image-settings" class="image-settings"><p class="hint">Loading photos…</p></div>',
+      "Media",
+      '<div id="image-settings" class="image-settings"><p class="hint">Loading photos…</p></div><div id="video-settings"><p class="hint">Loading video settings…</p></div>',
     );
-  html += section(
-    "Movies &amp; TV",
-    status.role === "hub" ? '<div id="video-settings"><p class="hint">Loading video settings…</p></div>' : '<p class="hint">Movies &amp; TV settings live on the hub’s web page.</p>',
-  );
-  html += section(
-    "Service",
-    `<div class="settings-card">${setting(`v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || "Not reported"} · Node ${escape(status.nodeVersion || "Not reported")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
-  );
-  if (status.role === "replica" && status.hub)
-    html += section(
-      "Recovery",
-      `<div class="settings-card">${setting("Become the replacement hub", "Requires complete copies of every known shared folder and the old hub stopped.", button("Review…", "promote", "", "secondary small-button"))}${setting("Reconnect to a hub", "Local files remain. Hub backup must be disabled first.", button("Reconnect…", "replacement-hub", "", "secondary small-button", "link"))}</div>`,
-    );
-  html += section(
-    "Appearance",
-    `<div class="settings-card">${setting(
-      "Theme",
-      "Use light, dark or your system appearance.",
-      segmented(
-        "Theme",
-        ["light", "dark", "system"].map((t) => ({
-          action: "theme",
-          id: t,
-          label: t[0].toUpperCase() + t.slice(1),
-          symbol: t === "light" ? "sun" : t === "dark" ? "moon" : "monitor",
-          active: preference === t,
-        })),
-      ),
-    )}</div>`,
-  );
+  }
+  html += section("Service", card(serviceRows));
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
     "Danger zone",
@@ -11706,7 +11677,7 @@ async function handle(name, id, control) {
             (local?.path
               ? '<p class="hint">Change this location from folder details.</p>'
               : "") +
-            `${inlineMessage("Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.")}</div>`) +
+            `${remote.rules ? inlineMessage("Files excluded by .arcaignore stay local.") : ""}</div>`) +
         "</div>",
       async (f) => {
         const mode = media ? f.get("mode") || "stream" : undefined;

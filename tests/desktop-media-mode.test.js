@@ -31,9 +31,9 @@ async function until(check) {
 
 const counted = { files: 1284, bytes: 9.6 * 1024 ** 3, conflicts: 0 };
 const catalog = [
-  { id: "aud", name: "music", music: true, ...counted },
+  { id: "aud", name: "music", music: true, rules: true, ...counted },
   { id: "pod", name: "podcasts", music: true, ...counted },
-  { id: "vid", name: "videos", video: true, ...counted },
+  { id: "vid", name: "videos", video: true, rules: true, ...counted },
   { id: "kep", name: "films", video: true, ...counted },
   { id: "doc", name: "documents", ...counted },
 ];
@@ -230,7 +230,7 @@ test("Start syncing an Audio library asks Stream or Keep: Keep shows today's des
   assert.equal(ui.$("#dialog .role-card [data-lucide], #dialog .role-card svg, #dialog .role-card .icon"), null, "the cards carry no icon");
   assert.equal(ui.$('#dialog [name="mode"]:checked').value, "keep", "Audio defaults to Keep");
   assert.ok(shown(ui.$("#selection-path")));
-  assert.ok(shown(ui.$("#dialog .message:not(#folder-path-status)")));
+  assert.equal(ui.$("#dialog .message:not(#folder-path-status)").textContent, "Files excluded by .arcaignore stay local.");
   await until(() => shown(ui.$("#folder-path-status")) && /Needs 9\.6 GB/.test(ui.$("#folder-path-status").textContent));
   assert.match(submit(ui).textContent, /^Start syncing$/);
   await ui.choose("stream");
@@ -273,6 +273,7 @@ test("an ordinary folder's Start syncing shows no cards, and a web session keeps
   await ui.click(row(ui, "documents").querySelector('[data-action="add"]'), () => ui.$("#dialog[open] .folder-selection"));
   assert.equal(ui.$("#dialog .role-card"), null);
   assert.ok(shown(ui.$("#selection-path")));
+  assert.equal(ui.$("#dialog .message:not(#folder-path-status)"), null, "a folder whose .arcaignore holds no rule shows no exclusion line");
   assert.equal(submit(ui).textContent, "Start syncing");
   assert.match(ui.$("#dialog .modal-title p").textContent, /Files sync both ways/);
 

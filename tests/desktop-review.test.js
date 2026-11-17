@@ -94,19 +94,17 @@ test("Sync now keeps its place while a sync runs: dimmed, aria-disabled, tooltip
   await until(() => idle.calls.some(([route]) => route === "/v1/sync"));
 });
 
-test("Settings reads synchronization as a state pill, and Node and Port are never invented", async (t) => {
+test("Settings has no Synchronization row, and Node and Port are never invented", async (t) => {
   const ui = await boot(t, replica([{ ...base, id: "docs", name: "docs" }], { phase: "paused" }), { hash: "#/settings" });
   await until(() => ui.q("#machine-name"));
-  const row = ui.qa(".setting-row").find((el) => el.querySelector("strong")?.textContent === "Synchronization");
-  assert.ok(row, "the row is titled Synchronization");
-  assert.equal(row.querySelector(".pill").textContent, "Paused");
-  assert.equal(row.querySelector("button, input, a"), null, "nothing in the row is interactive");
+  const titles = (page) => page.qa(".setting-row strong").map((el) => el.textContent);
+  assert.ok(!titles(ui).includes("Synchronization"), "the sidebar card already says whether synchronization runs");
+  assert.equal(ui.q("#content .setting-row .pill.ok [data-icon='check']"), null);
   const runtime = ui.qa(".setting-row").find((el) => el.querySelector("strong")?.textContent === "Runtime");
   assert.equal(runtime.textContent.replace(/\s+/g, " ").trim(), "RuntimePort Not reported · Node Not reported");
   const enabled = await boot(t, hub([{ ...base, id: "docs", name: "docs" }], { port: 17831, nodeVersion: "24.1.0" }), { hash: "#/settings" });
   await until(() => enabled.q("#machine-name"));
-  const hubRow = enabled.qa(".setting-row").find((el) => el.querySelector("strong")?.textContent === "Synchronization");
-  assert.ok(hubRow.querySelector(".pill.ok [data-icon='check']"));
+  assert.ok(!titles(enabled).includes("Synchronization"));
   const shown = enabled.qa(".setting-row").find((el) => el.querySelector("strong")?.textContent === "Runtime");
   assert.equal(shown.textContent, "RuntimePort 17831 · Node 24.1.0");
 });
@@ -414,23 +412,25 @@ test("the main window installs an update when the tray asks", () => {
 
 const sectionLabels = (ui) => ui.qa("#content .section-label").map((el) => el.textContent);
 
-test("Settings puts Tailscale, Local network and Device discovery right after Access to this hub on a hub, and after Local synchronization on a device", async (t) => {
+test("Settings groups a device in six sections and a hub in seven, with every control kept", async (t) => {
   const volumes = [{ ...base, id: "docs", name: "docs" }];
   const onHub = await boot(t, hub(volumes), { hash: "#/settings" });
   await until(() => onHub.q("#machine-name"));
-  const hubLabels = sectionLabels(onHub);
-  const hubFrom = hubLabels.indexOf("Access to this hub");
-  assert.deepEqual(hubLabels.slice(hubFrom, hubFrom + 4), ["Access to this hub", "Tailscale", "Local network", "Device discovery"]);
-  for (const later of ["Hub backup", "History", "Photos", "Movies & TV"])
-    assert.ok(hubLabels.indexOf(later) > hubLabels.indexOf("Device discovery"), `${later} follows the network sections`);
+  assert.deepEqual(sectionLabels(onHub), ["This device", "Network", "Hub backup", "History", "Media", "Service", "Danger zone"]);
   const onDevice = await boot(t, replica(volumes), { hash: "#/settings" });
   await until(() => onDevice.q("#machine-name"));
-  const labels = sectionLabels(onDevice);
-  assert.equal(labels[0], "Hub connection");
-  const from = labels.indexOf("Local synchronization");
-  assert.deepEqual(labels.slice(from, from + 3), ["Local synchronization", "Tailscale", "Device discovery"]);
-  for (const later of ["Full backup on this device", "Movies & TV"])
-    assert.ok(labels.indexOf(later) > labels.indexOf("Device discovery"), `${later} follows the network sections`);
+  assert.deepEqual(sectionLabels(onDevice), ["Hub connection", "This device", "Network", "Full backup on this device", "Service", "Danger zone"]);
+  const rowsOf = (page, label) => {
+    const section = page.qa("#content section").find((el) => el.querySelector(".section-label")?.textContent === label);
+    return [...section.querySelectorAll(".setting-row > .row-main > strong")].map((el) => el.textContent);
+  };
+  assert.deepEqual(rowsOf(onHub, "Network"), ["Authorized devices", "Connection mode", "Tailscale addresses", "Allow HTTP connections", "Find devices on Tailscale"]);
+  assert.deepEqual(rowsOf(onDevice, "Network"), ["Connection mode", "Tailscale addresses", "Find devices on Tailscale"]);
+  assert.deepEqual(rowsOf(onDevice, "This device").filter((title) => ["Device name", "Default folder location", "Theme"].includes(title)), ["Device name", "Default folder location", "Theme"]);
+  assert.ok(rowsOf(onDevice, "Service").includes("Become the replacement hub") && rowsOf(onDevice, "Service").includes("Reconnect to a hub"), "Recovery lives in Service");
+  assert.ok(onHub.q("#content #image-settings + #video-settings"), "Photos and Movies & TV share the Media section");
+  assert.equal(onDevice.q("#content #video-settings"), null);
+  assert.equal(onDevice.qa("#content .hint").some((el) => /Movies & TV settings live on the hub/.test(el.textContent)), false, "the pointer sentence is gone");
 });
 
 const conflictVersion = (path, rev, extra = {}) => ({ volume: "docs", path, rev, created: new Date().toISOString(), size: 11, deleted: false, author: "hub", hash: `h-${rev}`, ...extra });

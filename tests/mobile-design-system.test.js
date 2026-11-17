@@ -81,7 +81,7 @@ test("a sheet pins its actions in a footer outside the scroll and pads its heade
   }
 });
 
-test("rows share one geometry and a folder not selected is a paper row, the dash kept for empty states", () => {
+test("rows share one geometry and a folder not selected is a paper row, with no dashed frame anywhere", () => {
   const s = makeStyles();
   for (const name of ["card", "folderRow", "scaffoldRow", "machineRow"]) {
     assert.equal(s[name].borderRadius ?? geometry.controlRadius, geometry.controlRadius, name);
@@ -95,7 +95,8 @@ test("rows share one geometry and a folder not selected is a paper row, the dash
   assert.equal(s.dashedSeparator, undefined);
   assert.equal(s.requestReference.borderStyle, undefined);
   const dashed = Object.entries(s).filter(([, rule]) => rule.borderStyle === "dashed").map(([name]) => name);
-  assert.deepEqual(dashed, ["empty"], "only the empty state is dashed");
+  assert.deepEqual(dashed, [], "no phone surface is dashed: an empty state is an icon, a heading and a line");
+  assert.equal(s.empty.borderWidth, undefined);
   assert.doesNotMatch(read("components.jsx"), /dashedDivider|scaffoldDashed/);
 });
 
@@ -154,4 +155,38 @@ test("the share picker steps back on gestures, starts each place empty, resets w
   assert.match(share, /let active = true;\s+setDirectories\(\[\]\);/, "a place never shows the previous folder's subfolders");
   assert.equal((share.match(/setPlace\(null\);\s+setNaming\(null\);/g) || []).length, 3, "a new share and another hub leave the picker");
   assert.doesNotMatch(share, /InlineMessage/);
+});
+
+const luminance = (hex) => {
+  const [r, g, b] = hex.match(/[0-9a-f]{2}/gi).map((part) => {
+    const v = parseInt(part, 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const ratio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+test("phone fields fill with the hover token inside their control edge, which stays 3:1 against the paper and a card in both palettes", () => {
+  for (const scheme of ["light", "dark"]) {
+    const palette = palettes[scheme];
+    const context = { g: geometry, n: noticeMetrics, sp: space, r: radius, palettes, StyleSheet: { create: (value) => value, absoluteFillObject: {}, absoluteFill: {} } };
+    vm.runInNewContext(theme.replace(/^import .*;$/gm, "").replace("export { palettes };", "").replace("export function styles", "function styles") + ";this.makeStyles = styles;", context);
+    const s = context.makeStyles(palette, false, false, 1, 1);
+    for (const name of ["input", "inputShell", "codeCell"]) {
+      assert.equal(s[name].backgroundColor, palette.hover, `${scheme} ${name} fills with hover`);
+      assert.equal(s[name].borderColor, palette.control, `${scheme} ${name} keeps the control edge`);
+    }
+    assert.ok(ratio(palette.control, palette.paper) >= 3, `${scheme}: the edge is 3:1 against the paper`);
+    assert.ok(ratio(palette.control, palette.surface) >= 3, `${scheme}: and against a card`);
+  }
+});
+
+test("a switch row describes itself at the caption size like every other row", () => {
+  const components = read("components.jsx");
+  const toggle = components.slice(components.indexOf("export function Toggle("), components.indexOf("export function", components.indexOf("export function Toggle(") + 10));
+  assert.match(toggle, /\{description && <Text style=\{s\.caption\}>\{description\}<\/Text>\}/);
+  assert.doesNotMatch(toggle, /style=\{s\.text\}/);
 });

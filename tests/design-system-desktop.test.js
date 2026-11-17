@@ -67,7 +67,7 @@ test("menus round like every other surface and keep control-radius items inside 
   assert.match(menu, /padding: var\(--space-2\);\s+border-radius: var\(--r-surface\);/);
   assert.match(rule("dialog"), /padding: var\(--space-6\);/);
   assert.match(rule(".panel"), /border-radius: var\(--r-surface\);\s+padding: var\(--space-4\);/);
-  assert.match(rule(".empty"), /border: 1px dashed var\(--line\);\s+border-radius: var\(--r-surface\);/);
+  assert.doesNotMatch(rule(".empty"), /border/, "an empty state is an icon, a heading and a line, never a frame");
 });
 
 test("dropdowns and the tray's ⋯ menu share the ⋯ menu's frame and its control-radius rows", () => {

@@ -923,7 +923,8 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   assert.doesNotMatch(read("App.jsx"), /<Card title="No folders yet">|No saved device information/);
   assert.doesNotMatch(read("FolderRecent.jsx"), /No versions yet\./);
   const styles = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
-  assert.match(styles, /empty: \{[^}]*borderStyle: "dashed"[^}]*borderColor: c\.line[^}]*borderRadius: g\.cardRadius/s);
+  assert.match(styles, /empty: \{\s+alignItems: "center",\s+gap: sp\[3\],\s+paddingVertical: 2 \* sp\[5\],\s+paddingHorizontal: sp\[5\],\s+\},/);
+  assert.doesNotMatch(styles, /empty: \{[^}]*(borderStyle|borderColor|borderRadius)/s, "an empty state has no frame");
   assert.doesNotMatch(styles, /explorerEmpty/);
   assert.equal(iconNames["folder-open"], "FolderOpen");
 });

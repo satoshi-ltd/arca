@@ -285,3 +285,11 @@ test("the desktop's partial archive beside a chosen destination never syncs", ()
   }
   assert.equal(builtinExcluded(".Photos.zip.10a2-18e1.partial-x"), false);
 });
+
+test("a compiled rule set says whether it holds a rule, comments and blanks not counting", () => {
+  assert.equal(compileIgnore("").hasRules, false);
+  assert.equal(compileIgnore("\n  \n# only a comment\n").hasRules, false);
+  assert.equal(compileIgnore(DEFAULT_IGNORE).hasRules, false, "a new hub folder's file holds no rule");
+  assert.equal(compileIgnore("# note\n*.tmp\n").hasRules, true);
+  assert.equal(compileIgnore("\\#literal").hasRules, true, "an escaped hash is a rule");
+});

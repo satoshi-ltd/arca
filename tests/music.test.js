@@ -108,6 +108,18 @@ test("audio and cover names are recognised by extension and rank", () => {
   assert.equal(coverRank("Album/cover.gif"), -1);
 });
 
+test("the hub's catalog and remote list say whether a folder's .arcaignore holds a rule", async (t) => {
+  const f = await fixture(t);
+  const invite = await f.api("/v1/devices", { name: "Phone", role: "replica" });
+  const rules = async () => (await f.api("/v1/catalog", undefined, invite.token)).volumes[0].rules;
+  assert.equal(await rules(), false, "a new folder has none");
+  fs.writeFileSync(path.join(f.v.path, ".arcaignore"), "# nothing here\n");
+  assert.equal(await rules(), false, "a comment is not a rule");
+  fs.writeFileSync(path.join(f.v.path, ".arcaignore"), "# note\n*.tmp\n");
+  assert.equal(await rules(), true);
+  assert.equal((await f.api("/v1/remote")).volumes[0].rules, true, "the hub's own folder list says it too");
+});
+
 test("only the hub's administrator marks a music folder; a folder is a gallery or an audio library, never both", async (t) => {
   const f = await fixture(t);
   await assert.rejects(f.library(), { status: 404 }, "an ordinary folder has no library");

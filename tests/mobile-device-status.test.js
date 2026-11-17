@@ -29,7 +29,7 @@ test("Settings opens with This device and Local synchronization no longer lists 
   const components = source("components.jsx");
   const row = components.slice(components.indexOf("export function DeviceRow("), components.indexOf("export function MachineRow("));
   assert.match(row, /<Icon name="phone" size=\{wide \? 20 : 16\} \/>/);
-  assert.match(row, /style=\{\[s\.caption, s\.roleWord\]\}>Replica</);
+  assert.doesNotMatch(row, /roleWord|>Replica</, "an ordinary replica is not labelled");
   assert.match(row, /<StateWord device=\{device\} \/>\s*\{device\.last \? ` · \$\{device\.last\}` : ""\}/);
 });
 
@@ -39,7 +39,8 @@ test("the Fold navigation ends with the device status block and its rail with th
   assert.doesNotMatch(nav, /s\.identity|navFooter|Hub connected/, "no identity card at the top and no separate footer");
   assert.match(nav, /\{wide && device && \(compact \? <DeviceGlyph name=\{name\} device=\{device\} \/> : <DeviceStatus name=\{name\} device=\{device\} \/>\)\}\s*<\/Container>/);
   const block = components.slice(components.indexOf("export function DeviceStatus("), components.indexOf("function DeviceGlyph("));
-  assert.match(block, /Replica · <StateWord device=\{device\} \/>/, "the role opens the state line");
+  assert.match(block, /<Text numberOfLines=\{1\} style=\{s\.caption\}>\s+<StateWord device=\{device\} \/>\s+<\/Text>/, "the state line opens with the state, not the role");
+  assert.doesNotMatch(block, /Replica/);
   assert.match(block, /\{!!device\.last && \(/);
   const glyph = components.slice(components.indexOf("function DeviceGlyph("), components.indexOf("export function DeviceRow("));
   assert.match(glyph, /s\.favoriteDot, s\.deviceGlyphDot, !!device\.tone && s\.favoriteDotWarning/);
@@ -55,8 +56,8 @@ test("the Fold navigation ends with the device status block and its rail with th
 
 test("the device row and the Fold block read the last sync to screen readers", async () => {
   const { deviceLabel } = await import("../apps/mobile/src/home-data.js");
-  assert.equal(deviceLabel("Pixel", { word: "Offline", last: "Last sync at 10:12" }), "Pixel, Replica, Offline, Last sync at 10:12");
-  assert.equal(deviceLabel("Pixel", { word: "Not synced yet", last: "" }), "Pixel, Replica, Not synced yet");
+  assert.equal(deviceLabel("Pixel", { word: "Offline", last: "Last sync at 10:12" }), "Pixel, Offline, Last sync at 10:12");
+  assert.equal(deviceLabel("Pixel", { word: "Not synced yet", last: "" }), "Pixel, Not synced yet");
   const components = source("components.jsx");
   assert.match(components, /import \{ deviceLabel, folderState, historyTone, machineTone \} from "\.\/home-data\.js";/);
   for (const name of ["export function DeviceStatus(", "export function DeviceRow("]) {

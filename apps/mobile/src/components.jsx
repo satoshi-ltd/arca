@@ -826,7 +826,7 @@ export function Toggle({
     <View style={s.row}>
       <View style={s.flex}>
         <Text style={s.heading}>{label}</Text>
-        {description && <Text style={s.text}>{description}</Text>}
+        {description && <Text style={s.caption}>{description}</Text>}
       </View>
       <Pressable
         accessibilityRole="switch"
@@ -1640,7 +1640,7 @@ export function DeviceStatus({ name, device }) {
         </Text>
       </View>
       <Text numberOfLines={1} style={s.caption}>
-        Replica · <StateWord device={device} />
+        <StateWord device={device} />
       </Text>
       {!!device.last && (
         <Text numberOfLines={1} style={s.caption}>
@@ -1676,7 +1676,6 @@ export function DeviceRow({ name, device, children }) {
             <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
               {name}
             </Text>
-            <Text style={[s.caption, s.roleWord]}>Replica</Text>
           </View>
           <Text numberOfLines={1} style={s.caption}>
             <StateWord device={device} />
@@ -1691,13 +1690,17 @@ export function DeviceRow({ name, device, children }) {
 
 export function RoleChip({ role = "Replica", hub, backup }) {
   const { s, c } = useDesign();
+  const named = !/^replica$/i.test(role);
+  if (!named && !backup) return null;
   return (
     <View style={s.roleSet}>
-      <View style={[s.machineTag, hub && s.hubTag, backup && s.roleTagJoined]}>
-        <Text style={[s.machineTagText, hub && s.hubTagText]}>{role.toUpperCase()}</Text>
-      </View>
+      {named && (
+        <View style={[s.machineTag, hub && s.hubTag, backup && s.roleTagJoined]}>
+          <Text style={[s.machineTagText, hub && s.hubTagText]}>{role.toUpperCase()}</Text>
+        </View>
+      )}
       {backup && (
-        <View accessible accessibilityLabel="Full backup" style={[s.machineTag, s.backupTag]}>
+        <View accessible accessibilityLabel="Full backup" style={[s.machineTag, named && s.backupTag]}>
           <Icon name="shield-check" size={g.pillIcon} color={c.accent} />
         </View>
       )}
