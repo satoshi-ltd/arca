@@ -71,6 +71,7 @@ import {
   conditionNotices,
   safeDetails,
   noticePill,
+  noticeLayout,
   HUB_ONLY_REASON,
 } from "./notice-contract.js";
 import { fileIcon } from "./file-icons.js";
@@ -155,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.50";
+const APP_VERSION = "0.9.51";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -565,7 +566,6 @@ function openPalette() {
   icons();
   dialog.querySelector(".pal-input").focus();
   paintPalette(null);
-  if (typeof staggerRows === "function") staggerRows("#palette .pal-row");
 }
 async function paletteLibrary(row, next) {
   await musicReveal({ tab: "artists", artist: null, album: null, playlist: null, show: null, pages: 1, trail: [], ...next }, row.volume, false);
@@ -1486,9 +1486,29 @@ function noticeMarkup(item) {
   const pill = noticePill(item);
   return `<article class="notice-card notice-${item.kind}${pill ? " notice-pill" : ""}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action ? `<div class="notice-actions">${action}</div>` : ""}</div>${pill ? "" : `<button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button>`}</div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
 }
+function renderStateBanner(item) {
+  const box = $("#state-banner");
+  if (!item) {
+    box.hidden = true;
+    box.replaceChildren();
+    delete box.dataset.markup;
+    return;
+  }
+  const action = item.action
+    ? `<button type="button" class="notice-link" data-action="${escape(item.action)}" data-id="${escape(item.volume || "")}">${escape(item.actionLabel || "Retry now")}</button>`
+    : "";
+  const markup = `${icon(item.icon || "wifi-off")}<div class="row-main"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}</div>${action}`;
+  box.classList.toggle("state-error", item.kind === "error");
+  box.hidden = false;
+  if (box.dataset.markup === markup) return;
+  box.innerHTML = markup;
+  box.dataset.markup = markup;
+}
 function renderNotices() {
   const box = $("#notice"),
-    items = noticeStore.snapshot();
+    layout = noticeLayout(noticeStore.all(), { attention: 2, results: 1 }),
+    items = layout.stack;
+  renderStateBanner(layout.state);
   const ids = new Set(items.map((n) => n.id));
   for (const card of [...box.children])
     if (!ids.has(card.dataset.noticeId) && !isLeaving(card))
@@ -2576,8 +2596,7 @@ function viewRead(route) {
   }
   return viewReads.get(key);
 }
-let animatedRoute = null;
-let navigationAnimation = null;
+let shownRoute = null;
 function tokenPixels(token, fallback) {
   return (
     parseFloat(
@@ -2668,23 +2687,6 @@ function revive(element) {
 }
 const ROW_SELECTOR =
   "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
-const CASCADE_SELECTOR =
-  "#content :is(.folder-card, .history-row, .browser-file-row, .device-row, .setting-row, .music-row, .music-track:not(.music-track-head))";
-function staggerRows(selector = CASCADE_SELECTOR) {
-  if (reducedMotion()) return;
-  const enter = motionDuration("--motion-enter");
-  const step = motionDuration("--motion-stagger");
-  const rise = tokenPixels("--motion-distance", 8);
-  [...document.querySelectorAll(selector)].slice(0, 6).forEach((row, index) =>
-    row.animate?.(
-      [
-        { opacity: 0, transform: `translateY(${rise}px)` },
-        { opacity: 1, transform: "none" },
-      ],
-      { duration: enter, delay: index * step, easing: motionEase(), fill: "backwards" },
-    ),
-  );
-}
 function flipFrames(from, to, uniform = false) {
   if (!from || !to || reducedMotion()) return null;
   if (!to.width || !to.height || !from.width || !from.height) return null;
@@ -2826,7 +2828,7 @@ function noteMicro() {
     const text = element.textContent;
     const before = microMemory.get(key);
     microMemory.set(key, text);
-    if (before !== undefined && before !== text && Date.now() >= cascadeUntil)
+    if (before !== undefined && before !== text && Date.now() >= quietUntil)
       element.animate?.(
         [
           { opacity: 0.4, transform: `translateY(${tokenPixels("--motion-distance", 8) / 2}px)` },
@@ -2840,7 +2842,7 @@ function noteMicro() {
     const state = `${element.className}|${element.textContent}`;
     const before = microMemory.get(key);
     microMemory.set(key, state);
-    if (before !== undefined && before !== state && Date.now() >= cascadeUntil)
+    if (before !== undefined && before !== state && Date.now() >= quietUntil)
       element.animate?.(
         [{ opacity: 0.35 }, { opacity: 1 }],
         { duration: motionDuration("--motion-enter"), easing: motionEase() },
@@ -2851,8 +2853,7 @@ function noteMicro() {
 const rowKey = (row) => row.dataset.id || row.dataset.device;
 let notePending = false;
 const settleTimers = new WeakMap();
-let cascadeUntil = 0,
-  cascadeFirst = null;
+let quietUntil = 0;
 let seenRows = { route: "", keys: new Set() };
 const listMotion = () =>
   typeof Element.prototype.animate === "function" && motionDuration("--motion-exit") > 0 && !reducedMotion();
@@ -2908,11 +2909,6 @@ function noteRows() {
   const route = listingKey();
   const rows = [...document.querySelectorAll(ROW_SELECTOR)].filter((row) => !row.classList.contains("row-leaving"));
   const scroller = $("#content .page");
-  const first = document.querySelector(CASCADE_SELECTOR);
-  if (Date.now() < cascadeUntil && first && first !== cascadeFirst) {
-    cascadeFirst = first;
-    staggerRows();
-  }
   const keys = new Set(rows.map(rowKey));
   if (seenRows.route === route) leaveRemovedRows(seenRows.boxes, rows, rowKey, scroller);
   if (!keys.size && seenRows.route === route) return;
@@ -2998,22 +2994,10 @@ async function render({ refreshStatus = false } = {}) {
   try {
     const painted = status;
     const page = renderView(true, undefined, refreshStatus);
-    const cascade = animatedRoute !== route;
-    if (animatedRoute !== route) {
-      navigationAnimation?.cancel();
-      navigationAnimation = $("#content").animate?.(
-        [
-          { opacity: tokenPixels("--motion-route-from", 1), transform: `translateY(${tokenPixels("--motion-route-rise", 0)}px)` },
-          { opacity: 1, transform: "translateY(0)" },
-        ],
-        {
-          duration: motionDuration("--motion-enter"),
-          easing: motionEase(),
-        },
-      );
-      animatedRoute = route;
-      cascadeUntil = Date.now() + 1500;
-      cascadeFirst = null;
+    const entered = shownRoute !== route;
+    if (entered) {
+      shownRoute = route;
+      quietUntil = Date.now() + 1500;
     }
     const serial = renderSerial;
     const request = statusRequestSerial + 1;
@@ -3031,11 +3015,7 @@ async function render({ refreshStatus = false } = {}) {
       : null;
     const results = await Promise.allSettled([page, state]);
     if (ready) markNav();
-    if (cascade && serial === renderSerial) {
-      staggerRows();
-      cascadeFirst = document.querySelector(CASCADE_SELECTOR);
-    }
-    if (cascade && serial === renderSerial && ready) announceView();
+    if (entered && serial === renderSerial && ready) announceView();
     const failed = results.find((result) => result.status === "rejected");
     // The view just painted is current; the next poll repaints only if status really changes.
     if (!failed && serial === renderSerial && status === painted)
@@ -5122,6 +5102,7 @@ async function openGalleryPhoto(index) {
     { uniform: true },
   );
   $("#submit-dialog").hidden = true;
+  $("#close-dialog").hidden = true;
   $("#cancel-dialog").innerHTML = icon("arrow-left");
   $("#cancel-dialog").setAttribute("aria-label", "Back to photos");
   $(".photo-download").onclick = () => action(() => downloadGalleryPhoto(item));
@@ -10154,6 +10135,7 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
   $("#dialog-extra-actions")?.remove();
   $("#dialog-recheck")?.remove();
   $("#cancel-dialog").hidden = false;
+  $("#close-dialog").hidden = false;
   $("#dialog-content").onclick = null;
   $("#dialog-content").innerHTML = html;
   $("#dialog").className = wide ? "wide-dialog" : "";
@@ -10225,6 +10207,7 @@ function bindDialog(dialog) {
       });
   };
   cancel.onclick = dismiss;
+  dialog.querySelector("#close-dialog").onclick = dismiss;
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
     dismiss();
@@ -10549,8 +10532,9 @@ async function pairModal(name = "") {
       "On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub. Enter the address and pairing code below.",
       "key-round",
     ) +
+      `<div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div>` +
       addressPanel +
-      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new device can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both devices or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p>${inlineMessage("Issuing a code does not mean a device has connected. This code never grants web administration.")}`,
+      `<p class="hint">${addresses.length > 1 ? "Use the alternative address when the new device cannot resolve the name. " : ""}The code never grants web administration.</p>`,
     async () => {},
     "Done",
   );
@@ -10991,6 +10975,7 @@ async function handle(name, id, control) {
       "Retry now",
     );
     $("#cancel-dialog").textContent = "Close";
+    $("#close-dialog").hidden = true;
     return;
   }
   if (name === "back-folders") {
@@ -12091,22 +12076,53 @@ document.addEventListener("change", (e) => {
     $("#submit-dialog").classList.add("danger");
     return;
   }
-  action(async () => {
+  saveSwitch(control, async () => {
+    if (control.id === "allow-lan-http")
+      network = await api("/v1/network/lan", { enabled });
+    else
+      await invoke(
+        control.id === "launch-at-login"
+          ? "set_launch_at_login"
+          : "set_notifications",
+        { enabled },
+      );
+  });
+});
+function saveSwitch(control, work) {
+  const enabled = control.checked;
+  const row = control.closest(".setting-row");
+  const main = row?.querySelector(".row-main");
+  row?.querySelector(".row-error")?.remove();
+  const saving = document.createElement("p");
+  saving.className = "row-saving";
+  saving.setAttribute("role", "status");
+  saving.textContent = "Saving…";
+  row?.classList.add("switch-saving");
+  main?.append(saving);
+  return action(async () => {
     try {
-      if (control.id === "allow-lan-http")
-        network = await api("/v1/network/lan", { enabled });
-      else
-        await invoke(
-          control.id === "launch-at-login"
-            ? "set_launch_at_login"
-            : "set_notifications",
-          { enabled },
-        );
+      await work();
     } catch (error) {
       control.checked = !enabled;
-      throw error;
+      if (!main || daemonUnavailable(error) || (!native && error.status === 401)) throw error;
+      main.insertAdjacentHTML(
+        "beforeend",
+        `<div class="message message-error row-error" role="status">${icon("circle-alert")}<span>${escape(`Could not save: ${error?.message || error}. The setting is unchanged.`)}</span></div>`,
+      );
+    } finally {
+      row?.classList.remove("switch-saving");
+      saving.remove();
     }
   }, control);
+}
+document.addEventListener("click", (e) => {
+  const row = e.target.closest?.("#content .setting-row");
+  if (!row || e.target.closest("a, button, input, label, select, textarea, summary, [role=button]")) return;
+  const selection = document.getSelection();
+  if (selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(row)) return;
+  const switches = row.querySelectorAll(".toggle input");
+  if (switches.length !== 1 || switches[0].disabled || row.querySelector("button, select, .segmented, input:not([type=checkbox])")) return;
+  switches[0].click();
 });
 
 function requestReference(reference, label = "REQUEST", hint = "") {
@@ -12204,6 +12220,7 @@ async function checkWebApprovals(asked = false) {
       { once: true },
     );
     cancel.textContent = "Deny";
+    $("#close-dialog").hidden = true;
     cancel.onclick = () =>
       action(async () => {
         await api("/v1/web-approvals", { id: r.id, decision: "deny" });

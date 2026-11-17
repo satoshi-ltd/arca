@@ -37,3 +37,9 @@ test("a tab change or leaving setup fades, and a video title or season change ke
   const library = fs.readFileSync(new URL("../apps/mobile/src/VideoLibrary.jsx", import.meta.url), "utf8");
   assert.match(library, /const \[sort, setSortState\] = useState\(\(\) => librarySort\.current\);/, "the chosen sort survives opening a title");
 });
+
+test("on the Fold, opening a show or album beside its list keeps the list mounted", () => {
+  const key = app.split("\n").find((line) => line.includes("const screenKey = "));
+  assert.ok(key.includes("musicAt ? musicAt.level + 1 : musicRoute.length"));
+  assert.ok(key.includes("musicAt ? musicRoute[musicAt.level] : musicRoute.at(-1)"));
+});

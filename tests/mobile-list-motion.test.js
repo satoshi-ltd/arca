@@ -59,9 +59,12 @@ test("a whole new list replacing the old one is not an arrival", () => {
   assert.deepEqual(drain(list, ids(12, 100)), {});
 });
 
-test("folder rows scale on press and rise through Rise, both off under reduced motion", () => {
+test("list rows tint on press without sinking and rise through Rise, the rise off under reduced motion", () => {
   const components = read("../apps/mobile/src/components.jsx");
-  assert.match(components, /<PressScale\s+scale=\{!disabled\}\s+accessibilityRole=\{selectable \? "checkbox" : "button"\}/);
+  assert.equal(components.match(/<PressScale\s+scale=\{false\}/g).length, 3, "folder, offered and action rows only tint while pressed");
+  assert.match(components, /<PressScale\s+scale=\{false\}\s+accessibilityRole=\{selectable \? "checkbox" : "button"\}/);
+  const music = read("../apps/mobile/src/MusicLibrary.jsx");
+  assert.equal(music.match(/<PressScale\s+(?:key=\{key\}\s+)?scale=\{false\}/g).length, 2, "music rows and track rows never shrink");
   const app = read("../apps/mobile/src/App.jsx");
   assert.match(app, /useListMotion\(locals\.map\(\(f\) => f\.id\)\)/);
   assert.match(app, /<Rise\s+key=\{f\.id\}\s+tint=\{c\.tint\}\s+leaving=\{folderLeaving\.has\(f\.id\)\}\s+onLeft=\{\(\) => folderLeft\(f\.id\)\}\s+\{\.\.\.folderMotion\(f\.id\)\}/);

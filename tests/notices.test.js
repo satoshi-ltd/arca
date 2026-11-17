@@ -6,12 +6,12 @@ import {
   conditionNotices,
   errorNotice,
   noticeMetrics,
+  noticeLayout,
   noticePill,
-  phoneNotices,
   safeDetails,
 } from "../apps/desktop/src/notice-contract.js";
 
-test("notice queue stacks three, expires only info and suppresses dismissed conditions until recovery or change", () => {
+test("notice queue keeps waiting notices, one passing result, expires only info and suppresses dismissed conditions until recovery or change", () => {
   const timers = new Map();
   let tick = 0,
     key = 0;
@@ -29,24 +29,25 @@ test("notice queue stacks three, expires only info and suppresses dismissed cond
   store.push({ id: "c", kind: "error", title: "Stopped" });
   store.push({ id: "d", kind: "info", title: "Restored" });
   assert.deepEqual(
-    store.snapshot().map((n) => n.id),
+    store.all().map((n) => n.id),
     ["b", "c", "d"],
+    "the newer result replaced the older one",
   );
   for (const fn of [...timers.values()]) fn();
   assert.deepEqual(
-    store.snapshot().map((n) => n.id),
+    store.all().map((n) => n.id),
     ["b", "c"],
   );
   store.reconcile([{ id: "hub", kind: "error", title: "Offline" }]);
   store.remove("status:hub");
   store.reconcile([{ id: "hub", kind: "error", title: "Offline" }]);
-  assert.ok(!store.snapshot().some((n) => n.id === "status:hub"));
+  assert.ok(!store.all().some((n) => n.id === "status:hub"));
   store.reconcile([]);
   store.reconcile([{ id: "hub", kind: "error", title: "Offline" }]);
-  assert.ok(store.snapshot().some((n) => n.id === "status:hub"));
-  const created = store.snapshot().at(-1).created;
+  assert.ok(store.all().some((n) => n.id === "status:hub"));
+  const created = store.all().at(-1).created;
   store.reconcile([{ id: "hub", kind: "error", title: "Offline" }]);
-  assert.equal(store.snapshot().at(-1).created, created);
+  assert.equal(store.all().at(-1).created, created);
   store.dispose();
   assert.equal(timers.size, 0);
 });
@@ -167,12 +168,12 @@ test("one hub outage owns folder, backup and action failures without hiding inde
   store.push(errorNotice("fetch failed"));
   store.reconcile(conditions);
   assert.equal(
-    store.snapshot().filter((n) => n.cause === "connection").length,
+    store.all().filter((n) => n.cause === "connection").length,
     1,
   );
   store.push(errorNotice("ETIMEDOUT"));
   assert.equal(
-    store.snapshot().filter((n) => n.cause === "connection").length,
+    store.all().filter((n) => n.cause === "connection").length,
     1,
   );
   store.dispose();
@@ -201,13 +202,13 @@ test("authoritative conflict resolution clears local notices and a new revision 
   store.reconcile(conditionNotices(status));
   store.remove("status:conflict:a");
   store.reconcile(conditionNotices(status));
-  assert.equal(store.snapshot().length, 0);
+  assert.equal(store.all().length, 0);
   status.catalog.volumes[0].conflictRevision = 8;
   store.reconcile(conditionNotices(status));
-  assert.equal(store.snapshot()[0].incident, 8);
+  assert.equal(store.all()[0].incident, 8);
   status.catalog.volumes[0].conflicts = 0;
   store.reconcile(conditionNotices(status));
-  assert.equal(store.snapshot().length, 0);
+  assert.equal(store.all().length, 0);
   store.dispose();
 });
 
@@ -330,10 +331,12 @@ test("a result without a reason or details is a pill; the phone shows only the n
     older = { id: "a", kind: "info" },
     warning = { id: "w", kind: "warning" },
     newer = { id: "b", kind: "info" };
-  assert.deepEqual(phoneNotices([older, error, warning, newer]).map((n) => n.id), ["e", "w", "b"]);
-  assert.deepEqual(phoneNotices([error]).map((n) => n.id), ["e"]);
+  const stack = (items, options) => noticeLayout(items, options).stack.map((n) => n.id);
+  assert.deepEqual(stack([older, error, warning, newer]), ["e", "w", "b"]);
+  assert.deepEqual(stack([older, error, warning, newer], { attention: 1 }), ["w", "b"], "the phone keeps its newest card");
+  assert.deepEqual(stack([error]), ["e"]);
   const waiting = { id: "s", kind: "info", title: "Saved 2 files", body: "Waiting to upload.", action: "folder", actionLabel: "Open" };
-  assert.deepEqual(phoneNotices([waiting, older, newer]).map((n) => n.id), ["s", "b"], "a result that waits for the reader is never hidden by a passing one");
+  assert.deepEqual(stack([waiting, older, newer]), ["s", "b"], "a result that waits for the reader is never hidden by a passing one");
 });
 
 test("a native module rejection shows its own message and keeps the wrapper in the details", async () => {
@@ -356,7 +359,7 @@ test("a bare native rejection is not repeated in the details", async () => {
   assert.equal(notice.details, "");
 });
 
-test("a pill leaves by itself, later when it has an action; a card with an action or a long body waits for the reader; a held one keeps its timer off", () => {
+test("a pill leaves by itself, later when it has an action, and the next result replaces it; a card with an action or a long body waits for the reader; a held one keeps its timer off", () => {
   const timers = new Map();
   let key = 0;
   const store = createNoticeStore({
@@ -367,25 +370,28 @@ test("a pill leaves by itself, later when it has an action; a card with an actio
   assert.equal(timers.size, 1);
   assert.equal([...timers.values()][0].ms, noticeMetrics.infoTimeout);
   store.push({ id: "undo", kind: "info", title: "Removed from Watch next", action: "undo", actionLabel: "Undo" });
-  assert.equal(timers.size, 2, "a pill with an action has no close, so it leaves by itself");
-  assert.equal([...timers.values()][1].ms, noticeMetrics.actionTimeout);
+  assert.deepEqual(store.all().map((n) => n.id), ["undo"], "a new result replaces the last one");
+  assert.equal(timers.size, 1, "a pill with an action has no close, so it leaves by itself");
+  assert.equal([...timers.values()][0].ms, noticeMetrics.actionTimeout);
   assert.ok(noticeMetrics.actionTimeout > noticeMetrics.infoTimeout, "with more time to reach its action");
   store.remove("undo");
   store.push({ id: "action", kind: "info", title: "Saved 3 files", body: "Waiting to upload.", action: "open", actionLabel: "Open" });
   store.push({ id: "long", kind: "info", title: "Saved", body: "x".repeat(noticeMetrics.lastingBody + 1) });
-  assert.equal(timers.size, 1, "neither the card with an action nor the long notice arms a timer");
+  assert.equal(timers.size, 0, "neither the card with an action nor the long notice arms a timer");
+  store.push({ id: "plain", kind: "info", title: "Saved" });
+  assert.deepEqual(store.all().map((n) => n.id), ["action", "long", "plain"], "a result never replaces a notice that waits for the reader");
   store.hold("plain");
   assert.equal(timers.size, 0, "hover or focus pauses the timer");
   store.release("plain");
   assert.equal(timers.size, 1);
   store.push({ id: "held", kind: "info", title: "Restored a.txt", action: "show", actionLabel: "Show" });
   store.hold("held");
-  const armed = timers.size;
+  assert.equal(timers.size, 0);
   store.release("held");
-  assert.equal(timers.size, armed + 1, "a held pill released when it is no longer drawn expires again");
+  assert.equal(timers.size, 1, "a held pill released when it is no longer drawn expires again");
   store.remove("held");
   store.release("action");
-  assert.equal(timers.size, 1, "a lasting notice never starts a timer on release");
+  assert.equal(timers.size, 0, "a lasting notice never starts a timer on release");
   const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
   assert.match(app, /\["mouseover", "hold"\]/);
   assert.match(app, /\["focusout", "release"\]/);
@@ -424,4 +430,53 @@ test("a tap on a phone notice dismisses it like a swipe down, outside its Pressa
   assert.match(main, /<View style=\{\[s\.noticeActions, pill && s\.noticePillActions\]\} onStartShouldSetResponder=\{\(\) => true\}>\s+<Pressable\s+accessibilityRole="button"\s+disabled=\{disabled\}/, "a disabled action, which no longer claims its press, never lets it fall through to the row and dismiss");
   const close = main.slice(main.indexOf('accessibilityLabel="Dismiss notification"') - 80);
   assert.doesNotMatch(close.slice(0, close.indexOf("</Pressable>")), /disabled/, "the × is never disabled, so it always claims its own press");
+});
+
+test("notices sort into one state banner, at most two attention cards and one result, and the same result twice within two seconds shows once", () => {
+  let now = 0;
+  const store = createNoticeStore({ now: () => now, schedule: () => 0, cancel: () => {} });
+  store.push({ id: "first", kind: "info", title: "Saved" });
+  now = 1000;
+  assert.equal(store.push({ kind: "info", title: "Saved" }), "first", "a repeat inside the window is the same notice");
+  now = noticeMetrics.repeatWindow + 1;
+  const again = store.push({ kind: "info", title: "Saved" });
+  assert.notEqual(again, "first");
+  assert.deepEqual(store.all().map((n) => n.id), [again]);
+  for (const id of ["w1", "w2", "w3"]) store.push({ id, kind: "warning", title: `Conflict in ${id}` });
+  store.push(errorNotice("connect ECONNREFUSED 10.0.0.2:17831", { id: "connection", hubName: "casa" }));
+  const layout = noticeLayout(store.all(), { attention: 2, results: 1 });
+  assert.equal(layout.state.id, "connection");
+  assert.equal(layout.state.title, "Hub casa unreachable");
+  assert.deepEqual(layout.stack.map((n) => n.id), ["w2", "w3", again], "the state never enters the stack");
+  assert.deepEqual(noticeLayout(store.all(), { attention: 1 }).stack.map((n) => n.id), ["w3", again], "the phone keeps one card");
+  assert.equal(noticeLayout([]).state, null);
+});
+
+test("only the condition itself is the banner: a failed action stays a card that leaves when dismissed, and adds nothing while the condition shows", () => {
+  const store = createNoticeStore({ schedule: () => 0, cancel: () => {} });
+  store.push(errorNotice("fetch failed: ECONNREFUSED", { id: "action", hubName: "casa" }));
+  assert.equal(noticeLayout(store.all()).state, null, "a one-off failure never becomes a lasting banner");
+  assert.deepEqual(noticeLayout(store.all()).stack.map((n) => n.id), ["action"]);
+  store.remove("action");
+  store.reconcile([{ ...errorNotice("fetch failed: ECONNREFUSED", { hubName: "casa" }), id: "connection" }]);
+  assert.equal(noticeLayout(store.all()).state.id, "status:connection");
+  store.push(errorNotice("fetch failed: ECONNREFUSED", { id: "action", hubName: "casa" }));
+  assert.deepEqual(noticeLayout(store.all()).stack, [], "the banner already says it");
+  store.reconcile([]);
+  assert.equal(noticeLayout(store.all()).state, null, "it leaves with the condition");
+  store.push({ id: "connection", kind: "error", title: "Cannot reach casa", cause: "connection", offline: true, action: "refresh" });
+  store.push(errorNotice("fetch failed: ECONNREFUSED", { id: "action", hubName: "casa" }));
+  assert.equal(noticeLayout(store.all()).state.id, "connection", "an action failure never replaces the web's Cannot reach");
+});
+
+test("an Undo survives a later result and a repeat with other data is a new notice", () => {
+  let now = 0;
+  const store = createNoticeStore({ now: () => now, schedule: () => 0, cancel: () => {} });
+  store.push({ id: "video-watch", kind: "info", title: "Removed from Watch next", action: "undo", actionLabel: "Undo", volume: "lib", videoId: "A" });
+  now = 500;
+  store.push({ id: "video-watch", kind: "info", title: "Removed from Watch next", action: "undo", actionLabel: "Undo", volume: "lib", videoId: "B" });
+  assert.deepEqual(store.all().map((n) => n.videoId), ["B"], "the second Undo restores the second title, as the phone sends it");
+  store.push({ kind: "info", title: "Copied" });
+  assert.deepEqual(store.all().map((n) => n.title), ["Removed from Watch next", "Copied"], "a later result does not drop the Undo");
+  assert.deepEqual(noticeLayout(store.all()).stack.map((n) => n.title), ["Copied"], "the newest result is in front");
 });

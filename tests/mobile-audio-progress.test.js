@@ -448,7 +448,7 @@ test("shows follow order c: in progress by last played, then New by newest, then
   assert.equal(positionSignature(positions), positionSignature(positionMap([...positions.values()])), "a reload with the same rows signs the same");
   assert.notEqual(positionSignature(positions), positionSignature(positionMap([at("Acquired", 0, { position: 1800, duration: 6000, updated: 500 })])));
   const page = read("MusicLibrary.jsx");
-  assert.match(page, /const order = useShowOrder\(library, positions, loaded, showsOpen\(library, route, wide\)\);/);
+  assert.match(page, /const order = useShowOrder\(library, positions, loaded, showsOpen\(library, route, split\)\);/);
   assert.match(page, /if \(!active\) \{\s+kept\.current = null;\s+return null;\s+\}\s+if \(kept\.current\?\.library !== library \|\| kept\.current\.loaded !== loaded\)/, "local saves never move a tile; a new library, a changed hub load or reopening the root do");
   assert.match(page, /return tab === "podcasts" && musicPane\(route, wide\)\.level === 0;/);
 });

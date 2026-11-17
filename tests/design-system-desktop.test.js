@@ -40,7 +40,7 @@ test("fields read label, field, then one hint under it, and an invalid field tur
   assert.match(rule("label"), /font-size: var\(--text-body\);\s+font-weight: 600;/);
   assert.match(rule(".hint"), /line-height: var\(--text-caption-line\);/);
   assert.match(css, /\n\.field-with-icon \+ \.hint,\ninput \+ \.hint,\ntextarea \+ \.hint,\nselect \+ \.hint \{\n  margin-top: var\(--space-1\);/);
-  assert.match(css, /\n:where\(input, select, textarea\)\[aria-invalid="true"\],\n\.field-with-icon:has\(\[aria-invalid="true"\]\) \{\n  border-color: var\(--er\);/);
+  assert.match(css, /\n:where\(input, select, textarea\)\[aria-invalid="true"\],\n\.field-with-icon:has\(\[aria-invalid="true"\]\) \{\n  border-color: transparent;\n  box-shadow: inset 0 0 0 1\.5px var\(--er\);/);
   assert.doesNotMatch(app, /\.classList\.contains\("hint"\) \? hint/);
 });
 

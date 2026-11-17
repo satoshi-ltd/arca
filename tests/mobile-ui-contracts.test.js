@@ -35,12 +35,15 @@ test("the notice dock sits above the measured tab bar, mini player and selection
   assert.match(notice, /bottom: insets\.bottom \+ lift \+ space\[4\],/);
   assert.match(notice, /height - insets\.top - insets\.bottom - lift - 2 \* space\[4\]/);
   assert.match(app, /<View onLayout=\{\(\{ nativeEvent: \{ layout \} \}\) => setBottomBars\(layout\.height\)\}>\s+\{folder && screen === "Folders" && musicFolder && \(\s+<MiniPlayer[\s\S]+?<SelectionBar[\s\S]+?<Navigation[\s\S]+?<\/View>\s+<\/KeyboardPane>/);
-  assert.match(app, /<NoticeStack\s+items=\{noticeItems\}\s+lift=\{bottomBars\}/);
-  assert.doesNotMatch(app, /items=\{noticeItems\.filter\(\(n\) => n\.kind === "info"\)\}\s+lift=/, "a sheet's own stack covers the bars under it");
+  assert.match(app, /<NoticeStack\s+items=\{noticeShown\.stack\}\s+lift=\{bottomBars\}/);
+  assert.doesNotMatch(app, /items=\{noticeShown\.stack\.filter\(\(n\) => n\.kind === "info"\)\}\s+lift=/, "a sheet's own stack covers the bars under it");
+  assert.match(app, /const noticeShown = noticeLayout\(noticeItems, \{ attention: wide \? 2 : 1, results: 1 \}\);/, "one card on the phone, two on the Fold, one result");
+  assert.match(app, /<StateBanner item=\{noticeShown\.state\} onAction=\{noticeAction\} disabled=\{actionLocked\} \/>/, "a lasting state sits under the header, never over the list");
+  assert.match(notice, /export function StateBanner\(\{ item, onAction, disabled \}\)/);
 });
 
 test("a notice is drawn by one stack at a time and does not replay its entrance when a sheet moves it", () => {
-  assert.match(app, /\{!shownSheet && \(\s+<NoticeStack\s+items=\{noticeItems\}/, "the main stack waits until the sheet, closing included, is gone");
+  assert.match(app, /\{!shownSheet && \(\s+<NoticeStack\s+items=\{noticeShown\.stack\}/, "the main stack waits until the sheet, closing included, is gone");
   assert.doesNotMatch(app, /\(!sheet \|\| detail\) && \(\s+<NoticeStack/, "never alongside a sheet that is still leaving");
   assert.match(app, /<Sheet\s+closing=\{!sheet \|\| detail\}\s+onExited=\{releaseSheet\}\s+overlay=\{\s+<NoticeStack/);
   assert.match(notice, /const seen = useRef\(shown\.has\(shownKey\(item\)\)\)\.current;\s+const progress = useRef\(new Animated\.Value\(seen && !leaving \? 1 : 0\)\)\.current;/, "a notice already on screen mounts in place");

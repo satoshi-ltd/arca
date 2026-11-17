@@ -1259,6 +1259,17 @@ export function styles(
       color: c.noticeLink,
     },
     noticeLinkTarget: { minHeight: g.touchHeight, justifyContent: "center" },
+    stateBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: sp[3],
+      marginBottom: sp[4],
+      paddingVertical: sp[2],
+      paddingHorizontal: sp[4],
+      borderRadius: g.cardRadius,
+      backgroundColor: c.hover,
+    },
+    stateBannerError: { backgroundColor: c.dangerBg },
     noticeClose: {
       width: g.touchHeight,
       height: g.touchHeight,

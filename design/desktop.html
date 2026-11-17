@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.9.50 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.9.51 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -139,7 +139,7 @@
               <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Sync · the folder is larger than the destination’s free space: the line turns to the error tone with the setup wizard’s sentence and Start syncing stays off until a roomier destination is chosen</p>
         <div class="kit-dialog-stage">
@@ -153,7 +153,7 @@
               <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary" disabled><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Sync · the destination already holds files: the line reads Counting local files… until the count answers, then the files to upload and their size</p>
         <div class="kit-dialog-stage">
@@ -167,7 +167,7 @@
               <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Start syncing an Audio library on a desktop or server replica · Keep on this device, the default: the destination, the size and free-space line and the .arcaignore message as for any folder</p>
         <div class="kit-dialog-stage">
@@ -183,7 +183,7 @@
               <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Audio · Stream from the hub: no destination, nothing to count, and the action reads Start streaming</p>
         <div class="kit-dialog-stage">
@@ -195,7 +195,7 @@
               <label class="role-card"><input name="media-mode-stream" type="radio" value="keep" /><div><strong>Keep on this device</strong><p>A full copy that syncs both ways.</p></div></label>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="play"></span>Start streaming</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Movies &amp; TV · Stream from the hub is the default; Keep on this device is the Audio dialog: the destination, the size and free-space line and the .arcaignore message, on the desktop app and on a server</p>
         <div class="kit-dialog-stage">
@@ -211,28 +211,28 @@
               <div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div>
             </div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Choose folders · every shared folder is already selected</p>
         <div class="kit-dialog-stage">
           <dialog open class="confirmation-dialog" aria-labelledby="choose-all-title">
             <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder"></span></div><div><h2 id="choose-all-title">Choose folders</h2><p>Keep complete copies on this device.</p></div></div><div class="empty"><span data-icon="folder-check"></span><h2>All folders are syncing here</h2><p>New shared folders will appear here when the hub creates them.</p></div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Done</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Choose folder · several shared folders are available: each row starts syncing its own folder, so the dialog keeps only Cancel</p>
         <div class="kit-dialog-stage">
           <dialog open class="confirmation-dialog" aria-labelledby="choose-one-title">
             <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="download"></span></div><div><h2 id="choose-one-title">Choose folder</h2><p>Choose a shared folder to start syncing on this device.</p></div></div><div class="selection-list"><article class="folder-card unselected" ><div class="tile large"><span data-icon="images"></span></div><div class="row-main"><strong>photos-demo</strong><p class="meta">11 files · 33.5 MB</p></div><button type="button" class="secondary small-button" data-action="add"><span data-icon="refresh-cw"></span>Start syncing</button></article><article class="folder-card unselected" ><div class="tile large"><span data-icon="images"></span></div><div class="row-main"><strong>photos-yuri</strong><p class="meta">138 files · 1.6 GB</p></div><button type="button" class="secondary small-button" data-action="add"><span data-icon="refresh-cw"></span>Start syncing</button></article></div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Sync · a folder that already has a local copy keeps its location here; it moves from folder details</p>
         <div class="kit-dialog-stage">
           <dialog open aria-labelledby="select-local-title">
             <div id="dialog-content"><div class="folder-selection"><div class="modal-title"><div class="tile"><span data-icon="refresh-cw"></span></div><div><h2 id="select-local-title">Sync “documents” on macbook-pro</h2><p>Files sync both ways between this folder and the hub. Existing local files are uploaded too.</p></div></div><div class="selection-summary"><div class="tile large"><span data-icon="folder"></span></div><div class="row-main"><strong>documents</strong><p>20 files · 14.2 MB · on the hub</p></div><span class="mono">id 7c1e</span></div><label for="select-local-path">Local destination</label><div class="field-with-icon selection-path"><span data-icon="folder"></span><input id="select-local-path" class="mono" name="path" value="/Users/javi/arca/documents" readonly required /></div><p class="hint">Change this location from folder details.</p><div class="message" role="status"><span data-icon="info"></span><span>20 local files to sync · 14.2 MB · Needs 14.2 MB · 589.0 GB free</span></div><div class="message"><span data-icon="info"></span><span>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</span></div></div></div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
       </section>
 
@@ -338,25 +338,25 @@
             <dialog open aria-labelledby="share-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-plus"></span></div><div><h2 id="share-title">Create a shared folder on hub casa</h2><p>Only the hub creates shared folders. Devices then start syncing it and choose their own destination.</p></div></div><label for="field-name">Name</label><div class="field-with-icon"><span data-icon="folder"></span><input id="field-name" aria-label="Name" class="" name="name" value="invoices" required></div><p class="hint">Shown to every device. Portable name: no slashes, no reserved words, no case collisions.</p><label for="field-path">Path on casa</label><div class="field-with-icon"><span data-icon="server"></span><input id="field-path" aria-label="Path on casa" class="mono" name="path" value="/srv/arca/invoices" required></div><p class="hint">Use an existing folder or create a new one. It must be accessible to the hub and outside other shared folders and the state directory.</p><div class="message" role="status"><span data-icon="info"></span><span>New folder · 1.2 GB free<br><span class="mono">/srv/arca/invoices</span></span></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="folder-plus"></span>Create shared folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="locate-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-input"></span></div><div><h2 id="locate-title">Locate “projects”</h2><p>Choose the original folder with its Arca marker. Existing files stay intact.</p></div></div><label for="field-path">Folder location</label><div class="field-with-icon"><button type="button" class="icon-button field-picker" data-action="pick-path" data-id="path" aria-label="Choose Folder location"><span data-icon="folder"></span></button><input id="field-path" aria-label="Folder location" class="mono" name="path" value="/Volumes/Archive/projects" required></div><div class="message" role="status"><span data-icon="info"></span><span>Existing folder · 412.6 GB free<br><span class="mono">/Volumes/Archive/projects</span></span></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Use this folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="move-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-input"></span></div><div><h2 id="move-title">Change folder location</h2><p>Files are copied and verified before switching. The original is retained. Stop external writers during relocation.</p></div></div><div class="share-summary"><strong>documents</strong><p class="path">/Users/javi/arca/documents</p></div><label for="field-path">New destination</label><div class="field-with-icon"><button type="button" class="icon-button field-picker" data-action="pick-path" data-id="path" aria-label="Choose New destination"><span data-icon="folder"></span></button><input id="field-path" aria-label="New destination" class="mono" name="path" value="/Volumes/Archive/documents" required></div><p class="hint">The destination must be a new directory.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Copy and switch</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="rename-share-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="pencil"></span></div><div><h2 id="rename-share-title">Rename shared folder</h2><p>Updates the name on every device. Folder locations stay the same.</p></div></div><label for="field-name">Name</label><div class="field-with-icon"><span data-icon="folder"></span><input id="field-name" aria-label="Name" class="" name="name" value="documents" required></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Rename</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog aria-labelledby="dialog-title" open>
@@ -366,31 +366,31 @@
             <button type="button" class="secondary" id="cancel-dialog">Cancel</button><button class="primary" type="submit" id="submit-dialog" disabled="">Set up</button>
           </div>
         </form>
-      </dialog>
+      <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="problem-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="circle-alert"></span></div><div><h2 id="problem-title">Synchronization of projects stopped</h2><p>Permission denied: /Users/javi/arca/projects/exports</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Close</button><button type="button" id="submit-dialog" class="primary">Retry now</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="wide-dialog confirmation-dialog" aria-labelledby="mass-delete-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="mass-delete-title">Delete 1,204 files from every device?</h2><p>These files are no longer in “photos” on this hub. If a disk was disconnected or a folder was moved, put it back and choose Check again: nothing has been deleted on other devices yet.</p></div></div><ul><li class="path">/srv/arca/photos/2023</li><li class="path">/srv/arca/photos/2024</li></ul><p class="hint">Deleting is sent to every device. Recovery afterwards depends on this folder’s version retention.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="secondary">Check again</button><button type="button" id="submit-dialog" class="primary danger">Delete from every device</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="hub-unlink-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unlink"></span></div><div><h2 id="hub-unlink-title">Stop syncing on this hub?</h2><p>Stops this hub’s local copy. The shared folder and history remain available.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Stop syncing here</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="retention-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="history"></span></div><div><h2 id="retention-title">Remove older versions?</h2><p>214 older versions will be permanently removed. Current files are kept.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Apply retention</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
         <div class="kit-dialog-stage">
@@ -398,7 +398,7 @@
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="file-pen-line"></span></div><div><h2 id="ignore-title">.arcaignore</h2><p>Rules sync to every copy. Excluded files stay on disk; newly included files join bidirectional sync.</p></div></div><label for="ignore-rules">Exclusion rules</label><textarea id="ignore-rules" class="ignore-editor mono" name="text" spellcheck="false" aria-describedby="ignore-hint">*.tmp
 exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per line, added to the exclusions that always apply. Saving creates the file if it is missing.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Save rules</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         <p class="kit-caption">Dialog states · a path the hub refuses marks its field invalid (error border, the reason beside it, linked with aria-describedby) and keeps the action off; a failed submit keeps the dialog open with the error in a card above the actions; a running submit shows the busy grid on the same action, which keeps its label</p>
         <div class="kit-grid wide">
@@ -406,20 +406,20 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
             <dialog open aria-labelledby="share-linked-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-plus"></span></div><div><h2 id="share-linked-title">Create a shared folder on hub casa</h2><p>Only the hub creates shared folders. Devices then start syncing it and choose their own destination.</p></div></div><label for="field-name">Name</label><div class="field-with-icon"><span data-icon="folder"></span><input id="field-name" aria-label="Name" class="" name="name" value="documents-2" required></div><p class="hint">Shown to every device. Portable name: no slashes, no reserved words, no case collisions.</p><label for="field-path">Path on casa</label><div class="field-with-icon"><span data-icon="server"></span><input id="field-path" aria-label="Path on casa" class="mono" name="path" value="/srv/arca/documents" required aria-invalid="true" aria-describedby="kit-linked-error"></div><div class="message message-error" id="kit-linked-error" role="alert"><span data-icon="circle-alert"></span><span>Already linked to &quot;documents&quot;. Choose another folder.</span></div><p class="hint">Use an existing folder or create a new one. It must be accessible to the hub and outside other shared folders and the state directory.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary" disabled><span data-icon="folder-plus"></span>Create shared folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="locate-error-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-input"></span></div><div><h2 id="locate-error-title">Locate “projects”</h2><p>Choose the original folder with its Arca marker. Existing files stay intact.</p></div></div><label for="field-path">Folder location</label><div class="field-with-icon"><button type="button" class="icon-button field-picker" data-action="pick-path" data-id="path" aria-label="Choose Folder location"><span data-icon="folder"></span></button><input id="field-path" aria-label="Folder location" class="mono" name="path" value="/Volumes/Archive/other" required></div><div class="message" role="status"><span data-icon="info"></span><span>Existing folder · 412.6 GB free<br><span class="mono">/Volumes/Archive/other</span></span></div></div>
               <div id="dialog-error" class="dialog-error" role="alert"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="circle-alert"></span><div class="notice-content"><strong>Could not complete action</strong><p>Choose the original folder with its matching Arca marker. Files are not created or replaced.</p></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Use this folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="locate-busy-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="folder-input"></span></div><div><h2 id="locate-busy-title">Locate “projects”</h2><p>Choose the original folder with its Arca marker. Existing files stay intact.</p></div></div><label for="field-path">Folder location</label><div class="field-with-icon"><button type="button" class="icon-button field-picker" data-action="pick-path" data-id="path" aria-label="Choose Folder location"><span data-icon="folder"></span></button><input id="field-path" aria-label="Folder location" class="mono" name="path" value="/Volumes/Archive/projects" required></div><div class="message" role="status"><span data-icon="info"></span><span>Existing folder · 412.6 GB free<br><span class="mono">/Volumes/Archive/projects</span></span></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary" aria-busy="true" disabled><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Use this folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
       </section>
@@ -491,7 +491,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
             <dialog open class="confirmation-dialog" aria-labelledby="delete-photos-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="delete-photos-title">Delete 3 photos?</h2><p>Deletes from this shared folder on every device that syncs it; a Live Photo goes with its video. Nothing is removed from a phone’s own photo library. What you delete can be restored from History while this folder’s version retention keeps it.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Delete</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-draw"><div class="empty"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-60V233a52 52 0 0 0-104 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg><h2>No photos yet</h2><p>Photos added to this folder appear here.</p></div></div>
         </div>
@@ -582,7 +582,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
         </div>
         <p class="kit-caption">Add to playlist… · the editable playlists with their track counts and first track's cover, then New playlist…; choosing one appends the track to its file in Playlists/</p>
         <div class="kit-dialog-stage">
-          <dialog open aria-labelledby="picker-title" class="confirmation-dialog"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="list-plus" aria-hidden="true"></span></div><div><h2 id="picker-title">Add to playlist</h2><p>Freddie Freeloader · Miles Davis</p></div></div><div class="history-group music-picker"><button type="button" class="music-row" data-action="music-pick" data-id="Playlists/Road trip.m3u8"><span class="music-cover kit-art"><span data-icon="list-music" aria-hidden="true"></span></span><span><strong>Road trip</strong><span>5 tracks</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="music-row" data-action="music-pick" data-id="Playlists/Sunday morning.m3u8"><span class="music-cover kit-art"><span data-icon="list-music" aria-hidden="true"></span></span><span><strong>Sunday morning</strong><span>2 tracks</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="music-row" data-action="music-pick-new" data-id="Miles Davis/Kind of Blue/02 Freddie Freeloader.flac"><span class="music-cover"><span data-icon="plus" aria-hidden="true"></span></span><span><strong>New playlist…</strong><span>Saved as a file in Playlists/</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button></div></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button></div></dialog>
+          <dialog open aria-labelledby="picker-title" class="confirmation-dialog"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="list-plus" aria-hidden="true"></span></div><div><h2 id="picker-title">Add to playlist</h2><p>Freddie Freeloader · Miles Davis</p></div></div><div class="history-group music-picker"><button type="button" class="music-row" data-action="music-pick" data-id="Playlists/Road trip.m3u8"><span class="music-cover kit-art"><span data-icon="list-music" aria-hidden="true"></span></span><span><strong>Road trip</strong><span>5 tracks</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="music-row" data-action="music-pick" data-id="Playlists/Sunday morning.m3u8"><span class="music-cover kit-art"><span data-icon="list-music" aria-hidden="true"></span></span><span><strong>Sunday morning</strong><span>2 tracks</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="music-row" data-action="music-pick-new" data-id="Miles Davis/Kind of Blue/02 Freddie Freeloader.flac"><span class="music-cover"><span data-icon="plus" aria-hidden="true"></span></span><span><strong>New playlist…</strong><span>Saved as a file in Playlists/</span></span><span data-icon="chevron-right" aria-hidden="true"></span></button></div></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button></div><button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Playlist · the trail “Folders › music › Road trip”; reads as an album page: the first resolved track's cover, name, tracks and length, Play (Pause while one of its tracks plays), Shuffle and a ⋯ with Rename… and Delete playlist…; its table adds an Album column, hidden with Artist under 760px; a track's ⋯ adds Remove from playlist; an entry this device cannot play is dimmed and says why</p>
         <div class="kit-window">
@@ -646,7 +646,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
               <div class="favorites" role="group" aria-label="Favorites"><div class="favorites-head section-label" aria-hidden="true"><span>Favorites</span></div><div class="favorites-list"><div class="favorite-row"><button type="button" class="nav-item favorite" data-tooltip="invoices" aria-label="invoices"><span data-icon="folder"></span><span class="favorite-name">invoices</span></button><button type="button" class="ghost icon-button favorite-actions" aria-label="invoices actions"><span data-icon="ellipsis"></span></button></div><div class="favorite-row"><button type="button" class="nav-item favorite" data-tooltip="Kind of Blue" aria-label="Kind of Blue"><span data-icon="disc-3"></span><span class="favorite-name">Kind of Blue</span></button><button type="button" class="ghost icon-button favorite-actions" aria-label="Kind of Blue actions"><span data-icon="ellipsis"></span></button></div><div class="favorite-row"><button type="button" class="nav-item favorite" data-tooltip="The Wild Project" aria-label="The Wild Project"><span data-icon="podcast"></span><span class="favorite-name">The Wild Project</span></button><button type="button" class="ghost icon-button favorite-actions" aria-label="The Wild Project actions"><span data-icon="ellipsis"></span></button></div></div></div><div class="sidebar-bottom"><div id="music-mini" class="music-mini" role="region" aria-label="Now playing"><button type="button" class="music-mini-track" data-player="show" aria-label="#386 · Cómo cambiará la IA el trabajo by The Wild Project, open The Wild Project" data-tooltip="Open The Wild Project"><span class="music-cover kit-art-warm"><span data-icon="podcast" aria-hidden="true"></span></span><span class="music-mini-text"><strong>#386 · Cómo cambiará la IA el trabajo</strong><span><span data-icon="moon" aria-hidden="true"></span><span class="mono">29:41</span></span></span></button><button type="button" class="primary music-mini-play icon-button" data-player="toggle" data-symbol="pause" data-tooltip="Pause" aria-label="Pause"><span data-icon="pause" aria-hidden="true"></span></button><progress class="music-mini-progress" max="1000" value="170" aria-hidden="true"></progress></div><div class="status-card" role="group" aria-label="casa, Hub, Up to date"><div class="status-device" title="casa · Hub · Up to date"><span data-icon="server"></span><b>casa</b><span class="machine-role">Hub</span><span class="status-dot ok" aria-hidden="true"></span></div><div class="sync-status-heading"><strong id="connection" class="ok"><span data-icon="circle-check"></span>Up to date</strong></div><span id="last-sync" hidden>Last sync 2 min ago</span><div id="sync-controls"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button></div><button type="button" class="backup-link" data-action="machines" title="View backup reports from your devices"><span data-icon="shield-check"></span><span>1 backup reported</span></button></div><button class="ghost sign-out" data-action="logout"><span data-icon="log-out"></span>Sign out</button></div></aside><main><section id="content"><div class="heading"><div><h1>Folders</h1></div></div><div class="page"><section><div class="section-label">Folders</div><div class="folder-list"><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="folder"></span></div></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB</p></div><span data-icon="chevron-right" class="chevron"></span></article></div></section><section><div class="section-label">Audio</div><div class="folder-list"><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="podcast"></span></div></div><div class="row-main"><strong>podcasts</strong><p class="meta">3 files · 12.6 MB</p></div><span data-icon="chevron-right" class="chevron"></span></article></div></section></div></section></main></div></div>
         <p class="kit-caption">Delete… · the last item of a track’s ⋯ on an editable copy; the confirmation names the file, removes it from every device and leaves it restorable from History</p>
         <div class="kit-dialog-stage">
-          <dialog open class="confirmation-dialog" aria-labelledby="delete-track-title"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2" aria-hidden="true"></span></div><div><h2 id="delete-track-title">Delete Freddie Freeloader?</h2><p>It is removed from every device. History keeps it for the folder's retention and you can restore it from History.</p></div></div></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Delete</button></div></dialog>
+          <dialog open class="confirmation-dialog" aria-labelledby="delete-track-title"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2" aria-hidden="true"></span></div><div><h2 id="delete-track-title">Delete Freddie Freeloader?</h2><p>It is removed from every device. History keeps it for the folder's retention and you can restore it from History.</p></div></div></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Delete</button></div><button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Playlists · New playlist… from the picker, Rename… and Delete playlist… from a playlist’s ⋯; each edits its file in Playlists/</p>
         <div class="kit-grid wide">
@@ -654,19 +654,19 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
             <dialog open aria-labelledby="new-playlist-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="list-plus"></span></div><div><h2 id="new-playlist-title">New playlist</h2><p>Saved as a file in Playlists/ and synced to every device.</p></div></div><label for="field-name">Name</label><div class="field-with-icon"><span data-icon="list-music"></span><input id="field-name" aria-label="Name" class="" name="name" value="" required></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Create playlist</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="rename-playlist-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="pencil"></span></div><div><h2 id="rename-playlist-title">Rename playlist</h2><p>Changes its name and its file in Playlists/ on every device.</p></div></div><label for="field-name">Name</label><div class="field-with-icon"><span data-icon="list-music"></span><input id="field-name" aria-label="Name" class="" name="name" value="Road trip" required></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Rename</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="delete-playlist-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="delete-playlist-title">Delete playlist?</h2><p>Deletes Playlists/Road trip.m3u8 on every device. You can restore it from History.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Delete playlist</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
         <p class="kit-caption">Library states · Recent with nothing played or added yet; a library whose tags are still being read; a folder with no audio; a library that could not be read offers Retry</p>
@@ -905,7 +905,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
           <button type="button" class="secondary" id="cancel-dialog">Cancel</button><button class="primary" type="submit" id="submit-dialog">Save</button>
         </div>
       </form>
-    </dialog>
+    <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Folder actions · a plain hub folder offers Set up as library…, Rename and .arcaignore…</p>
         <div class="kit-draw menu-open">
@@ -920,7 +920,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
           <button type="button" class="secondary" id="cancel-dialog">Cancel</button><button class="primary" type="submit" id="submit-dialog" disabled="">Set up</button>
         </div>
       </form>
-    </dialog>
+    <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
       </section>
 
@@ -1075,24 +1075,24 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
         </div>
         <p class="kit-caption">Device dialogs · Remove device from the row’s ⋯ on the hub, Disconnect… on a replica, Disable web approval for a device that approves web sign-ins, and on a replica Change hub address (the same hub at a new address, checked before saving) and Disconnect anyway (the hub unreachable; local files kept)</p>
         <div class="kit-grid wide">
-          <div class="kit-dialog-stage"><dialog open class="confirmation-dialog" aria-labelledby="change-address"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="arrow-right-left"></span></div><div><h2 id="change-address">Change hub address</h2><p>Use this when atlas moved to another computer or address. This device keeps its pairing, folders and files, and nothing downloads again.</p></div></div><label for="kit-hub-address">New address</label><input id="kit-hub-address" class="mono" value="http://100.71.12.40:17831" readonly><p class="hint">The hub at the new address must be the same hub, with this device still paired. For a different hub, use replacement-hub recovery.</p></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary">Change address</button></div></dialog></div><div class="kit-dialog-stage"><dialog open class="confirmation-dialog" aria-labelledby="disconnect-anyway"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unplug"></span></div><div><h2 id="disconnect-anyway">Disconnect from atlas?</h2><p>atlas cannot be reached, so it cannot be told. This device stops syncing and keeps its local files and saved destinations; atlas keeps a stale entry for it that its administrator can remove in Devices.</p></div></div><p class="hint">If atlas only moved to another address, use Change address… instead and keep syncing.</p></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary danger">Disconnect anyway</button></div></dialog></div>
+          <div class="kit-dialog-stage"><dialog open class="confirmation-dialog" aria-labelledby="change-address"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="arrow-right-left"></span></div><div><h2 id="change-address">Change hub address</h2><p>Use this when atlas moved to another computer or address. This device keeps its pairing, folders and files, and nothing downloads again.</p></div></div><label for="kit-hub-address">New address</label><input id="kit-hub-address" class="mono" value="http://100.71.12.40:17831" readonly><p class="hint">The hub at the new address must be the same hub, with this device still paired. For a different hub, use replacement-hub recovery.</p></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary">Change address</button></div><button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog></div><div class="kit-dialog-stage"><dialog open class="confirmation-dialog" aria-labelledby="disconnect-anyway"><div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unplug"></span></div><div><h2 id="disconnect-anyway">Disconnect from atlas?</h2><p>atlas cannot be reached, so it cannot be told. This device stops syncing and keeps its local files and saved destinations; atlas keeps a stale entry for it that its administrator can remove in Devices.</p></div></div><p class="hint">If atlas only moved to another address, use Change address… instead and keep syncing.</p></div><div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary danger">Disconnect anyway</button></div><button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog></div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="remove-device-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unplug"></span></div><div><h2 id="remove-device-title">Remove phone-fold?</h2><p>Removes this device’s access and connection reports from the hub. The device updates when it next contacts the hub. Files and version history are kept. Connecting again requires a new pairing code.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Remove device</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="disconnect-hub-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unplug"></span></div><div><h2 id="disconnect-hub-title">Disconnect from hub?</h2><p>Stops synchronization and any full backup on this device. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.</p></div></div><p class="hint">Disconnects this device on both sides. If the hub cannot be reached, you can disconnect anyway.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Disconnect</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="web-approver-off-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="shield-check"></span></div><div><h2 id="web-approver-off-title">Disable web approval?</h2><p>This device will no longer approve web access.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Disable</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
         <p class="kit-caption">Tray · Up to date: the heading and the footer, whatever the number of folders</p>
@@ -1193,116 +1193,116 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
             <dialog open class="confirmation-dialog" aria-labelledby="unlink-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="unlink"></span></div><div><h2 id="unlink-title">Stop syncing “photos-yuri”?</h2><p>Stops syncing it on this Mac. The hub keeps the shared folder, its files and history.</p></div></div><div class="confirmation-option"><label class="toggle"><input type="checkbox" id="unlink-delete" checked aria-label="Delete the files on this Mac" /><span></span></label><label for="unlink-delete">Delete the files on this Mac</label></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Stop syncing and delete</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="wide-dialog conflict-dialog" aria-labelledby="resolve-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="triangle-alert"></span></div><div><h2 id="resolve-title">Resolve conflict</h2><p>Choose which version to keep. Both copies remain available in history.</p></div></div><div class="conflict-options"><label class="role-card"><input name="choice" type="radio" value="original" checked><strong>Original file</strong><p class="path">brief.md</p><p>12.0 KB · Sep 30, 13:58 · rev 165701</p><p class="path">macbook-pro</p><p class="conflict-excerpt">Ship the hub update on Friday, then the phone build.</p></label><label class="role-card"><input name="choice" type="radio" value="conflict"><strong>Conflict copy</strong><p class="path">brief.md.conflict-phone-fold-9f3a</p><p>11.0 KB · Sep 30, 14:27 · rev 165702</p><p class="path">phone-fold</p><p class="conflict-excerpt">Ship the hub update on Monday. Phone build waits for review.</p></label></div></div>
               <div class="dialog-actions"><div class="form-actions" id="dialog-extra-actions"><button type="button" class="ghost small-button"><span data-icon="external-link"></span>Open both</button><button type="button" class="ghost small-button">Keep both as they are</button></div><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="undo-2"></span>Restore selected as new version</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="pair-title">
-              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="key-round"></span></div><div><h2 id="pair-title">Pair a device</h2><p>On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub. Enter the address and pairing code below.</p></div></div><div class="settings-card"><div class="setting-row"><div class="row-main"><strong>Hub address</strong><p><span class="path">http://casa:17831</span></p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy address</button></div><div class="setting-row"><div class="row-main"><strong>Alternative address</strong><p><span class="path">http://100.99.29.84:17831</span></p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy address</button></div></div><p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new device can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both devices or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display">121 — 525</div><div class="code-toolbar"><p class="code-expiry">Valid until 11:22 · single use</p><div class="form-actions"><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy code</button><button type="button" class="secondary small-button"><span data-icon="refresh-cw"></span>New code</button></div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="message"><span data-icon="info"></span><span>Issuing a code does not mean a device has connected. This code never grants web administration.</span></div></div>
+              <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="key-round"></span></div><div><h2 id="pair-title">Pair a device</h2><p>On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub. Enter the address and pairing code below.</p></div></div><div class="section-label">Pairing code</div><div class="code-display">121 — 525</div><div class="code-toolbar"><p class="code-expiry">Valid until 11:22 · single use</p><div class="form-actions"><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy code</button><button type="button" class="secondary small-button"><span data-icon="refresh-cw"></span>New code</button></div></div><div class="settings-card"><div class="setting-row"><div class="row-main"><strong>Hub address</strong><p><span class="path">http://casa:17831</span></p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy address</button></div><div class="setting-row"><div class="row-main"><strong>Alternative address</strong><p><span class="path">http://100.99.29.84:17831</span></p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy address</button></div></div><p class="hint">Use the alternative address when the new device cannot resolve the name. The code never grants web administration.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Done</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="cleanup-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="cleanup-title">Clean up older versions</h2><p>Nothing is removed until you apply. See the count first.</p></div></div><label for="cleanup-days">Remove versions older than (days)</label><input id="cleanup-days" type="number" value="30" readonly /><label for="cleanup-versions">But always keep the last (versions per file)</label><input id="cleanup-versions" type="number" value="5" readonly /><p class="hint">Leave a field at 0 to skip that rule.</p><div role="status"></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">See the count</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="cleanup-count-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="cleanup-count-title">Clean up older versions</h2><p>Nothing is removed until you apply. See the count first.</p></div></div><label for="cleanup-count-days">Remove versions older than (days)</label><input id="cleanup-count-days" type="number" value="30" readonly /><label for="cleanup-count-versions">But always keep the last (versions per file)</label><input id="cleanup-count-versions" type="number" value="5" readonly /><p class="hint">Leave a field at 0 to skip that rule.</p><div role="status"><div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>1,204</strong></div><div class="panel"><span class="hint">Keeps</span><strong>3,608</strong></div><div class="panel"><span class="hint">Protected</span><strong>412</strong><p>current · pending · unbacked</p></div></div><div class="settings-card"><div class="setting-row"><div class="row-main"><strong>documents</strong><p>1,204 versions would be removed</p></div><span>3,608 kept</span></div></div><div class="message message-warning"><span data-icon="triangle-alert"></span><span>Cleanup cannot be undone on this hub. Kept counts are older versions only and include protected ones. No cleanup is scheduled.</span></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger"><span data-icon="trash-2"></span>Apply cleanup</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="connect-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="key-round"></span></div><div><h2 id="connect-title">Connect to your hub</h2><p>Detection does not link a device. Enter the code issued by the hub administrator.</p></div></div><label for="hub-address">Hub address</label><input id="hub-address" name="url" class="mono" value="" placeholder="https://arca.your-network" required><label>Pairing code</label><div class="code-inputs" role="group" aria-label="Six-digit code"><input inputmode="numeric" autocomplete="one-time-code" aria-label="Code digit 1" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 2" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 3" pattern="[0-9]" maxlength="1" value=""><span class="separator">—</span><input inputmode="numeric" autocomplete="off" aria-label="Code digit 4" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 5" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 6" pattern="[0-9]" maxlength="1" value=""></div><p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Generating a new code invalidates the previous one.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Connect</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="delete-share-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="delete-share-title">Delete “photos-yuri”?</h2><p>Permanently removes this shared folder’s catalog and history from the hub. Connected devices stop syncing when they refresh. Files on disk and existing backups are kept.</p></div></div><label for="confirm-folder-name">Type the shared folder name to confirm</label><input id="confirm-folder-name" name="confirmedName" autocomplete="off" required></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger" disabled>Delete shared folder</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="replace-connect-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="key-round"></span></div><div><h2 id="replace-connect-title">Reconnect to a replacement hub</h2><p>Detection does not link a device. Enter the code issued by the hub administrator.</p></div></div><label for="replace-hub-address">Hub address</label><input id="replace-hub-address" name="url" class="mono" value="http://casa:17831" placeholder="https://arca.your-network" required><label>Pairing code</label><div class="code-inputs" role="group" aria-label="Six-digit code"><input inputmode="numeric" autocomplete="one-time-code" aria-label="Code digit 1" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 2" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 3" pattern="[0-9]" maxlength="1" value=""><span class="separator">—</span><input inputmode="numeric" autocomplete="off" aria-label="Code digit 4" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 5" pattern="[0-9]" maxlength="1" value=""><input inputmode="numeric" autocomplete="off" aria-label="Code digit 6" pattern="[0-9]" maxlength="1" value=""></div><p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Generating a new code invalidates the previous one.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p><p class="hint">Replacing the hub reconnects existing folders, keeps local files and preserves differences as conflicts.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Replace hub and reconnect</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="promote-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="server"></span></div><div><h2 id="promote-title">Replace hub casa</h2><p>Use the local copies on macbook-pro when the old hub is permanently unavailable. Changes it never sent here cannot be recovered.</p></div></div><div class="settings-card"><div class="setting-row"><div class="row-main"><strong>documents</strong><p>Local copy · last sync Sep 30, 14:02</p></div><span class="pill id"><span data-icon="check"></span>Available</span></div><div class="setting-row"><div class="row-main"><strong>photos-yuri</strong><p>Complete local copy required</p></div><span class="pill wa"><span data-icon="triangle-alert"></span>Needs attention</span></div><div class="setting-row"><div class="row-main"><strong>Full hub backup</strong><p>Off on this device.</p></div><span class="pill id"><span data-icon="shield"></span>Off</span></div></div><p>Unseen changes and old history cannot be reconstructed from working copies.</p><label class="inline-check"><input name="confirmed" type="checkbox" required>I confirm the old hub is stopped and will not return as the active hub.</label></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary" disabled>Make this device the hub</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open aria-labelledby="backup-enable-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="shield-check"></span></div><div><h2 id="backup-enable-title">Enable hub backup</h2><p>Keep every shared folder and retained version in a separate location while working-folder sync continues.</p></div></div><label for="field-backup-path">Backup location</label><div class="field-with-icon"><button type="button" class="icon-button field-picker" data-action="pick-path" data-id="path" aria-label="Choose Backup location"><span data-icon="folder"></span></button><input id="field-backup-path" aria-label="Backup location" class="mono" name="path" value="/Volumes/Archive/arca-backup" required></div><p class="hint">Use an empty dedicated folder outside synchronized folders and the state directory; in Docker, a mounted folder. Disabling backup keeps its data.</p></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Enable backup</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="backup-disable-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="shield-off"></span></div><div><h2 id="backup-disable-title">Disable hub backup?</h2><p>The existing backup remains on disk. New history will no longer be copied here. Working-folder synchronization continues.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Disable backup</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="web-approver-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="shield-check"></span></div><div><h2 id="web-approver-title">Allow web approval?</h2><p>This device will be able to approve administrator access to this hub’s web interface.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Allow</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="logout-all-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="log-out"></span></div><div><h2 id="logout-all-title">Sign out all web sessions?</h2><p>Every browser managing this service will need a new access code. Device synchronization credentials stay linked.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Sign out all</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="allow-http-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="triangle-alert"></span></div><div><h2 id="allow-http-title">Allow HTTP connections?</h2><p>Anyone on your local network could read your files and sign-in details. Use it only on a network you trust.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Allow HTTP</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="remove-track-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="monitor"></span></div><div><h2 id="remove-track-title">Remove from this device?</h2><p>Deletes only the copy on this device to free its space. The track stays on the hub and you can download it again.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Remove</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="remove-video-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="monitor"></span></div><div><h2 id="remove-video-title">Remove from this device?</h2><p>Deletes only the copy on this device to free its space. The video stays on the hub and you can download it again.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Remove</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
         <div class="kit-dialog-stage">
             <dialog open class="wide-dialog conflict-dialog" aria-labelledby="resolve-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="triangle-alert"></span></div><div><h2 id="resolve-title">Resolve conflict</h2><p>Choose which version to keep. Both copies remain available in history.</p></div></div><div class="conflict-options"><label class="role-card"><input name="choice" type="radio" value="original" checked><strong>Original file</strong><p class="path">brief.md</p><p>12.0 KB · Sep 30, 13:58 · rev 165701</p><p class="path">macbook-pro</p></label><label class="role-card"><input name="choice" type="radio" value="conflict"><strong>Conflict copy</strong><p class="path">brief.md.conflict-phone-fold-9f3a</p><p>11.0 KB · Sep 30, 14:27 · rev 165702</p><p class="path">phone-fold</p></label></div></div>
               <div class="dialog-actions"><div class="form-actions" id="dialog-extra-actions"><button type="button" class="ghost small-button"><span data-icon="external-link"></span>Open both</button><button type="button" class="ghost small-button">Keep both as they are</button></div><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="undo-2"></span>Restore selected as new version</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         <div class="kit-dialog-stage">
             <dialog open class="wide-dialog" aria-labelledby="erase-device-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-device-title">Erase this device?</h2><p>Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.</p></div></div><ul><li class="path">/Users/javi/arca/documents</li><li class="path">/Users/javi/arca/photos-yuri</li><li class="path">/Users/javi/arca/music</li></ul><p class="hint">This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately. A folder the system does not let Arca delete, such as Documents, is left in place. An interrupted cleanup can be retried.</p><label for="confirm-device-name">Type the device name to confirm</label><input id="confirm-device-name" name="confirmedName" autocomplete="off" required></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger" disabled>Erase this device</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         <div class="kit-dialog-stage">
             <dialog open class="wide-dialog" aria-labelledby="erase-hub-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="erase-hub-title">Erase this hub and all its folders?</h2><p>Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. The hub returns to setup, where you can set up a hub or connect to one.</p></div></div><ul><li class="path">/srv/arca/documents</li><li class="path">/srv/arca/photos-yuri</li><li class="path">/srv/arca/music</li></ul><p class="hint">This cannot be undone. No deletions are sent to other devices. An interrupted cleanup can be retried.</p><label for="confirm-hub-name">Type the hub name to confirm</label><input id="confirm-hub-name" name="confirmedName" autocomplete="off" required></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger" disabled>Erase this hub</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
       
         <p class="kit-caption">Search · Command-K (Control-K elsewhere) or the sidebar row: one search with typed groups in a fixed order (Folders, Songs, Albums, Artists, Shows, Episodes, Playlists, Photos, Files), each with its total, three rows (four photos) and “Show all N”; covers come from the library (artists round), photos show their capture date; the active row names what Enter does, and ⌘Enter (Ctrl Enter) shows the item in its folder, loading further pages until its row is listed</p>
@@ -1355,7 +1355,7 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
           <dialog open class="confirmation-dialog approval-dialog" aria-labelledby="approval-title">
             <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="log-in"></span></div><div><h2 id="approval-title">Allow this browser to open casa?</h2><p>Someone is signing in to the hub web from a browser. Allow it only if that is you, right now.</p></div></div><div class="request-reference"><div class="eyebrow">Type the browser’s number</div><div class="code-inputs" role="group" aria-label="Six-digit request number"><input aria-label="Digit" value="4" readonly><input aria-label="Digit" value="8" readonly><input aria-label="Digit" value="2" readonly><span class="separator">—</span><input aria-label="Digit" readonly><input aria-label="Digit" readonly><input aria-label="Digit" readonly></div></div><div class="approval-details"><div class="approval-detail"><span data-icon="globe"></span><span>Browser</span><strong>Safari on macOS</strong></div><div class="approval-detail"><span data-icon="shield-check"></span><span>From</span><strong><span class="mono">100.64.0.7</span></strong></div><div class="approval-detail"><span data-icon="link"></span><span>Address</span><strong><span class="mono">casa:17831</span></strong></div><div class="approval-detail"><span data-icon="clock"></span><span>Requested</span><strong><span>Just now · expires in 9:42</span></strong></div></div><details class="approval-raw"><summary><span data-icon="chevron-right"></span>Raw details, as reported by the browser</summary><p>Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15</p></details></div>
             <div class="dialog-actions"><p class="hint approval-session">Grants a 24-hour session on that browser.</p><button type="button" class="secondary">Deny</button><button type="button" id="submit-dialog" class="primary" disabled>Allow</button></div>
-          </dialog>
+          <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
         </div>
         <p class="kit-caption">Web approval · a device allowed to approve types the number the browser shows; Allow, which grants a 24-hour session, turns on with six digits, Deny is focused, and a number from another request ends this one with “That number belongs to a different request.”</p>
         <div class="kit-window"><div class="shell"><aside class="sidebar"><a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon-small.svg" alt="Arca" /></div><span><b>arca</b></span></a><button type="button" class="palette-open" data-action="palette" aria-label="Search"><span data-icon="search"></span><span>Search</span><span class="tag palette-key">⌘K</span></button><nav aria-label="Main navigation"><button class="nav-item active"><span data-icon="folder"></span>Folders</button><button class="nav-item"><span data-icon="monitor-smartphone"></span>Devices</button><button class="nav-item"><span data-icon="history"></span>History</button><button class="nav-item"><span data-icon="settings"></span>Settings</button></nav><div class="sidebar-bottom"><div class="update-card" id="update-card"><span class="update-mark"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span data-icon="download"></span></span><strong id="update-heading">v0.8.37 is available</strong><button class="secondary small-button" id="update-install" data-action="install-update">Update and restart</button></div><div class="status-card" role="group" aria-label="macbook-pro, Replica, Service stopped"><div class="status-device" title="macbook-pro · Replica · Service stopped"><span data-icon="monitor"></span><b>macbook-pro</b><span class="machine-role">Replica</span><span class="status-dot er" aria-hidden="true"></span></div><div class="sync-status-heading"><strong id="connection" class="er"><span data-icon="power"></span>Service stopped</strong></div><span id="last-sync">Last sync 2 min ago</span><button type="button" class="backup-link" data-action="backup-settings"><span data-icon="shield"></span><span>Full backup off</span></button></div></div></aside><main><section id="content"><div class="heading"><div><h1>Service stopped</h1></div><div class="heading-actions"></div></div><div class="page"><div class="empty"><span data-icon="folder-open"></span><h2>Your files remain on disk</h2><p>Start the service to check your folders.</p><button type="button" class="primary" data-action="start"><span data-icon="power"></span>Start service</button></div></div></section></main></div></div>
@@ -1440,19 +1440,19 @@ drawings v3 go out on Thursday.
             <dialog open aria-labelledby="rename-file-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="pencil"></span></div><div><h2 id="rename-file-title">Rename file</h2><p>The new name syncs to other copies. Earlier history stays under the previous name.</p></div></div><label for="field-name">Filename</label><div class="field-with-icon"><span data-icon="folder"></span><input id="field-name" aria-label="Filename" class="" name="name" value="brief.md" required></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary">Rename</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="delete-file-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="trash-2"></span></div><div><h2 id="delete-file-title">Delete “brief.md”?</h2><p>Deletes from all synced copies. Retained history can be restored.</p></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Delete file</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
           <div class="kit-dialog-stage">
             <dialog open class="confirmation-dialog" aria-labelledby="restore-title">
               <div id="dialog-content"><div class="modal-title"><div class="tile"><span data-icon="undo-2"></span></div><div><h2 id="restore-title">Restore brief.md to rev 165760?</h2><p>This creates a new version with the contents of rev 165760. Existing versions stay in history.</p></div></div><div class="restore-versions"><div class="restore-version"><span data-icon="git-commit-horizontal"></span><div><strong>rev 165760 · restoring</strong><p>Sep 30, 13:40 · 11.0 KB</p></div><span class="mono" data-tooltip="9f3a2b7c1d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6c21e">sha 9f3a…c21e</span></div><div class="restore-version"><span data-icon="git-commit-horizontal"></span><div><strong>rev 165764 · current</strong><p>Sep 30, 14:02 · 12.0 KB</p></div><span class="mono" data-tooltip="4b7d90e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b08aa">sha 4b7d…08aa</span></div></div></div>
               <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary"><span data-icon="undo-2"></span>Restore as new version</button></div>
-            </dialog>
+            <button type="button" class="ghost icon-button dialog-close" aria-label="Close"><span data-icon="x"></span></button></dialog>
           </div>
         </div>
       </section>
@@ -1468,12 +1468,13 @@ drawings v3 go out on Thursday.
         </div></div>
         <p class="kit-caption">Notices · an error with technical text keeps a Details footer, closed by default; opened it shows the redacted, scrollable trace and Copy stays on the summary line</p>
         <div class="kit-grid wide">
-          <div class="kit-draw"><div class="kit-notices"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p><div class="notice-actions"><button class="notice-link">Retry now</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>connect ETIMEDOUT 100.99.29.84:17831</pre></details></article></div></div>
-          <div class="kit-draw"><div class="kit-notices"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p><div class="notice-actions"><button class="notice-link">Retry now</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details" open><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>connect ETIMEDOUT 100.99.29.84:17831</pre></details></article></div></div>
+          <div class="kit-draw"><div class="kit-notices"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="circle-alert"></span><div class="notice-content"><strong>Synchronization of photos-yuri stopped</strong><p>The operation stopped. Review the details and try again.</p><div class="notice-actions"><button class="notice-link">Review</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>Error: EACCES: permission denied, open '/Users/javi/arca/photos-yuri/IMG_0412.HEIC'</pre></details></article></div></div>
+          <div class="kit-draw"><div class="kit-notices"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="circle-alert"></span><div class="notice-content"><strong>Synchronization of photos-yuri stopped</strong><p>The operation stopped. Review the details and try again.</p><div class="notice-actions"><button class="notice-link">Review</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details" open><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>Error: EACCES: permission denied, open '/Users/javi/arca/photos-yuri/IMG_0412.HEIC'</pre></details></article></div></div>
         </div>
-        <p class="kit-caption">Notices · at most three stack above the bottom-right corner of the window, the newest last, pills hugging the right edge; only the newest three show</p>
+        <p class="kit-caption">Notices · a lasting condition is the banner at the top of the page, never a notice; the stack above the bottom-right corner holds at most two attention cards with the newest result under them, pills hugging the right edge</p>
+        <div class="kit-draw"><div class="state-banner state-error" role="status"><span data-icon="wifi-off"></span><div class="row-main"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p></div><button type="button" class="notice-link">Retry now</button></div></div>
         <div class="kit-notice-stage"><div class="kit-notices">
-<article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p><div class="notice-actions"><button class="notice-link">Retry now</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>connect ETIMEDOUT 100.99.29.84:17831</pre></details></article>
+<article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="circle-alert"></span><div class="notice-content"><strong>Synchronization of photos-yuri stopped</strong><p>The operation stopped. Review the details and try again.</p><div class="notice-actions"><button class="notice-link">Review</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>Error: EACCES: permission denied, open '/Users/javi/arca/photos-yuri/IMG_0412.HEIC'</pre></details></article>
 <article class="notice-card notice-warning" role="alert"><div class="notice-main"><span data-icon="triangle-alert"></span><div class="notice-content"><strong>Conflict in photos-yuri</strong><p>Files were edited on two devices. Both files were kept.</p><div class="notice-actions"><button class="notice-link">Review</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
 <article class="notice-card notice-info notice-pill" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Removed from Watch next</strong><div class="notice-actions"><button class="notice-link">Undo</button></div></div></div></article>
         </div></div>

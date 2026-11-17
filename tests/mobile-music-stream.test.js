@@ -341,7 +341,7 @@ test("streamed library screens: Start streaming, the downloaded-only caption, th
   assert.match(app, /collectionActions=\{musicCollectionSheet\}\s+streamed=\{audioStreaming\}\s+download=\{audioStreaming \? audioDownload : undefined\}/);
   assert.match(library, /menu=\{streamed \? \(\) => collectionActions\(\{ kind: "album", id: album\.id \}\) : undefined\}\s+menuLabel="Album actions"/);
   assert.match(library, /menu=\{streamed \? \(\) => collectionActions\(\{ kind: "show", id: show\.id \}\) : undefined\}\s+menuLabel="Show actions"/);
-  assert.match(library, /\{wide && streamed && \(\s+<Button iconOnly label="Artist actions" icon="more" onPress=\{\(\) => collectionActions\(\{ kind: "artist", id: artist\.id \}\)\} \/>/, "the Fold pane keeps the ⋯ after its actions");
+  assert.match(library, /\{split && streamed && \(\s+<Button iconOnly label="Artist actions" icon="more" onPress=\{\(\) => collectionActions\(\{ kind: "artist", id: artist\.id \}\)\} \/>/, "the Fold pane keeps the ⋯ after its actions");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /const glyph = download \? downloadGlyph\(download\(track\)\) : null;/);
   assert.match(list, /<\/View>\s+<DownloadGlyph glyph=\{glyph\} \/>\s+\{!numbered && current && <NowGlyph \/>\}/, "the glyph follows the row's text");

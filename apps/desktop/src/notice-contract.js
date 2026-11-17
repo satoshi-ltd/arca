@@ -11,7 +11,7 @@ export const noticeMetrics = Object.freeze({
   actionTimeout: 8000,
   lastingBody: 90,
   pillTitle: 40,
-  maxVisible: 3,
+  repeatWindow: 2000,
 });
 export const noticeReleaseDismisses = ({ dx, dy }) => dy > 32 || (Math.abs(dx) < 10 && Math.abs(dy) < 10);
 export const noticePill = (item) =>
@@ -22,10 +22,14 @@ export const noticePill = (item) =>
 export const lastingNotice = (n) =>
   !noticePill(n) &&
   (Boolean(n.action) || String(n.body || "").length > noticeMetrics.lastingBody);
-export function phoneNotices(items) {
-  const passing = (n) => n.kind === "info" && !lastingNotice(n);
-  const result = items.findLast(passing);
-  return items.filter((n) => !passing(n) || n === result);
+export const stateNotice = (n) => n.cause === "connection" && (n.id === "connection" || n.id === "status:connection");
+export function noticeLayout(items, { attention = 2, results = 1 } = {}) {
+  const rest = items.filter((n) => !stateNotice(n));
+  const waits = (n) => n.kind !== "info" || lastingNotice(n);
+  return {
+    state: items.filter(stateNotice).at(-1) || null,
+    stack: [...rest.filter(waits).slice(-attention), ...rest.filter((n) => !waits(n)).slice(-results)],
+  };
 }
 export const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
 export function safeDetails(value) {
@@ -266,6 +270,7 @@ export function createNoticeStore({
       n.action,
       n.actionLabel,
       n.volume,
+      n.videoId,
     ]);
   const emit = () => {
     for (const listener of listeners) listener();
@@ -295,8 +300,8 @@ export function createNoticeStore({
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    snapshot() {
-      return entries.slice(-noticeMetrics.maxVisible);
+    all() {
+      return entries.slice();
     },
     push(value) {
       const item = {
@@ -312,15 +317,18 @@ export function createNoticeStore({
             (!item.cause &&
               !n.cause &&
               (item.details || item.body) === (n.details || n.body)));
-        const condition = item.id.startsWith("status:");
-        if (
-          !condition &&
-          entries.some((n) => sameFailure(n) && n.id.startsWith("status:"))
-        )
-          return item.id;
+        const held = (n) => n.id.startsWith("status:") || n.id === "connection";
+        if (!held(item) && entries.some((n) => sameFailure(n) && held(n))) return item.id;
         for (const n of [...entries])
-          if (sameFailure(n) && n.id !== item.id && !n.id.startsWith("status:"))
-            remove(n.id, false);
+          if (sameFailure(n) && n.id !== item.id && !held(n)) remove(n.id, false);
+      }
+      if (item.kind === "info" && !lasting(item)) {
+        const twin = entries.find(
+          (n) => n.kind === "info" && signature(n) === signature(item) && now() - n.created < noticeMetrics.repeatWindow,
+        );
+        if (twin) return twin.id;
+        for (const n of [...entries])
+          if (n.kind === "info" && n.id !== item.id && !n.action && !lasting(n)) remove(n.id, false);
       }
       const old = entries.find((n) => n.id === item.id);
       if (old && signature(old) === signature(item)) return item.id;

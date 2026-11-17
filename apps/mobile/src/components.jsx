@@ -1221,7 +1221,7 @@ export function ActionRow({
   const { s, c } = useDesign();
   return (
     <PressScale
-      scale={!disabled}
+      scale={false}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={note}
@@ -1435,7 +1435,7 @@ export function FolderRow({
   );
   return available ? (
     <PressScale
-      scale={!disabled}
+      scale={false}
       accessibilityRole="button"
       accessibilityLabel={`Start syncing ${name}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}`}
       accessibilityState={{ disabled: !!disabled }}
@@ -1450,7 +1450,7 @@ export function FolderRow({
     </PressScale>
   ) : (
     <PressScale
-      scale={!disabled}
+      scale={false}
       accessibilityRole={selectable ? "checkbox" : "button"}
       accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}${tag ? `, ${tag}` : ""}`}
       accessibilityState={{

@@ -42,11 +42,12 @@ button[aria-disabled="true"],
   opacity: 0.5;
   cursor: not-allowed;
 }
-input:focus,
-select:focus {
+input:not([type="checkbox"], [type="radio"], [type="range"]):focus,
+select:focus,
+textarea:focus {
   outline: none;
-  border-color: var(--green);
-  box-shadow: var(--focus-ring);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
 }
 [hidden] {
   display: none !important;
@@ -1358,10 +1359,9 @@ main {
   line-height: 1.45;
 }
 .setting-row input {
-  width: 200px;
+  width: 280px;
   padding: 0 var(--space-3);
   font-size: var(--text-control);
-  background: var(--paper);
 }
 .setting-row input[type="number"] {
   width: 72px;
@@ -1425,7 +1425,8 @@ textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--control);
-  background: var(--surface);
+  background: var(--hover);
+  transition: background-color var(--motion-fast) var(--motion-ease);
   color: var(--ink);
   border-radius: var(--r-control);
   padding: 0 var(--space-3);
@@ -2507,7 +2508,12 @@ html:has(.tray-body) {
   padding: 0 var(--space-3);
   border: 1px solid var(--control);
   border-radius: var(--r-control);
-  background: var(--surface);
+  background: var(--hover);
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):hover:where(:not(:focus, :disabled)),
+.field-with-icon:where(:hover:not(:focus-within)) {
+  background: var(--press);
 }
 .field-with-icon > .icon,
 .field-with-icon > button {
@@ -2532,6 +2538,7 @@ html:has(.tray-body) {
   min-width: 0;
   border: 0;
   border-radius: 0;
+  box-shadow: none;
   background: transparent;
   align-self: stretch;
   min-height: 0;
@@ -2542,8 +2549,8 @@ html:has(.tray-body) {
   font-size: var(--text-control);
 }
 .field-with-icon:focus-within {
-  border-color: var(--green);
-  box-shadow: var(--focus-ring);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
 }
 .field-with-icon input:focus {
   box-shadow: none;
@@ -3043,10 +3050,6 @@ button,
   outline: 2px solid var(--green);
   outline-offset: 2px;
 }
-textarea:focus-visible {
-  outline: 2px solid var(--green);
-  outline-offset: 2px;
-}
 :where(.primary, .secondary, .ghost, .danger, .icon-button, .back) {
   min-height: var(--control-height);
 }
@@ -3166,11 +3169,17 @@ summary {
 
 :where(input, select, textarea)[aria-invalid="true"],
 .field-with-icon:has([aria-invalid="true"]) {
-  border-color: var(--er);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--er);
 }
-:where(input, select, textarea)[aria-invalid="true"]:focus-visible,
+:is(input, select, textarea)[aria-invalid="true"]:focus,
 .field-with-icon:has([aria-invalid="true"]):focus-within {
-  outline-color: var(--er);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--er);
+}
+.field-with-icon input[aria-invalid="true"]:focus,
+.pal-field .pal-input:focus {
+  box-shadow: none;
 }
 
 .ignore-editor {
@@ -6948,4 +6957,57 @@ label.toggle {
   width: var(--space-4);
   height: var(--space-4);
   margin-right: var(--space-1);
+}
+.setting-row:has(.toggle input:not(:disabled)):not(:has(button, select, .segmented, input:not([type="checkbox"]))) {
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+.setting-row:has(.toggle input:not(:disabled)):not(:has(button, select, .segmented, input:not([type="checkbox"]))):hover {
+  background: var(--hover);
+}
+.setting-row.switch-saving .toggle {
+  opacity: 0.55;
+}
+.setting-row .row-main .row-saving {
+  color: var(--mute);
+}
+.setting-row .row-error {
+  margin-top: var(--space-1);
+}
+.dialog-close {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+dialog:has(.dialog-close:not([hidden])) .modal-title {
+  padding-right: var(--space-7);
+}
+.state-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) var(--space-6) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-control);
+  background: var(--idBg);
+  color: var(--ink);
+  font-size: var(--text-control);
+}
+.state-banner.state-error {
+  background: var(--erBg);
+}
+.state-banner > .icon {
+  flex: none;
+  color: var(--soft);
+}
+.state-banner.state-error > .icon {
+  color: var(--er);
+}
+.state-banner .row-main {
+  flex: 1;
+  min-width: 0;
+}
+.state-banner .row-main p {
+  color: var(--soft);
+  font-size: var(--text-body);
 }

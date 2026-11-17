@@ -1122,3 +1122,37 @@ body.kit {
   max-width: 100%;
   height: 392px;
 }
+.kit-m-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 8px 16px;
+  border-radius: var(--m-card-radius);
+  background: var(--m-danger-bg);
+  color: var(--m-ink);
+  font-size: var(--m-touch-caption-font);
+  line-height: var(--m-touch-caption-line);
+}
+.kit-m-banner > svg {
+  flex: none;
+  color: var(--m-danger);
+}
+.kit-m-banner .m-stack {
+  flex: 1;
+}
+.kit-m-banner strong {
+  font-size: var(--m-touch-body-font);
+  line-height: var(--m-touch-body-line);
+}
+.kit-m-banner button {
+  border: 0;
+  background: transparent;
+  color: var(--m-notice-link);
+  font: inherit;
+  font-weight: 600;
+}
+.kit-dialog-stage dialog:has(> .dialog-close),
+.kit-mo-stage dialog:has(> .dialog-close) {
+  position: relative;
+}

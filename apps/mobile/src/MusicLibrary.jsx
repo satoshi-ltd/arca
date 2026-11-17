@@ -102,6 +102,7 @@ function MusicRow({
   const { s, c } = useDesign();
   return (
     <PressScale
+      scale={false}
       {...hold}
       accessibilityRole="button"
       accessibilityLabel={caption ? `${title}, ${caption}` : title}
@@ -490,6 +491,7 @@ function TrackList({
           return (
             <PressScale
               key={key}
+              scale={false}
               accessibilityRole="button"
               accessibilityLabel={`${canPlay ? (saved ? "Resume" : "Play") : "Open"} ${track.title}, ${track.artist}${saved ? `, ${timeLeft(saved.duration - saved.position)}` : ""}${glyph ? `, ${glyph.label}` : ""}`}
               accessibilityActions={
@@ -592,9 +594,9 @@ function Collection({
   streamed,
   flat = false,
 }) {
-  const { s, wide } = useDesign();
+  const { s, wide, compact } = useDesign();
   const flight = useFlight("collection", true);
-  const shownMenu = wide ? menu : null;
+  const shownMenu = wide && !compact ? menu : null;
   const first = library.tracks.get(tracks[0]);
   const shuffle = () => {
     const index = Math.floor(Math.random() * tracks.length);
@@ -794,12 +796,13 @@ export function MusicLibrary({
   deviceId,
   relative,
 }) {
-  const { s, wide } = useDesign();
+  const { s, wide, compact } = useDesign();
+  const split = wide && !compact;
   const node = parseTrackNode(playingId);
   const playing = node?.track || null;
-  const order = useShowOrder(library, positions, loaded, showsOpen(library, route, wide));
+  const order = useShowOrder(library, positions, loaded, showsOpen(library, route, split));
   const place = useContext(ScrollPosition);
-  const scrollKey = entryKey(folderId, route.slice(0, musicPane(route, wide).level + 1));
+  const scrollKey = entryKey(folderId, route.slice(0, musicPane(route, split).level + 1));
   const leftKey = useRef(scrollKey);
   useLayoutEffect(() => {
     if (leftKey.current !== scrollKey) {
@@ -849,7 +852,7 @@ export function MusicLibrary({
     );
   const tabs = musicTabs(library);
   const tab = tabs.includes(route[0]?.kind) ? route[0].kind : tabs[0];
-  const pane = musicPane(route, wide);
+  const pane = musicPane(route, split);
   const top = pane.level > 0 ? route[pane.level] : { kind: tab };
   const shuffle = (context, ids) => {
     const index = Math.floor(Math.random() * ids.length);
@@ -995,7 +998,7 @@ export function MusicLibrary({
       const ids = artist ? libraryTracks(library, artist.albums) : [];
       return artist ? (
         <Section>
-          {!wide && (
+          {!split && (
             <View style={s.musicHeader}>
               <Cover uri={cover(artist.cover, "small")} size={72} icon="artist" />
               <View style={[s.flex, s.stack]}>
@@ -1008,7 +1011,7 @@ export function MusicLibrary({
               </View>
             </View>
           )}
-          {((canPlay && ids.length > 1) || (wide && streamed)) && (
+          {((canPlay && ids.length > 1) || (split && streamed)) && (
             <View style={s.musicActions}>
               {canPlay && ids.length > 1 && (
                 <Button
@@ -1017,7 +1020,7 @@ export function MusicLibrary({
                   onPress={() => shuffle(artist.id, ids)}
                 />
               )}
-              {wide && streamed && (
+              {split && streamed && (
                 <Button iconOnly label="Artist actions" icon="more" onPress={() => collectionActions({ kind: "artist", id: artist.id })} />
               )}
             </View>

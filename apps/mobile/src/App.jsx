@@ -64,11 +64,12 @@ import * as confirmCopy from "./confirm-copy.js";
 import { Rise, reduceMotion, useLeaving, useListMotion, useMotion, useReduceMotionReady, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { subscribeNotificationResponse } from "./runtime";
-import { NoticeStack, ErrorNotice } from "./Notice";
+import { NoticeStack, ErrorNotice, StateBanner } from "./Notice";
 import { crashRecord } from "./crash";
 import { crashNotice } from "./crash-record";
 import {
   createNoticeStore,
+  noticeLayout,
   errorNotice,
   conditionNotices,
   isHubUnreachable,
@@ -293,6 +294,7 @@ export default function App() {
   const wide = layout.current;
   const compactAndroid = Platform.OS === "android" && !wide;
   const compact = wide && width < 1100;
+  const musicSplit = wide && !compact;
   const s = useMemo(
     () => styles(c, wide, compact, fontScale, textScale(prefs.textSize)),
     [c, wide, compact, fontScale, prefs.textSize],
@@ -540,9 +542,10 @@ export default function App() {
   const galleryScrollY = useRef(0);
   const galleryRail = useRef(null);
   const [noticeItems, setNoticeItems] = useState([]);
+  const noticeShown = noticeLayout(noticeItems, { attention: wide ? 2 : 1, results: 1 });
   const [bottomBars, setBottomBars] = useState(0);
   useEffect(() => {
-    const off = notices.subscribe(() => setNoticeItems(notices.snapshot()));
+    const off = notices.subscribe(() => setNoticeItems(notices.all()));
     return () => {
       off();
       notices.dispose();
@@ -2393,7 +2396,7 @@ export default function App() {
   const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : fileCount(entrySummary.files)} · ${bytes(audioStreaming ? audioLocal.reduce((total, row) => total + (row.size || 0), 0) : entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
   const musicShown = musicView && shownMusic?.library?.tracks.size ? shownMusic.library : null;
   const searchable = !!connection && locals.some((f) => f.selected);
-  const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
+  const musicAt = musicShown ? musicPane(musicRoute, musicSplit) : null;
   const musicDeep = !!musicAt && musicAt.level > 0;
   const depth = screenDepth({
     onboarding,
@@ -2412,10 +2415,10 @@ export default function App() {
     lastDepth.current = depth;
     lastPlace.current = place;
   }, [depth, place]);
-  const screenKey = `${screen}:${onboarding ? onboardingStep : ""}:${folder?.id || ""}${musicView ? `:${musicRoute.length}:${JSON.stringify(musicRoute.at(-1))}` : videoView ? `:${videoRoute.length}:${videoRoute[1]?.id ?? ""}` : `:${directory}`}`;
-  const musicPageMenu = musicDeep && !wide ? musicMenu(musicRoute[musicAt.level], musicShown, audioStreaming) : null;
+  const screenKey = `${screen}:${onboarding ? onboardingStep : ""}:${folder?.id || ""}${musicView ? `:${musicAt ? musicAt.level + 1 : musicRoute.length}:${JSON.stringify(musicAt ? musicRoute[musicAt.level] : musicRoute.at(-1))}` : videoView ? `:${videoRoute.length}:${videoRoute[1]?.id ?? ""}` : `:${directory}`}`;
+  const musicPageMenu = musicDeep && !musicSplit ? musicMenu(musicRoute[musicAt.level], musicShown, audioStreaming) : null;
   const musicArtist =
-    musicDeep && wide && musicRoute[musicAt.level].kind === "artist"
+    musicDeep && musicSplit && musicRoute[musicAt.level].kind === "artist"
       ? musicShown.artists.find((item) => item.id === musicRoute[musicAt.level].id) || null
       : null;
   const timelineNotice =
@@ -3171,6 +3174,7 @@ export default function App() {
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
                   {!musicView && <ScrollMemory id={screenKey} restore={screenEnter === "back"} />}
+                  {!onboarding && <StateBanner item={noticeShown.state} onAction={noticeAction} disabled={actionLocked} />}
                   {folder && screen === "Folders" && !videoView && !photoFolder && !musicView && (
                     <View style={[s.group, s.statsGrid]}>
                       {[
@@ -4405,7 +4409,7 @@ export default function App() {
           )}
           {!shownSheet && (
             <NoticeStack
-              items={noticeItems}
+              items={noticeShown.stack}
               lift={bottomBars}
               onDismiss={(id) => notices.remove(id)}
               onHold={(id) => notices.hold(id)}
@@ -4533,7 +4537,7 @@ export default function App() {
               onExited={releaseSheet}
               overlay={
                 <NoticeStack
-                  items={noticeItems.filter((n) => n.kind === "info")}
+                  items={noticeShown.stack.filter((n) => n.kind === "info")}
                   onDismiss={(id) => notices.remove(id)}
                   onHold={(id) => notices.hold(id)}
                   onRelease={(id) => notices.release(id)}

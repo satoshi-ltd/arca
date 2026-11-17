@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.51 — 2026-11-17
+
+- Notices go where they belong: a lasting condition (hub unreachable, cannot reach this device) is a banner at the top of the page on desktop and web and under the header on the phone, never a card over the list; the floating stack keeps at most two cards that need you (one on the phone) and one result, a new result replaces the last, and the same one twice within two seconds shows once.
+- Desktop and web are calmer and clearer: Folders, Devices, History, Settings and the music lists open without the page fade or rows rising in turn; fields keep their contrasting edge around a soft fill, and show focus and errors as a thin inset line; every dialog has a Close button; Pair a device shows the code first.
+- A settings switch flips from anywhere on its row, shows Saving… while it saves, and a failed save puts it back with the reason in the row instead of a notice.
+- On the phone, a held list row no longer shrinks, it only tints; on the unfolded Fold (under 1100 dp), opening a show, album, playlist or artist in a music library opens its page instead of stacking it below the list, so the choice is visible at once.
+- The phone app uses the latest Expo SDK 57 patch releases.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.9.50 — 2026-11-16
 
 - A hub's folder list never says Streaming: a folder the hub itself had stopped syncing locally was labelled as streamed since 0.8.20, which is a replica's word. It now reads like any other hub folder.

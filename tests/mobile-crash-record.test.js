@@ -118,7 +118,7 @@ test("a notice pushed after the stack subscribes reaches the rendered list", asy
   const { createNoticeStore } = await import("../apps/desktop/src/notice-contract.js");
   const notices = createNoticeStore();
   const rendered = [];
-  const off = notices.subscribe(() => rendered.splice(0, rendered.length, ...notices.snapshot()));
+  const off = notices.subscribe(() => rendered.splice(0, rendered.length, ...notices.all()));
   notices.push(crashNotice({ name: "Error", message: "boom", at: 0 }));
   assert.deepEqual(rendered.map((item) => item.id), ["crash"]);
   assert.equal(rendered[0].details.startsWith("Error: boom"), true);

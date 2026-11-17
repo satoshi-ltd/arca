@@ -107,9 +107,9 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.match(screen, /baseContext\(node\.context\) === playlist\.id &&\s+\(node\.position === null \|\| node\.position === row\.position\)/, "only the appearance that plays carries the accent");
   assert.match(screen, /trackActions\(\{\s+track: row\.track,\s+title: row\.title,\s+path: row\.path,\s+playlist,\s+entry: row\.entry,\s+\}\)\s+\}\s+removable=\{playlist\.editable\}/, "a playlist row removes the entry it shows, playable or not");
   assert.match(screen, /menu=\{playlist\.editable \? \(\) => playlistActions\(playlist\) : undefined\}\s+menuLabel="Playlist actions"/, "the playlist ⋯ sits in its head's actions on the Fold");
-  assert.match(library, /const shownMenu = wide \? menu : null;/, "on the phone the ⋯ sits beside the back arrow instead");
+  assert.match(library, /const shownMenu = wide && !compact \? menu : null;/, "on the phone and the narrow Fold the ⋯ sits beside the back arrow instead");
   assert.match(library, /\{shownMenu && <Button iconOnly label=\{menuLabel\} icon="more" onPress=\{shownMenu\} \/>\}/);
-  assert.match(app, /const musicPageMenu = musicDeep && !wide \? musicMenu\(musicRoute\[musicAt\.level\], musicShown, audioStreaming\) : null;/);
+  assert.match(app, /const musicPageMenu = musicDeep && !musicSplit \? musicMenu\(musicRoute\[musicAt\.level\], musicShown, audioStreaming\) : null;/);
   assert.match(app, /\{!!musicPageMenu && \(\s+<Button\s+iconOnly\s+label=\{`\$\{musicPageMenu\.kind\[0\]\.toUpperCase\(\)\}\$\{musicPageMenu\.kind\.slice\(1\)\} actions`\}\s+icon="more"\s+onPress=\{\(\) =>\s+musicPageMenu\.kind === "playlist"\s+\? setSheet\(\{ kind: "playlist-actions", playlist: musicShown\.playlists\.get\(musicPageMenu\.id\) \}\)\s+: musicCollectionSheet\(musicPageMenu\)/);
   assert.match(library, /actions=\{\(row\) => trackActions\(\{ track: row\.track \}\)\}/, "an album's tracks open the same sheet");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
@@ -349,7 +349,7 @@ test("cover paths accept only hex keys and the two sizes", async () => {
 test("the library has one back, the header's, and draws tabs only when there are two or more", () => {
   assert.doesNotMatch(library, /icon="back"/, "the body never adds a back row");
   assert.match(library, /\{tabs\.length > 1 && \(\s+<View style=\{s\.folderToolbar\}>\s+<View style=\{s\.flex\}>\s+<SegmentedControl/, "a podcasts-only folder has no one-segment control");
-  assert.match(library, /\{!wide && \(\s+<View style=\{s\.musicHeader\}>\s+<Cover uri=\{cover\(artist\.cover, "small"\)\} size=\{72\} icon="artist" \/>/, "on the Fold the artist heads the screen instead");
+  assert.match(library, /\{!split && \(\s+<View style=\{s\.musicHeader\}>\s+<Cover uri=\{cover\(artist\.cover, "small"\)\} size=\{72\} icon="artist" \/>/, "on the Fold the artist heads the screen instead");
   const header = app.slice(app.indexOf('{folder && screen === "Folders" && (\n                      <View style={s.headerBack}>'), app.indexOf('{screen === "History" && wide && historyControls}'));
   assert.match(header, /label=\{\s+musicDeep\s+\? musicBackLabel\(\s+musicRoute,\s+musicAt\.level,\s+musicShown,\s+folder\.name,\s+\)\s+: "Folders"\s+\}/);
   assert.match(header, /musicDeep\s+\? setMusicRoute\(musicRoute\.slice\(0, musicAt\.level\)\)\s+: setFolder\(null\)/, "the header back leaves the level");
@@ -363,8 +363,11 @@ test("the library has one back, the header's, and draws tabs only when there are
   assert.match(app, /const saved = await replica\.store\.musicLibrary\(replica\.scope, id\)\.catch\(\(\) => null\);\s+if \(saved\) symbols\[id\] = savedSymbol\(saved\.value\);/, "Folders learns which audio folders hold only podcasts");
 });
 
-test("the Fold opens a show, album or playlist beside its list under one header", () => {
-  assert.match(library, /const pane = musicPane\(route, wide\);/);
+test("from 1100 dp a show, album or playlist opens beside its list under one header, and below it as a page", () => {
+  assert.match(library, /const pane = musicPane\(route, split\);/);
+  assert.match(library, /const split = wide && !compact;/, "the two panes need a window of 1100 dp: a narrower Fold opens a page like the phone");
+  assert.match(app, /const musicSplit = wide && !compact;/);
+  assert.match(app, /const musicAt = musicShown \? musicPane\(musicRoute, musicSplit\) : null;/);
   assert.match(library, /pane\.detail \? go\(\[\.\.\.route\.slice\(0, pane\.level \+ 1\), next\]\) : push\(next\)/, "choosing another item replaces the detail instead of stacking it");
   assert.match(library, /\{pane\.detail \? \(\s+<View style=\{s\.musicSplit\}>\s+<View style=\{s\.musicSplitList\}>\{main\}<\/View>\s+<View style=\{s\.musicSplitPane\}>/);
   assert.match(library, /selected && s\.musicSelected/);

@@ -18,7 +18,6 @@ import {
   noticeMetrics,
   noticePill,
   noticeReleaseDismisses,
-  phoneNotices,
   safeDetails,
   errorNotice,
 } from "../../desktop/src/notice-contract.js";
@@ -208,7 +207,7 @@ export function NoticeStack({ items, onDismiss, onAction, onHold, onRelease, dis
   const { s } = useDesign(),
     insets = useSafeAreaInsets(),
     { height } = useWindowDimensions();
-  const [rows, left] = useLeaving(phoneNotices(items), noticeKey);
+  const [rows, left] = useLeaving(items, noticeKey);
   if (!rows.length) return null;
   return (
     <View
@@ -241,6 +240,33 @@ export function NoticeStack({ items, onDismiss, onAction, onHold, onRelease, dis
           />
         ))}
       </ScrollView>
+    </View>
+  );
+}
+
+let bannerAnnounced = "";
+export function StateBanner({ item, onAction, disabled }) {
+  const { s, c } = useDesign();
+  const key = item ? `${item.title}|${item.body}` : "";
+  useEffect(() => {
+    if (key === bannerAnnounced) return;
+    bannerAnnounced = key;
+    if (key) announceNotice(item);
+  }, [key]);
+  if (!item) return null;
+  const error = item.kind === "error";
+  return (
+    <View style={[s.stateBanner, error && s.stateBannerError]} accessibilityLiveRegion="polite">
+      <Icon name={iconNames[item.icon] || item.icon || "wifi-off"} size={noticeMetrics.icon} color={error ? c.danger : c.soft} />
+      <View style={s.flex}>
+        <Text style={s.noticeTitle}>{item.title}</Text>
+        {!!item.body && <Text style={s.noticeText}>{item.body}</Text>}
+      </View>
+      {!!item.action && (
+        <Pressable accessibilityRole="button" disabled={disabled} onPress={() => onAction(item)} style={s.noticeLinkTarget}>
+          <Text style={s.noticeLink}>{item.actionLabel || "Retry now"}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }

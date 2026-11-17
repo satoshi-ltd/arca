@@ -15,7 +15,14 @@ test("the palette enters with its own keyframes and the selected segment slides"
   assert.match(style, /@keyframes palette-enter \{[^}]*opacity: 0;[^}]*transform: translateY\(calc\(var\(--motion-distance\) \* -1\)\) scale\(var\(--motion-dialog-scale\)\)/);
   assert.match(style, /\.segmented-thumb \{\s*position: absolute;/);
   assert.doesNotMatch(style, /@keyframes palette-enter \{[^}]*(width|height|top|left)/);
-  assert.match(app, /staggerRows\("#palette \.pal-row"\)/);
+  assert.doesNotMatch(app, /staggerRows/, "palette results appear at once");
+});
+
+test("a route opens still: no page fade or lift and no first-rows cascade", () => {
+  assert.doesNotMatch(app, /\$\("#content"\)\.animate/);
+  assert.doesNotMatch(app, /--motion-route-|--motion-stagger/);
+  assert.doesNotMatch(tokens, /--motion-route-|--motion-stagger/);
+  assert.match(app, /const entered = shownRoute !== route;/);
 });
 
 test("small controls animate only opacity and transform with the motion tokens", () => {
@@ -36,7 +43,6 @@ test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("exit"), `${motion.exit}ms`);
   assert.equal(token("distance"), `${motion.distance}px`);
   assert.equal(token("shared"), `${motion.shared}ms`);
-  assert.equal(token("stagger"), `${motion.stagger}ms`);
   assert.equal(token("settle"), `${motion.settle}ms`);
   assert.equal(token("touch-push"), `${motion.push}px`);
   assert.equal(token("dialog-scale"), String(motion.dialogScale), "a Fold dialog starts at the desktop dialog's scale");
@@ -46,7 +52,7 @@ test("mobile motion tokens match the desktop motion tokens", () => {
   const reduced = tokens.slice(
     tokens.indexOf("@media (prefers-reduced-motion: reduce)"),
   );
-  for (const name of ["fast", "enter", "exit", "shared", "stagger", "settle"])
+  for (const name of ["fast", "enter", "exit", "shared", "settle"])
     assert.match(reduced, new RegExp(`--motion-${name}:\\s*0ms;`));
   assert.match(reduced, /--motion-touch-push:\s*0px;/);
   assert.match(reduced, /--motion-dialog-scale:\s*1;/);

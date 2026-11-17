@@ -3866,6 +3866,15 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
     ...w.document.querySelectorAll('#dialog-content [data-action="copy"]'),
   ];
   assert.equal(buttons.length, 2);
+  const content = w.document.querySelector("#dialog-content");
+  assert.ok(
+    content.querySelector("#pair-code").compareDocumentPosition(buttons[0]) & w.Node.DOCUMENT_POSITION_FOLLOWING,
+    "the code comes before the addresses",
+  );
+  assert.match(content.querySelector(".hint").textContent, /^Use the alternative address when the new device cannot resolve the name\. The code never grants web administration\.$/);
+  assert.equal(content.querySelectorAll(".hint, .message").length, 1, "one short note");
+  assert.equal(w.document.querySelector("#close-dialog").hidden, false);
+  assert.equal(w.document.querySelector("#close-dialog").getAttribute("aria-label"), "Close");
   assert.equal(buttons[0].dataset.id, "http://casa:17831");
   assert.equal(buttons[1].dataset.id, `http://100.99.29.84:${daemon.port}`);
   assert.equal(
@@ -3899,7 +3908,8 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
     w.document.querySelector("#pair-code").textContent.replace(/\D/g, ""),
   );
   assert.ok(w.document.querySelector("#dialog").hasAttribute("open"));
-  w.document.querySelector("#dialog").close();
+  w.document.querySelector("#close-dialog").click();
+  await until(() => !w.document.querySelector("#dialog").hasAttribute("open"));
   w.navigator.clipboard.writeText = async (value) => copied.push(value);
   w.document.querySelector('[data-view="settings"]').click();
   await until(() => w.document.querySelector('[data-action="diagnostics"]'));
@@ -4690,7 +4700,9 @@ test("notices use a stable stack, expose Copy while collapsed, and preserve Deta
   w.queue.push({ id: "warning", kind: "warning", title: "Conflict" });
   w.queue.push({ id: "info2", title: "Restored" });
   assert.equal(w.document.querySelectorAll("#notice .notice-card").length, 3);
-  assert.equal(w.document.querySelectorAll("#notice .notice-pill").length, 2, "one-line results are pills on desktop, all stacked");
+  assert.equal(w.document.querySelectorAll("#notice .notice-pill").length, 1, "one result at a time: the newest replaces the last");
+  assert.equal(w.document.querySelector('[data-notice-id="info"]'), null);
+  assert.ok(w.document.querySelector('[data-notice-id="info2"].notice-pill'));
   assert.equal(w.document.querySelector('[data-notice-id="warning"]').classList.contains("notice-pill"), false);
   assert.ok(w.document.querySelector('[data-notice-id="warning"] .notice-close'), "a warning keeps its close");
 });
@@ -6922,8 +6934,10 @@ test("web admin reads time out into the connection notice while a stalled submis
     expire(20000);
     await polled;
   }
-  assert.match(q("#notice").textContent, /Cannot reach Casa/);
-  assert.equal(q("#dialog").open, true, "the notice does not wait for the dialog");
+  assert.match(q("#state-banner").textContent, /Cannot reach Casa/);
+  assert.equal(q("#state-banner").hidden, false);
+  assert.equal(q("#notice [data-notice-id=connection]"), null, "a lasting condition is a banner, not a notice");
+  assert.equal(q("#dialog").open, true, "the banner does not wait for the dialog");
 
   q("#cancel-dialog").click();
   assert.equal(q("#dialog").open, false);
@@ -6983,19 +6997,21 @@ test("web admin marks the card unreachable when a background status read fails a
   offline = true;
   await poll(true);
   assert.equal(q("#connection").textContent, "Up to date", "one failed read is not enough to call the device offline");
-  assert.equal(q('#notice [data-notice-id="connection"]'), null);
+  assert.equal(q("#state-banner").hidden, true);
   await poll(true);
   assert.equal(q("#connection").textContent, "Offline");
   assert.equal(q("#connection").className, "wa");
   assert.match(q("#connection").innerHTML, /wifi-off/);
   assert.equal(q("#status-device .status-dot").className, "status-dot wa");
   assert.equal(q(".status-card").getAttribute("aria-label"), "casa, Hub, Offline");
-  const item = q('#notice [data-notice-id="connection"]');
+  const item = q("#state-banner");
+  assert.equal(item.hidden, false);
   assert.equal(item?.querySelector("strong")?.textContent, "Cannot reach casa");
   assert.equal(item.querySelector("p")?.textContent, "Check your connection and retry.");
   assert.match(item.innerHTML, /wifi-off/);
   assert.doesNotMatch(item.innerHTML, /circle-alert/);
-  assert.doesNotMatch(q("#notice").textContent, /Could not complete action/);
+  assert.equal(item.querySelector('[data-action="refresh"]')?.textContent, "Retry now");
+  assert.doesNotMatch(q("#notice").textContent, /Could not complete action|Cannot reach/);
   offline = false;
   await poll(true);
   assert.equal(q("#connection").textContent, "Up to date");
@@ -7051,11 +7067,11 @@ test("web admin leaves Offline as soon as an events read answers, without waitin
   await poll(true);
   await poll(true);
   assert.equal(q("#connection").textContent, "Offline");
-  assert.ok(q('#notice [data-notice-id="connection"]'));
+  assert.equal(q("#state-banner").hidden, false);
   offline = false;
   await events();
   assert.equal(q("#connection").textContent, "Up to date");
-  await until(() => !q('#notice [data-notice-id="connection"]'));
+  await until(() => q("#state-banner").hidden);
   offline = true;
   await poll(true);
   assert.equal(q("#connection").textContent, "Up to date", "a good events read restarts the count of failed status reads");
@@ -7428,14 +7444,15 @@ test("web admin reports gateway failures as an unreachable machine and keeps the
   answers.set("/v1/status", { status: 502, body: "<html>Bad gateway</html>" });
   await poll();
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach Casa/);
+  assert.match(q("#state-banner").textContent, /Cannot reach Casa/);
   answers.set("/v1/status", {
     status: 503,
     body: JSON.stringify({ error: "Tailscale access unavailable" }),
   });
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach Casa/);
-  assert.doesNotMatch(q("#notice").textContent, /Permission required/);
+  const shown = () => q("#state-banner").textContent + q("#notice").textContent;
+  assert.match(q("#state-banner").textContent, /Cannot reach Casa/);
+  assert.doesNotMatch(shown(), /Permission required/);
   answers.delete("/v1/status");
   answers.set("/v1/pause", {
     status: 503,
@@ -7444,8 +7461,8 @@ test("web admin reports gateway failures as an unreachable machine and keeps the
     }),
   });
   q('#sync-controls [data-action="pause"]').click();
-  await until(() => /Hub unavailable\. Try again/.test(q("#notice").textContent));
-  assert.doesNotMatch(q("#notice").textContent, /Permission required/);
+  await until(() => /Hub Casa unreachable|Cannot reach Casa/.test(q("#state-banner").textContent) && !q("#state-banner").hidden);
+  assert.doesNotMatch(shown(), /Permission required/);
 });
 
 test("the photo timeline scales months by count, keeps year labels apart and scrubs to a month", async (t) => {
@@ -9058,7 +9075,7 @@ test("Command-K opens one palette with typed groups and no scopes, walks results
   assert.equal(dialog.open, false, "the shortcut toggles it");
 });
 
-test("rows cascade in on a new route, a new arrival settles once and a folder's tile travels into its header", async (t) => {
+test("a new route opens still, a new arrival settles once and a folder's tile travels into its header", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-motion-"));
   init(home, { port: 0, name: "Motion" });
   const daemon = await start(home, { timer: false });
@@ -9091,7 +9108,6 @@ test("rows cascade in on a new route, a new arrival settles once and a folder's 
         : { left: 0, top: 0, width: 0, height: 0 };
   };
   w.document.documentElement.style.setProperty("--motion-enter", "200ms");
-  w.document.documentElement.style.setProperty("--motion-stagger", "20ms");
   w.document.documentElement.style.setProperty("--motion-shared", "280ms");
   w.document.documentElement.style.setProperty("--motion-settle", "1800ms");
   w.document.documentElement.style.setProperty("--motion-distance", "8px");
@@ -9112,10 +9128,11 @@ test("rows cascade in on a new route, a new arrival settles once and a folder's 
   trackInvoke(w, requests);
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelectorAll(".folder-card").length === 8 && w.document.body.getAttribute("aria-busy") === "false");
-  const rise = animations.filter((a) => a.element.matches?.(".folder-card") && a.options.fill === "backwards");
-  assert.equal(rise.length, 6, "at most six rows cascade");
-  assert.deepEqual(rise.map((a) => a.options.delay), [0, 20, 40, 60, 80, 100], "a 20 ms step");
-  assert.equal(JSON.stringify(rise[0].frames[0]), JSON.stringify({ opacity: 0, transform: "translateY(8px)" }));
+  assert.deepEqual(
+    animations.filter((a) => a.element.matches?.("#content, .folder-card")).map((a) => a.element.className || a.element.id),
+    [],
+    "neither the page nor its rows animate when the route opens",
+  );
   assert.equal(w.document.querySelector(".row-arrived"), null, "rows present at first paint are not arrivals");
   await new Promise((resolve) => setTimeout(resolve, 100));
   volumes.push({ ...base, id: "v8", name: "folder-8" });
@@ -10223,4 +10240,64 @@ test("the window checks for an update by the wall clock and when it is shown or 
   } finally {
     w.close();
   }
+});
+
+test("a settings switch flips from anywhere on its row and a failed save returns with its reason in the row", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-switch-row-"));
+  init(home, { port: 0, name: "Switches", role: "replica" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost/#/settings" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  let fail = true;
+  const saved = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command === "desktop_preferences") return { launchAtLogin: false, notifications: false };
+        if (command === "set_notifications") {
+          saved.push(args.enabled);
+          if (fail) throw new Error("the system refused");
+          return null;
+        }
+        if (command !== "api") return null;
+        const pending = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+          ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+        });
+        requests.add(pending);
+        void pending.finally(() => requests.delete(pending));
+        const response = await pending;
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error);
+        return body;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q("#notifications-enabled") && w.document.body.getAttribute("aria-busy") === "false");
+  const row = () => q("#notifications-enabled").closest(".setting-row");
+  row().querySelector(".row-main p").click();
+  await until(() => row().querySelector(".row-error"));
+  assert.deepEqual(saved, [true], "a click on the description flips the switch");
+  assert.equal(q("#notifications-enabled").checked, false, "a failed save puts the switch back");
+  assert.match(row().querySelector(".row-error").textContent, /Could not save: the system refused\. The setting is unchanged\./);
+  assert.equal(row().querySelector(".row-saving"), null);
+  assert.equal(row().classList.contains("switch-saving"), false);
+  assert.equal(w.document.querySelectorAll(".notice-card").length, 0, "the failure stays in the row, not in a notice");
+  fail = false;
+  row().querySelector(".row-main strong").click();
+  await until(() => saved.length === 2 && !row().classList.contains("switch-saving"));
+  assert.equal(q("#notifications-enabled").checked, true);
+  assert.equal(row().querySelector(".row-error"), null, "a new save clears the old reason");
 });

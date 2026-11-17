@@ -544,10 +544,11 @@ test("one header back names the level it returns to, and the Fold splits a list 
   const deep = [{ kind: "artists" }, { kind: "artist", id: artist.id }, { kind: "album", id: album }];
   assert.equal(musicBackLabel(deep, 2, library, "music", false), "Extremoduro");
   assert.deepEqual(musicPane(deep, false), { level: 2, detail: null }, "the phone shows one level at a time");
-  assert.deepEqual(musicPane(deep, true), { level: 1, detail: deep[2] }, "the Fold keeps the artist's albums beside the album");
+  assert.deepEqual(musicPane(deep, true), { level: 1, detail: deep[2] }, "from 1100 dp the artist's albums stay beside the album");
   assert.equal(musicBackLabel(deep, 1, library, "music", false), "music");
   assert.deepEqual(musicPane([{ kind: "podcasts" }, { kind: "show", id: show }], true), { level: 0, detail: { kind: "show", id: show } });
   assert.deepEqual(musicPane([{ kind: "podcasts" }], true), { level: 0, detail: null });
+  assert.deepEqual(musicPane([{ kind: "podcasts" }, { kind: "show", id: show }], false), { level: 1, detail: null }, "a window under 1100 dp opens the show as a page, never stacked under the list");
   assert.deepEqual(musicPane([{ kind: "albums" }, { kind: "album", id: album }], true), { level: 0, detail: { kind: "album", id: album } }, "search results stay beside what they open");
 });
 

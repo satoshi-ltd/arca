@@ -142,7 +142,7 @@ test("motion tokens add the fast exit and the tooltip hold, collapse under reduc
   assert.doesNotMatch(tokens, /--notice-duration/);
   const reduced = tokens.slice(tokens.indexOf("@media (prefers-reduced-motion: reduce)"));
   for (const name of ["exit-fast", "fast", "enter", "exit"]) assert.match(reduced, new RegExp(`--motion-${name}:\\s*0ms;`));
-  assert.match(reduced, /--motion-route-rise:\s*0px;/);
+  assert.doesNotMatch(tokens, /--motion-route-/);
   const values = (name) => [...tokens.matchAll(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, "g"))].map((match) => match[1]);
   assert.equal(values("press").length, 2, "light and dark");
   assert.equal(values("hover").length, 2);
@@ -283,7 +283,7 @@ test("pressing a notice anywhere but its controls dismisses it through the × ex
   const ui = await boot(t);
   await until(() => ui.w.noticeStore);
   const store = ui.w.noticeStore;
-  const ids = () => [...store.snapshot()].map((item) => item.id);
+  const ids = () => [...store.all()].map((item) => item.id);
   const click = (element) => element.dispatchEvent(new ui.w.MouseEvent("click", { bubbles: true, cancelable: true }));
   let copied = "";
   Object.defineProperty(ui.w.navigator, "clipboard", { value: { writeText: async (value) => (copied = value) } });

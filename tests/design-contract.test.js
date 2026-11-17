@@ -541,7 +541,7 @@ test("control borders, destructive buttons, toggles and busy dots meet the acces
     assert.ok(ratio(pick("onGreen"), pick("er")) >= 4.5, `${theme} danger label`);
   }
   assert.match(css, /border: 1px solid var\(--control\);\n  background: var\(--surface\);\n  color: var\(--ink\);\n  font-size: var\(--text-control\);/, "buttons draw the control border");
-  assert.match(css, /width: 100%;\n  min-width: 0;\n  border: 1px solid var\(--control\);/, "fields draw the control border");
+  assert.match(css, /width: 100%;\n  min-width: 0;\n  border: 1px solid var\(--control\);\n  background: var\(--hover\);/, "fields keep the 3:1 control edge around their fill");
   assert.match(rule(".toggle span"), /background: var\(--control\);/);
   for (const selector of [".dropdown-trigger", ".field-with-icon", ".root-selection", ".photo-viewer .photo-info-footer button"])
     assert.match(rule(selector), /border: 1(\.5)?px solid var\(--control\);/, `${selector} draws the control border`);
