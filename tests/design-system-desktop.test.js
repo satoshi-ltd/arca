@@ -119,3 +119,8 @@ test("every row on a card hovers with the hover tone, menu rows with the track t
   assert.equal(hover(".tray-menu button:hover"), "track");
   assert.equal(hover(".nav-item:hover"), "surface");
 });
+
+test("the first-run wizard fills the window height so its own content scrolls", () => {
+  assert.match(rule(".onboarding-mode main"), /height: 100%;/);
+  assert.match(rule(".onboarding-mode #content,\n.access-mode #content"), /overflow: auto;/);
+});

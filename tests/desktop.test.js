@@ -9526,6 +9526,12 @@ async function folderStep({ web = false, folders, setupFailures = 0, refuse = []
     plain: () => JSON.parse(JSON.stringify(selected)),
   };
 }
+const chooseAll = (ui) => {
+  for (let i = 0; i < ui.rows().length; i++) {
+    const box = ui.rows()[i].querySelector('input[type="checkbox"]');
+    if (!box.checked && !box.disabled) box.click();
+  }
+};
 const hubFolders = (gb) => [
   { id: "vid", name: "videos", video: true, files: 318, bytes: 900 * gb },
   { id: "aud", name: "music", music: true, files: 1284, bytes: 9.6 * gb },
@@ -9554,7 +9560,11 @@ test("a replica's Folders step lists the hub's folders by kind, Audio kept and M
   const { w, named, action, rows } = ui;
   try {
     assert.deepEqual(rows().map((row) => row.querySelector("strong").textContent), ["documents", "photos", "music", "videos"]);
-    assert.ok(rows().every((row) => row.querySelector('input[type="checkbox"]').checked), "every folder starts on");
+    assert.ok(rows().every((row) => !row.querySelector('input[type="checkbox"]').checked), "no folder starts chosen");
+    assert.equal(action().textContent, "Choose folders");
+    assert.equal(action().disabled, true);
+    assert.equal(ui.line(), "0 folders · 30.0 GB free");
+    chooseAll(ui);
     assert.equal(named("documents").querySelector(".segmented"), null);
     assert.equal(named("music").querySelector(".segmented .active").textContent, "Keep");
     assert.equal(named("videos").querySelector(".segmented .active").textContent, "Stream");
@@ -9595,6 +9605,7 @@ test("Skip for now that fails leaves the next Start syncing selecting the chosen
     ui.w.document.querySelector("#setup-skip").click();
     await until(() => !ui.w.document.querySelector("#setup-error").hidden && ui.idle());
     assert.equal(ui.selected.length, 0);
+    chooseAll(ui);
     ui.named("videos").querySelector('input[type="checkbox"]').click();
     ui.action().click();
     await until(() => ui.selected.length === 3);
@@ -9608,7 +9619,6 @@ test("submitting the Folders step without a submitter, as Enter does, starts the
   const ui = await folderStep({ folders: hubFolders(1024 ** 3) });
   try {
     assert.equal(ui.w.document.querySelector("#setup-skip").type, "button", "Enter never reaches Skip for now");
-    for (const name of ["documents", "photos", "music", "videos"]) ui.named(name).querySelector('input[type="checkbox"]').click();
     ui.w.document.querySelector("#setup-form").requestSubmit();
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(ui.selected.length, 0, "with nothing chosen the disabled action does not finish setup");
@@ -9634,6 +9644,7 @@ test("the Folders step says what it has not counted, starts a folder with a poli
     refuse: ["pho"],
   });
   try {
+    chooseAll(ui);
     const broken = ui.named("broken").querySelector('input[type="checkbox"]');
     assert.equal(broken.checked, false, "a folder whose policy fails starts off");
     assert.equal(broken.disabled, true);
@@ -9655,6 +9666,7 @@ test("the Folders step says what it has not counted, starts a folder with a poli
 test("a server's Folders step keeps Movies & TV at a destination like Audio", async () => {
   const ui = await folderStep({ web: true, folders: hubFolders(1024 ** 3) });
   try {
+    chooseAll(ui);
     assert.equal(ui.named("videos").querySelector(".segmented .active").textContent, "Stream");
     assert.equal(ui.named("music").querySelector(".segmented .active").textContent, "Keep");
     ui.named("videos").querySelector('[data-mode="keep"]').click();
@@ -9672,6 +9684,7 @@ test("a kept Movies & TV library starts at its own folder under the root", async
   const gb = 1024 ** 3;
   const ui = await folderStep({ folders: [{ id: "vid", name: "videos", video: true, files: 3, bytes: gb }] });
   try {
+    ui.named("videos").querySelector('input[type="checkbox"]').click();
     ui.named("videos").querySelector('[data-mode="keep"]').click();
     assert.match(ui.named("videos").textContent, /3 files · 1\.0 GB/);
     ui.action().click();

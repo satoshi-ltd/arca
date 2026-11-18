@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.53";
+const APP_VERSION = "0.9.54";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -12663,7 +12663,7 @@ function renderOnboarding() {
             : undefined;
           o.folderCount = catalog.volumes.length;
           o.volumes = catalog.volumes;
-          o.picks = new Map(catalog.volumes.map((v) => [v.id, { on: !v.policyError, mode: setupMedia(v) ? (v.music ? "keep" : "stream") : undefined }]));
+          o.picks = new Map(catalog.volumes.map((v) => [v.id, { on: false, mode: setupMedia(v) ? (v.music ? "keep" : "stream") : undefined }]));
           o.step = 3;
           renderOnboarding();
           return;

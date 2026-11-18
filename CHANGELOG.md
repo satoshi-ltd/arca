@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.54 — 2026-11-18
+
+- The first-run Folders step on desktop and web starts with no folder chosen instead of every one switched on, so nothing downloads until you pick it, and the page scrolls when the hub has more folders than fit the window.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.9.53 — 2026-11-18
 
 - On the phone and the Fold, a screen's header actions (Folder actions, Sync now, Open, the ⋯ of a library page and of a file) are the small bordered button like desktop's, 12 dp apart and still easy to hit, instead of 48 dp squares; Back, Close and Search are unchanged.
@@ -38,7 +44,7 @@ Needs: desktop build · hub redeploy
 - On macOS, clicking the menu-bar icon with either button opens Arca's own popover instead of the system menu, which newer macOS draws in its own style; Windows and Linux keep their menu.
 - Clicking Arca's Dock icon shows the window again when it was closed or minimized, so it no longer takes the menu-bar icon to bring it back.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.9.48 — 2026-11-15
 
@@ -239,7 +245,7 @@ Needs: native build
 
 - The tray popover no longer redraws itself every two seconds when nothing changed, so a failed Sync now, pause or Start service keeps its error on screen while the popover stays open, and keyboard focus stays on the control you were on.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.9.15 — 2026-11-11
 
@@ -257,7 +263,7 @@ Needs: native build
 - The desktop updater refuses a payload unless its signature was made for the version the update manifest announces, so an older signed build can no longer be offered under a newer number; the release also stops before publishing the manifest when a signature does not carry its version.
 - The Tauri CLI that builds and signs the desktop app moves from 2.11 to 2.12, the first that records the version in the signature. Run `npm ci` before the next desktop build.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.9.12 — 2026-11-11
 
@@ -405,7 +411,7 @@ Needs: desktop build · hub redeploy · server replica redeploy
 
 - On Windows, Remove from this device works right after closing a video played through the compatible stream, and a newer copy replaces the old one at once: Arca first ends the conversion still reading that file instead of waiting up to a minute for it.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.40 — 2026-11-04
 
@@ -417,7 +423,7 @@ Needs: desktop build · hub redeploy
 
 - The desktop no longer opens synced programs and launchers of the common kinds (`.app`, `.command`, `.sh`, `.exe`, `.bat`, `.lnk`, `.AppImage` and the others SPEC lists): their file detail offers only Show in Finder or Show in folder, and the app reveals such a file even if asked to open it.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.38 — 2026-11-04
 
@@ -437,7 +443,7 @@ Needs: desktop build · server replica redeploy
 
 - In the video player the 10 and 30 second skip buttons show their number beside the arrow instead of on top of it, where it was unreadable.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.35 — 2026-11-04
 
@@ -485,7 +491,7 @@ Needs: desktop build · hub redeploy
 - The desktop window opens 1200 px wide instead of 1080, so with the wider sidebar Devices shows version, folders and last seen in aligned columns again instead of folding them into one line per device.
 - The desktop app notices a new version even when it stays in the tray for days: it checks six hours after the last check by the wall clock, so sleep and a hidden window no longer skip it, and again when you open the window or the tray an hour or more after the last check.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.28 — 2026-11-02
 
@@ -637,7 +643,7 @@ Needs: Casa redeploy
 
 - The update row in the tray now installs: Install starts the update without opening the window, and while it runs the row reads "Updating to Arca X" with no button. Before, it only brought the window forward and nothing was installed.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.7 — 2026-10-27
 
@@ -653,7 +659,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - In desktop show pages, Download season sits to the right of the season control, and the season's download progress takes that space while it runs.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.5 — 2026-10-27
 
@@ -680,7 +686,7 @@ Needs: native build · desktop build · hub redeploy
 
 - On Windows the compatible stream for MKV, AC3 and DTS files now starts: FFmpeg wrote its first part beside the running app instead of in the stream's own folder, so playback never began.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.8.0 — 2026-10-26
 
@@ -703,7 +709,7 @@ Needs: desktop build · Casa redeploy
 - The website's mobile card now links to Arca on Google Play, with a dashed Coming soon in place of the App Store button until the iPhone app is listed; the desktop card shows Linux and Windows side by side and the mobile card's note sits at its bottom.
 - In desktop Devices, the up-arrow of an outdated device no longer touches its version number.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.95 — 2026-10-22
 
@@ -717,14 +723,14 @@ Needs: desktop build
 
 - In desktop Devices, a device seen today reads just the time ("Seen at 19:18"), one seen yesterday says "Seen yesterday at 14:53", and older days name the date.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.92 — 2026-10-22
 
 - In Devices on desktop, an outdated device's up-arrow now sits to the left of its version, so every version number lines up in the same column.
 - The website's hero window now draws the real app (Folders, a photos row, a project syncing) and its floating phone card no longer covers the last row on a phone.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.91 — 2026-10-22
 
@@ -737,7 +743,7 @@ Needs: Casa redeploy
 
 - The desktop shell drops an unused internal command, with no change to the tray or to how Open Arca works.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.89 — 2026-10-22
 
@@ -817,7 +823,7 @@ Needs: desktop build · Casa redeploy
 
 - Desktop setup now shows an example hub address before you type, with normal placeholder text and a monospace address.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.76 — 2026-10-17
 
@@ -849,25 +855,25 @@ Needs: desktop build · Casa redeploy
 
 - Desktop and web refresh playback positions every 30 seconds while an audio library is open, so podcast progress, remaining time and Continue details catch up with other devices.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.69 — 2026-10-14
 
 - On the desktop, a song's row no longer keeps its progress bar and "N min left" after you move to another track: only the song that plays shows live progress, and the others show their length again. Podcast episodes still keep their saved position.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.68 — 2026-10-14
 
 - On the desktop, Play on an album or playlist page now reads Pause while that album or playlist plays, and Play resumes the loaded track once paused instead of restarting the album.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.67 — 2026-10-14
 
 - On the desktop, a podcast show's page shows Pause while one of its episodes is playing, instead of Continue, and goes back to Continue when you pause it.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.66 — 2026-10-13
 
@@ -888,19 +894,19 @@ Needs: native build · desktop build · Casa redeploy
 
 - In the native Mac app the onboarding screens keep the Arca logo and the steps clear of the red, yellow and green window buttons; the web and other platforms are unchanged.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.63 — 2026-10-13
 
 - The desktop and web window no longer stays stale for 20–30 seconds when a change arrives while a status read is still running: the event now triggers one more read as soon as the slow one ends.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.62 — 2026-10-13
 
 - In the native desktop app you can drag the window by an empty strip of the full-window photo viewer, as everywhere else; its buttons, the photo, videos and the Info panel still never start a drag.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.61 — 2026-10-13
 
@@ -912,7 +918,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - On the desktop and web photo wall, On this day no longer disappears for good after you open one of its cards and come back to the wall: it stays above the wall and is there when you scroll to the top.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.59 — 2026-10-12
 
@@ -1009,7 +1015,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - The tray popover opens inside the screen you clicked: above the click with a bottom taskbar, below it under a top menu bar or taskbar, never past any edge, including corners and a second monitor with a different scale (a Retina Mac with an external display included).
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.41 — 2026-10-11
 
@@ -1122,7 +1128,7 @@ Needs: native build
 - A file that arrives through sync while you are looking at the list rises once and its row glows briefly; rows already there and refreshes stay still. Closing the photo viewer is still immediate.
 - Three new motion tokens (shared, stagger, settle) are zeroed under reduced motion and mirrored for the phone.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.27 — 2026-10-09
 
@@ -1217,7 +1223,7 @@ Needs: native build
 
 - Devices opens on a Network map: the hub on top and every authorized device under it with the time of its last report. A solid line means a report in the last five minutes, a dashed one an older report and no line that the device never reported. Choosing a device highlights its row below; with the hub away the lines disappear and the times read as last known. The line says when the hub last heard from a device, never that it is synced.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.7.13 — 2026-10-09
 
@@ -1347,7 +1353,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - On the Mac, the photo and video viewer's Back button no longer hides under the window's red, yellow and green controls.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.110 — 2026-10-04
 
@@ -1404,7 +1410,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - The desktop tray no longer says "needs attention" with an alert icon when only the hub is unreachable: it keeps its plain icon and reads "Arca · offline", and real problems (conflicts, folder or backup errors) still raise the alert.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.101 — 2026-10-03
 
@@ -1557,7 +1563,7 @@ Needs: native build
 
 - Show in folder now works on Windows and Linux: from a file's detail or the photo viewer it opens the file's own folder (Explorer selects the file on Windows) instead of the shared folder's root.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.75 — 2026-10-02
 
@@ -1598,7 +1604,7 @@ Needs: native build · desktop build · Casa redeploy
 
 - On Windows, if the installer fails after Arca closes during an update, a small background watcher now starts the sync service again instead of leaving it stopped until you reopen Arca.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.68 — 2026-10-02
 
@@ -1617,7 +1623,7 @@ Needs: desktop build · Casa redeploy
 
 - A file's ⋯ menu reveals it as Show in Finder on macOS and Show in folder on Windows and Linux, where the item is new and opens the shared folder because only macOS can reveal a single file; the folder header still says Open in Finder or Open folder.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.65 — 2026-10-02
 
@@ -1749,7 +1755,7 @@ Needs: native build
 
 - On desktop and web, a replica whose hub is unreachable now says Offline in its own Machines pill and in the tray heading instead of Syncing, other machines in the saved list read Offline and last known, and Recent and a file with no saved revisions say so ("No saved revisions") instead of claiming the hub has none.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.42 — 2026-10-01
 
@@ -1799,7 +1805,7 @@ Needs: native build
 - On a desktop or server replica, Restore, Resolve conflict, Choose folders, Select, Enable gallery, gallery Delete and Disconnect… are disabled with a short reason while the hub is unavailable, instead of waiting 10 to 25 seconds and failing.
 - Hub failures no longer read "Hub your hub unreachable", and an action that needs the hub no longer says your edits were saved locally.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.33 — 2026-09-30
 
@@ -1856,13 +1862,13 @@ Needs: desktop build · server image for server replicas
 
 - A desktop or server replica notices a hub that stops answering (for example a Tailscale peer that is down) within about 10 seconds when a sync starts, or 25 seconds between syncs, instead of 60–70 seconds, so the Offline state and saved views appear sooner. It also notices the hub coming back within about 10–15 seconds instead of up to 46.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.24 — 2026-09-30
 
 - A desktop or server replica no longer reopens a stale "Allow this browser…" prompt every few seconds, even after restarts, while the hub is offline; Allow or Deny now fails at once when the hub is known unreachable instead of waiting 60 seconds.
 
-Needs: desktop build
+Needs: desktop build · server replica redeploy
 
 ## 0.6.23 — 2026-09-30
 
