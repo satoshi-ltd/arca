@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.58 — 2026-11-18
+
+- A change reported under a name that differs only by letter case from a synced folder (a `dir` created and removed beside `Dir`) no longer records that folder's files as deleted while they are still on disk, and a computer's own view no longer shows them as gone; a folder that is really gone is still deleted.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.57 — 2026-11-18
 
 - A hub or device that listens on its Tailscale address beside loopback (the desktop app, or a daemon installed as a service, in Tailscale mode) could cut a request after as little as 5 seconds and drop idle connections its clients still reused; uploads over a slow or relayed tailnet link now get the same 65 seconds and 30-second keep-alive as everywhere else. Docker servers were not affected.

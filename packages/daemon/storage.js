@@ -2,7 +2,7 @@ import { entryKey, directoryItem } from "../core/entries.js";
 import { mediaKind } from "../core/gallery-date.js";
 import { disposableMetadata } from "../core/builtin-exclusions.js";
 import { readIgnore, compileIgnore, IGNORE_FILE } from "./exclusions.js";
-import { within } from "./sync-work.js";
+import { coversExactly, within } from "./sync-work.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -1001,6 +1001,16 @@ export class Store {
   hasExactPath(v, name) {
     return this.pathState(v, name).present;
   }
+  goneFromScope(v, scopes, name) {
+    if (coversExactly(scopes, name)) return true;
+    try {
+      const state = this.pathState(v, name);
+      return !state.present && !state.link;
+    } catch (e) {
+      if (UNREADABLE.has(e.code)) return false;
+      throw e;
+    }
+  }
   caseAlias(volume, name) {
     return this.db
       .prepare(
@@ -1654,7 +1664,8 @@ export class Store {
         !old.deleted &&
         !disk.has(old.path) &&
         !unreadablePath(old.path) &&
-        !this.excluded(v.id, old.path, !!old.directory)
+        !this.excluded(v.id, old.path, !!old.directory) &&
+        this.goneFromScope(v, scopes, old.path)
       )
         rows.push({ ...old, deleted: 1 });
     this.db.exec("BEGIN IMMEDIATE");

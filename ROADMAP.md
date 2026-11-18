@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-18, in this order.
 
-- **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
-  `bug · agent · high` · small
-  A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
 - **HUB-HOLD-PROPOSED-DELETES** — The hub holds a mass deletion a device sends it
   `bug · agent · high` · medium
   The 0.9.40 guard holds deletions a scan finds, not deletions a device proposes: a phone whose app storage was emptied, or a replica running an older version, still sends every deletion and the hub applies them for everyone. Holding them on the hub covers every device and every version, so the phone needs no rule of its own. Accept: the hub applies the same rolling-hour rule (at least 50 files and more than a quarter of the folder, renames excused one to one) to accepted deletion proposals per folder, answers held proposals so the device keeps its rows as pending, shows the folder's attention on the hub with the same Review, and the phone's folder row says the deletion is waiting for the hub; tests cover a replica that knows the answer and one that does not.
@@ -124,6 +121,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 - **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
   `feature · agent · normal` · small
   The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart (every redeploy) during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
+- **SYNC-SCOPE-SPELLING** — A change reported under another spelling of a synced name is still scanned
+  `bug · agent · normal` · medium
+  Found by the review of 0.9.58. A scope is matched to index rows without regard to letter case but scanned by its exact spelling, and `SyncWork.mark` does not normalise it to NFC: with `dir` dirty beside a synced `Dir`, an edit under `Dir` waits for the six-hour reconciliation, a hub deletion of `Dir/a.txt` arriving in that cycle is recorded without removing the file (which then comes back for everyone), and on macOS a deletion under a name the watcher reports decomposed is missed until that reconciliation. Accept: `mark` stores NFC, a scope is scanned under the spelling the disk holds, and the incoming-row loop rescans a path its scope covered only by folding; tests for the three cases.
 - **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
   `bug · agent · normal` · small
   An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.

@@ -1329,7 +1329,8 @@ export class Engine {
                 !s.excluded(v.id, row.path, row.directory) &&
                 !disk.has(row.path) &&
                 !diskNames.has(row.path.toLowerCase()) &&
-                !unreadablePath(row.path),
+                !unreadablePath(row.path) &&
+                s.goneFromScope(v, plan.paths, row.path),
             );
             const held = this.holdDeletions(
               v,
@@ -2492,7 +2493,8 @@ export class Engine {
             !diskNames.has(row.path.toLowerCase()) &&
             !unreadablePath(row.path) &&
             !excluded(row.path, !!row.directory) &&
-            s.unwritten(v.id, row.path)?.deleted !== 0,
+            s.unwritten(v.id, row.path)?.deleted !== 0 &&
+            s.goneFromScope(v, plan.paths, row.path),
         );
         const held = this.holdDeletions(
           v,

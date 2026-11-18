@@ -396,3 +396,41 @@ test("a full scan between batches of 49 does not restart the count: the rolling 
   assert.ok(gone <= 100, `${gone} deletions went out`);
   assert.equal(folder(hub).held.files, 400 - gone);
 });
+
+test("a changed name that differs only by letter case from a synced folder never deletes that folder's files", async (t) => {
+  const { hub, volume, connect, file, write, read, live, tombstones } = await setup(t);
+  const a = await connect("a");
+  write(hub, "Dir/a.txt");
+  write(hub, "Gone/b.txt");
+  write(hub, "Away/c.txt");
+  await hub.sync();
+  await a.sync();
+  await a.incremental();
+  for (const [n, gone] of [
+    [a, "Gone"],
+    [hub, "Away"],
+  ]) {
+    fs.rmSync(file(n, gone), { recursive: true });
+    n.engine.work.mark(volume.id, "dir");
+    n.engine.work.mark(volume.id, gone.toLowerCase());
+    await n.incremental();
+    assert.equal(read(n, "Dir/a.txt"), "Dir/a.txt");
+    assert.ok(live(hub, "Dir/a.txt") && live(hub, "Dir"), "the files under the other spelling are still on disk");
+    assert.equal(live(hub, `${gone}/${gone === "Gone" ? "b" : "c"}.txt`), false, "a folder that is really gone is still deleted through the other spelling");
+  }
+  assert.equal(tombstones(), 4);
+  await a.engine.reconcileLocal(volume.id, ["dir"]);
+  assert.equal(a.engine.store.viewCurrent(volume.id, "Dir/a.txt")?.deleted, 0, "the local view keeps them too");
+  write(hub, "Linked/d.txt");
+  await hub.sync();
+  fs.rmSync(file(hub, "Linked/d.txt"));
+  try {
+    fs.symlinkSync(file(hub, "Dir/a.txt"), file(hub, "Linked/d.txt"), "file");
+  } catch (error) {
+    if (process.platform === "win32" && error.code === "EPERM") return;
+    throw error;
+  }
+  hub.engine.work.mark(volume.id, "linked");
+  await hub.incremental();
+  assert.ok(live(hub, "Linked/d.txt"), "a link standing where the file was is not its absence");
+});

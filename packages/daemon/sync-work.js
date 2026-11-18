@@ -5,6 +5,8 @@ export const IDLE_POLL_MS = 60000;
 export const IDLE_AFTER_MS = 5 * 60 * 1000;
 export const SAFETY_POLL_MS = 10 * 60 * 1000;
 export const EVENTS_FRESH_MS = 30000;
+export const coversExactly = (paths, name) =>
+  paths === null || paths.some((p) => name === p || name.startsWith(p + "/"));
 export function covers(paths, name) {
   return (
     paths === null ||
