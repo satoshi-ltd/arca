@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.56 — 2026-11-18
+
+- A device or server that is not the hub now answers only its own administrator: any other credential is refused outright, where before it relied on each route's own check (nothing could reach it, since only the hub pairs devices).
+- A new test calls every route with no credential, as a player and as a paired device, and fails if one of them reaches a route meant for the administrator or a path outside its folder; the hub passed as it is.
+
+Needs: hub redeploy · server replica redeploy · desktop build
+
 ## 0.9.55 — 2026-11-18
 
 - The local administrator credential (the one the desktop app and the CLI use) is accepted only from the same machine. From any other address it is refused, so a copied `config.json` no longer gives remote administration of a hub or a server; administering from another machine stays with the browser sign-in.

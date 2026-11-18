@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-18, in this order.
 
-- **SEC-ROUTE-AUTH-MATRIX** — A replica or a player never reaches a route meant for the administrator
-  `feature · agent · high` · medium
-  The gate refuses a caller with no credential, but which role may call each route is decided at about 170 places (54 `requireAdmin` calls and the player allow-list), and one forgotten check gives every paired device hub administration. Accept: one test starts a hub and calls every route it serves as nobody, as a player and as a linked replica, against a committed table of the least role each route needs; a route missing from the table fails the test, and so does any answer other than 401 or 403 below that role. The routes that take a file path refuse `..`, an absolute path and a `.arca-` name for the same three callers.
 - **NET-TAILSCALE-TIMEOUT** — The Tailscale listener gives a request as long as the main one
   `bug · agent · high` · small
   Confirmed in the code: the listener bound to the Tailscale address sets `requestTimeout` to 5 s (`network.js`) while the main server allows 65 s, so a 1 MiB block needs 1.7 Mbit/s of upload and an 8 MiB one 13 Mbit/s; a phone on mobile data or a relayed tailnet link is cut and retries. Accept: both listeners share one timeout, and a test sends a block slower than 5 s through the Tailscale listener.

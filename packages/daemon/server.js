@@ -747,7 +747,7 @@ export async function start(home, options = {}) {
         : s.db
             .prepare("SELECT * FROM devices WHERE token_hash=? AND revoked=0")
             .get(digest(credential));
-      if (!device || (!admin && !["replica", "player"].includes(device.role)))
+      if (!device || (!admin && (config.role !== "hub" || !["replica", "player"].includes(device.role))))
         fail("Unauthorized", 401);
       if (!browserSession) requireLanAccess();
       const address = req.socket.remoteAddress?.replace(/^::ffff:/, "") || null;
