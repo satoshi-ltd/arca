@@ -62,7 +62,7 @@ import { Eyebrow, Section, SelectionBar } from "./components";
 import { ConfirmDialog } from "./components";
 import * as confirmCopy from "./confirm-copy.js";
 import { Rise, reduceMotion, useLeaving, useListMotion, useMotion, useReduceMotionReady, useRetained } from "./motion";
-import { motion } from "./design-tokens.js";
+import { geometry as g, motion } from "./design-tokens.js";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice, StateBanner } from "./Notice";
 import { crashRecord } from "./crash";
@@ -2840,6 +2840,7 @@ export default function App() {
           <Button
             label="Open"
             icon="external"
+            size="small"
             iconOnly={!wide}
             disabled={!engine.current || !sheet.localEntry}
             onPress={() => runLocal(openCurrentFile)}
@@ -2854,9 +2855,10 @@ export default function App() {
                 disabled: actionLocked,
               }}
               disabled={actionLocked}
+              hitSlop={8}
               style={[
                 s.button,
-                s.iconButton,
+                s.smallIconButton,
                 actionLocked && s.disabled,
               ]}
               onPress={() => {
@@ -2884,7 +2886,7 @@ export default function App() {
                 );
               }}
             >
-              <Icon name="more" />
+              <Icon name="more" size={g.buttonSmallIcon} />
             </Pressable>
           </View>
         </View>
@@ -2903,6 +2905,7 @@ export default function App() {
           {(!videoFolder || videoStarted || !!currentFolder?.selected) && (
             <Button
               iconOnly
+              size="small"
               label="Folder actions"
               icon="more"
               onPress={() =>
@@ -2922,6 +2925,7 @@ export default function App() {
       {connected && screen === "Folders" && folder && (
         <Button
           iconOnly
+          size="small"
           label="Sync now"
           swap
           icon={syncDone ? "check" : "refresh"}
@@ -3036,6 +3040,7 @@ export default function App() {
                         {!!musicPageMenu && (
                           <Button
                             iconOnly
+                            size="small"
                             label={`${musicPageMenu.kind[0].toUpperCase()}${musicPageMenu.kind.slice(1)} actions`}
                             icon="more"
                             onPress={() =>
@@ -4556,6 +4561,7 @@ export default function App() {
                       title: shownSheet.entry.path.split("/").pop(),
                       icon: fileIcon(shownSheet.entry.path),
                       subtitle: bytes(shownSheet.entry.size || 0),
+                      menu: true,
                     }
                   : shownSheet.kind === "gallery"
                   ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
@@ -4615,31 +4621,35 @@ export default function App() {
                 <ErrorNotice error={error} retry={retryAction.current} />
               )}
               {shownSheet.kind === "peek" && (
-                <View style={s.stack}>
-                  <FilePreview entry={shownSheet.entry} files={engine.current?.files} />
-                  <Button
-                    label="View details"
-                    onPress={() => {
-                      const entry = shownSheet.entry;
-                      setSheet(null);
-                      openFileDetail(entry);
-                    }}
-                  />
-                  {!!shownSheet.entry.uri && (
-                    <Button
-                      ghost
-                      icon="export"
-                      label="Share this file"
-                      onPress={() =>
-                        runLocal(async () => {
-                          if (!(await Sharing.isAvailableAsync()))
-                            throw new Error("Sharing is unavailable on this device.");
-                          await Sharing.shareAsync(shownSheet.entry.uri);
-                        })
-                      }
+                <>
+                  <View style={s.sheetPreview}>
+                    <FilePreview entry={shownSheet.entry} files={engine.current?.files} />
+                  </View>
+                  <View style={s.actionGroup}>
+                    <ActionRow
+                      label="View details"
+                      icon="file"
+                      onPress={() => {
+                        const entry = shownSheet.entry;
+                        setSheet(null);
+                        openFileDetail(entry);
+                      }}
                     />
-                  )}
-                </View>
+                    {!!shownSheet.entry.uri && (
+                      <ActionRow
+                        icon="export"
+                        label="Share this file"
+                        onPress={() =>
+                          runLocal(async () => {
+                            if (!(await Sharing.isAvailableAsync()))
+                              throw new Error("Sharing is unavailable on this device.");
+                            await Sharing.shareAsync(shownSheet.entry.uri);
+                          })
+                        }
+                      />
+                    )}
+                  </View>
+                </>
               )}
               {shownSheet.kind === "hub-actions" && (
                 <View style={s.actionGroup}>

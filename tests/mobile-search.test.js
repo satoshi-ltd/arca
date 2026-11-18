@@ -147,7 +147,7 @@ test("the Folders root has one quiet search button, no Sync now and a pull that 
   const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
   assert.doesNotMatch(app, /searchFieldRow/, "the list has no search field");
   assert.doesNotMatch(theme, /searchFieldRow/);
-  assert.match(app, /\{connected && screen === "Folders" && folder && \(\s+<Button\s+iconOnly\s+label="Sync now"/, "only a folder's header keeps Sync now");
+  assert.match(app, /\{connected && screen === "Folders" && folder && \(\s+<Button\s+iconOnly\s+size="small"\s+label="Sync now"/, "only a folder's header keeps Sync now, as a small header action");
   assert.equal(app.match(/label="Sync now"/g).length, 1);
   assert.match(app, /onRefresh=\{\(\) => \{\s+if \(status\.paused\) return explainPause\(\);\s+setPulling\(true\);\s+startSync\(true\);\s+\}\}/, "the pull forces a pass and does nothing while paused");
   assert.match(theme, /ghostButton: \{ borderColor: "transparent", backgroundColor: "transparent" \}/);

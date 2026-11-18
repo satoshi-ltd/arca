@@ -1186,6 +1186,7 @@ export function styles(
     smallIconButton: {
       width: g.buttonSmallHeight,
       height: g.buttonSmallHeight,
+      minHeight: g.buttonSmallHeight,
       paddingHorizontal: 0,
       paddingVertical: 0,
     },
@@ -1615,6 +1616,7 @@ export function styles(
       gap: g.detailNavigationGap,
     },
     viewBody: { paddingTop: 0 },
+    sheetPreview: { padding: wide ? g.workspaceInset : sp[4] },
     content: {
       padding: wide ? g.workspaceInset : sp[4],
       gap: g.sectionGap,

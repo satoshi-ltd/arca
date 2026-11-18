@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button, Eyebrow, Icon, Sheet, useDesign } from "./components";
+import { ActionRow, Button, Eyebrow, Icon, Sheet, useDesign } from "./components";
 import { FilePreview } from "./FilePreview";
 import { ErrorNotice } from "./Notice";
 import { fileIcon } from "../../desktop/src/file-icons.js";
@@ -312,11 +312,20 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
     </View>
   ) : null;
   const sheet = shownHeld ? (
-    <Sheet closing={!held} onClose={() => setHeld(null)} onExited={releaseHeld}>
-      <Row item={shownHeld} subtitle={subtitle(shownHeld)} cover={cover} trailing={null} onPress={() => setHeld(null)} />
-      <Button label={searchVerb(shownHeld, !!timeLeft(shownHeld))} icon={shownHeld.type === "song" || shownHeld.type === "episode" ? "play" : "chevron"} onPress={() => open(shownHeld)} />
-      {!!searchViewAction(shownHeld) && <Button label={searchViewAction(shownHeld)} icon={shownHeld.type === "song" ? "album" : "podcast"} onPress={() => open(shownHeld, "view")} />}
-      {searchCanReveal(shownHeld) && <Button label="Show in folder" icon="folder-open" onPress={() => open(shownHeld, "reveal")} />}
+    <Sheet
+      title={searchTitle(shownHeld)}
+      subtitle={subtitle(shownHeld)}
+      lead={<Lead item={shownHeld} cover={cover} />}
+      menu
+      closing={!held}
+      onClose={() => setHeld(null)}
+      onExited={releaseHeld}
+    >
+      <View style={s.actionGroup}>
+        <ActionRow label={searchVerb(shownHeld, !!timeLeft(shownHeld))} icon={shownHeld.type === "song" || shownHeld.type === "episode" ? "play" : "chevron"} onPress={() => open(shownHeld)} />
+        {!!searchViewAction(shownHeld) && <ActionRow label={searchViewAction(shownHeld)} icon={shownHeld.type === "song" ? "album" : "podcast"} onPress={() => open(shownHeld, "view")} />}
+        {searchCanReveal(shownHeld) && <ActionRow label="Show in folder" icon="folder-open" onPress={() => open(shownHeld, "reveal")} />}
+      </View>
     </Sheet>
   ) : null;
   return (

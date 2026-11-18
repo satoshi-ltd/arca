@@ -969,6 +969,7 @@ export function Sheet({
   title,
   subtitle,
   icon,
+  lead,
   menu = false,
   onClose,
   children,
@@ -1087,7 +1088,8 @@ export function Sheet({
                 {!!onBack && (
                   <Button label="Back" ghost icon="back" iconOnly disabled={busy} onPress={onBack} />
                 )}
-                {!!icon && !onBack && (
+                {!!lead && !onBack && lead}
+                {!!icon && !lead && !onBack && (
                   <View style={s.tile}>
                     <Icon name={icon} size={16} color={c.accent} />
                   </View>

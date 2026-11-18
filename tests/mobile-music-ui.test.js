@@ -110,7 +110,7 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.match(library, /const shownMenu = wide && !compact \? menu : null;/, "on the phone and the narrow Fold the ⋯ sits beside the back arrow instead");
   assert.match(library, /\{shownMenu && <Button iconOnly label=\{menuLabel\} icon="more" onPress=\{shownMenu\} \/>\}/);
   assert.match(app, /const musicPageMenu = musicDeep && !musicSplit \? musicMenu\(musicRoute\[musicAt\.level\], musicShown, audioStreaming\) : null;/);
-  assert.match(app, /\{!!musicPageMenu && \(\s+<Button\s+iconOnly\s+label=\{`\$\{musicPageMenu\.kind\[0\]\.toUpperCase\(\)\}\$\{musicPageMenu\.kind\.slice\(1\)\} actions`\}\s+icon="more"\s+onPress=\{\(\) =>\s+musicPageMenu\.kind === "playlist"\s+\? setSheet\(\{ kind: "playlist-actions", playlist: musicShown\.playlists\.get\(musicPageMenu\.id\) \}\)\s+: musicCollectionSheet\(musicPageMenu\)/);
+  assert.match(app, /\{!!musicPageMenu && \(\s+<Button\s+iconOnly\s+size="small"\s+label=\{`\$\{musicPageMenu\.kind\[0\]\.toUpperCase\(\)\}\$\{musicPageMenu\.kind\.slice\(1\)\} actions`\}\s+icon="more"\s+onPress=\{\(\) =>\s+musicPageMenu\.kind === "playlist"\s+\? setSheet\(\{ kind: "playlist-actions", playlist: musicShown\.playlists\.get\(musicPageMenu\.id\) \}\)\s+: musicCollectionSheet\(musicPageMenu\)/);
   assert.match(library, /actions=\{\(row\) => trackActions\(\{ track: row\.track \}\)\}/, "an album's tracks open the same sheet");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /\{actions && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Track actions"[\s\S]*?onPress=\{\(\) => actions\(row\)\}[\s\S]*?<Icon name="more"/);

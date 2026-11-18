@@ -179,9 +179,48 @@ test("Up next and the search actions open as the shared sheet, and the bottom ba
   assert.match(now, /\{!twoPane && shownQueue && !!state\?\.id && \(\s+<Sheet\s+title="Up next"[\s\S]*?closing=\{!queueOpen\}[\s\S]*?onExited=\{releaseQueue\}/);
   assert.doesNotMatch(now, /nowQueueSheet|nowQueueScrim/);
   const search = read("GlobalSearch.jsx");
-  assert.match(search, /<Sheet closing=\{!held\} onClose=\{\(\) => setHeld\(null\)\} onExited=\{releaseHeld\}>/);
+  assert.match(search, /<Sheet\s+title=\{searchTitle\(shownHeld\)\}\s+subtitle=\{subtitle\(shownHeld\)\}\s+lead=\{<Lead item=\{shownHeld\} cover=\{cover\} \/>\}\s+menu\s+closing=\{!held\}\s+onClose=\{\(\) => setHeld\(null\)\}\s+onExited=\{releaseHeld\}\s+>/);
   assert.doesNotMatch(search, /searchSheet/);
   assert.match(search, /setHeld\(null\);\s+releaseHeld\(\);\s+onOpen\(item, query, mode\);/, "opening an item drops the action sheet at once, so it never closes together with Search");
   assert.doesNotMatch(app, /&& !sheet && \(\s+<(MiniPlayer|SelectionBar)/, "a sheet never removes the bars behind it");
   assert.match(app, /<SelectionBar[\s\S]*?leaving=\{!photoSelection\}\s+onLeft=\{releaseSelection\}/);
 });
+
+test("a screen's header actions are the small icon button 12 dp apart, while Back, Close and Search stay ghost at 48 dp", () => {
+  const app = read("App.jsx");
+  const components = read("components.jsx");
+  const header = app.slice(app.indexOf("const headerLead = ("), app.indexOf("const headerSync = ("));
+  assert.match(header, /label="Open"\s+icon="external"\s+size="small"/, "Open is small");
+  assert.match(header, /hitSlop=\{8\}\s+style=\{\[\s+s\.button,\s+s\.smallIconButton,/, "the file ⋯ is the small icon button with its 48 dp reach");
+  assert.match(header, /<Button\s+iconOnly\s+size="small"\s+label="Folder actions"/);
+  assert.match(header, /<Button\s+iconOnly\s+ghost\s+label="Search"/, "Search stays the quiet 48 dp button");
+  assert.doesNotMatch(header, /<Button\s+iconOnly\s+ghost\s+size=/);
+  const syncStart = app.indexOf("const headerSync = (");
+  const sync = app.slice(syncStart, app.indexOf("\n  );", syncStart));
+  assert.match(sync, /iconOnly\s+size="small"\s+label="Sync now"/);
+  assert.match(app, /iconOnly\s+size="small"\s+label=\{`\$\{musicPageMenu\.kind/, "a music page's ⋯ is small too");
+  assert.match(read("theme.js"), /rowAction: \{ flexDirection: "row", alignItems: "center", gap: sp\[3\] \},/, "12 dp between the header actions");
+  assert.match(read("theme.js"), /smallIconButton: \{\s+width: g\.buttonSmallHeight,\s+height: g\.buttonSmallHeight,\s+minHeight: g\.buttonSmallHeight,/, "32 dp square even beside the 48 dp minimum of a raw button");
+  assert.match(components, /hitSlop=\{small \? 8 : undefined\}/, "a small button keeps a 48 dp target");
+  assert.match(components, /<Button label="Back" ghost icon="back" iconOnly/, "a sheet's Back stays ghost");
+  assert.match(components, /label="Close"\s+ghost\s+icon="close"\s+iconOnly/, "a sheet's Close stays ghost");
+});
+
+test("sheets that offer choices list them as action rows under the sheet header, never as bordered buttons", () => {
+  const search = read("GlobalSearch.jsx");
+  const held = search.slice(search.indexOf("const sheet = shownHeld ? ("), search.indexOf("return (\n    <Modal"));
+  assert.match(held, /lead=\{<Lead item=\{shownHeld\} cover=\{cover\} \/>\}/, "the result is the header's lead");
+  assert.match(held, /<ActionRow label=\{searchVerb\(shownHeld/);
+  assert.match(held, /<ActionRow label="Show in folder" icon="folder-open"/);
+  assert.doesNotMatch(held, /<Button/, "no bordered button for a choice");
+  const app = read("App.jsx");
+  const peek = app.slice(app.indexOf('{shownSheet.kind === "peek" && ('), app.indexOf('{shownSheet.kind === "hub-actions" && ('));
+  assert.match(peek, /<ActionRow\s+label="View details"/);
+  assert.match(peek, /<ActionRow\s+icon="export"\s+label="Share this file"/);
+  assert.doesNotMatch(peek, /<Button/);
+  assert.match(app, /kind === "peek"\s+\? \{\s+title: shownSheet\.entry\.path\.split\("\/"\)\.pop\(\),\s+icon: fileIcon\(shownSheet\.entry\.path\),\s+subtitle: bytes\(shownSheet\.entry\.size \|\| 0\),\s+menu: true,/, "the peek is a menu sheet, so its rows run edge to edge");
+  assert.match(peek, /<View style=\{s\.sheetPreview\}>\s+<FilePreview/, "and its preview keeps the sheet padding");
+  const components = read("components.jsx");
+  assert.match(components, /\{!!lead && !onBack && lead\}\s+\{!!icon && !lead && !onBack && \(/, "a sheet draws a lead in place of its icon tile");
+});
+

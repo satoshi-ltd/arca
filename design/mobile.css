@@ -2191,6 +2191,10 @@
   height: var(--m-button-small-height);
   margin: calc((var(--m-touch-row-line) - var(--m-button-small-height)) / 2) 0;
 }
+.m-title-row .m-button.m-square.m-small,
+.m-header .m-button.m-square.m-small {
+  margin: 0;
+}
 .m-version-older {
   display: inline-flex;
   align-items: center;

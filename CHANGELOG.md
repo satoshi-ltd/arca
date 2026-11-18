@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.53 — 2026-11-18
+
+- On the phone and the Fold, a screen's header actions (Folder actions, Sync now, Open, the ⋯ of a library page and of a file) are the small bordered button like desktop's, 12 dp apart and still easy to hit, instead of 48 dp squares; Back, Close and Search are unchanged.
+- The sheets that offer choices (a search result's long press, the month sheet, the file preview) list them as rows under the sheet's header, like the folder and track action sheets, instead of as bordered buttons.
+
+Needs: native build
+
 ## 0.9.52 — 2026-11-17
 
 - Settings on desktop and web is shorter: a device shows six groups and a hub seven, with every control kept (Network gathers Tailscale, discovery and, on a hub, authorized devices and Allow HTTP; Theme joins This device; Photos and Movies & TV share Media; Recovery joins Service), and the Synchronization row, which repeated the status card, and the pointer to the hub's page are gone.

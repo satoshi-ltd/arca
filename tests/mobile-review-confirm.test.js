@@ -275,8 +275,8 @@ test("segmented controls meet the touch height, the Text size control scrolls an
 test("View details opens the file page and Open with the external icon stays the app handoff", () => {
   const app = read("App.jsx");
   assert.match(app, /<Button label="View details" onPress=\{\(\) => openFileDetail\(previewEntry\)\} \/>/);
-  assert.match(app, /label="View details"\s+onPress=\{\(\) => \{\s+const entry = shownSheet\.entry;\s+setSheet\(null\);\s+openFileDetail\(entry\);/);
-  assert.match(app, /label="Open"\s+icon="external"[\s\S]*?runLocal\(openCurrentFile\)/);
+  assert.match(app, /<ActionRow\s+label="View details"\s+icon="file"\s+onPress=\{\(\) => \{\s+const entry = shownSheet\.entry;\s+setSheet\(null\);\s+openFileDetail\(entry\);/, "the peek lists its choices as action rows");
+  assert.match(app, /label="Open"\s+icon="external"\s+size="small"[\s\S]*?runLocal\(openCurrentFile\)/);
   assert.doesNotMatch(app, /label="Open"\s+onPress=\{\(\) => \{\s+const entry/);
 });
 
