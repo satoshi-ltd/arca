@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-18, in this order.
 
-- **SEC-ADMIN-LOOPBACK** — The local administrator credential never authenticates from another machine
-  `bug · agent · high` · small
-  The admin token is accepted from any socket (`server.js`, the `admin` check of the gate), yet its only users (the CLI and the desktop app) are on loopback and it rotates only on Erase, so a copied `config.json` is permanent remote administration. Accept: an admin bearer from a non-loopback socket answers 401, browser sessions are unchanged, tests cover both, and SPEC notes that a proxy on the same host still looks like loopback.
 - **SEC-ROUTE-AUTH-MATRIX** — A replica or a player never reaches a route meant for the administrator
   `feature · agent · high` · medium
   The gate refuses a caller with no credential, but which role may call each route is decided at about 170 places (54 `requireAdmin` calls and the player allow-list), and one forgotten check gives every paired device hub administration. Accept: one test starts a hub and calls every route it serves as nobody, as a player and as a linked replica, against a committed table of the least role each route needs; a route missing from the table fails the test, and so does any answer other than 401 or 403 below that role. The routes that take a file path refuse `..`, an absolute path and a `.arca-` name for the same three callers.

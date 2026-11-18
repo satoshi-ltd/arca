@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.9.54 · Phase 1 release.**
+**v0.9.55 · Phase 1 release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -109,9 +109,10 @@ Errors carry a `code` when one applies. An unexpected failure answers 500 `Inter
 | Access             | Behavior                                                                                                                                       |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Web administration | Six numeric digits (leading zeroes kept), single use, ten minutes from generation. The session ends at sign-out, after 24 hours or on restart. |
-| Local desktop/CLI  | The local administrator credential of the OS user; Tauri keeps it in the native bridge. No manual login.                                       |
+| Local desktop/CLI  | The local administrator credential of the OS user; Tauri keeps it in the native bridge. No manual login. Accepted only from a loopback socket. |
 | Machine pairing    | The hub administrator generates a separate six-digit, ten-minute code; redeeming it creates a long, revocable machine credential.              |
 
+- The local administrator credential authenticates only when the socket peer is `127.0.0.1` or `::1`, where the CLI and the desktop app call from; from any other address it answers 401 like an unknown token, so a copied `config.json` gives no remote administration. Remote administration is the browser session. A reverse proxy or port forward on the same host reaches the daemon over loopback, so it must not forward `Authorization` from untrusted clients; a Docker published port arrives from a non-loopback address (the client's own or the bridge gateway) and is refused, while with host networking the same-host rule applies.
 - Codes accept spaces and hyphens (`381-924` is a valid-format example). One code per purpose is active; a new one invalidates the previous. Web and pairing codes are not interchangeable. Admin, session and machine tokens are long secrets.
 - Generation is cryptographically random; expiry and single use are enforced on the server, and consumption is atomic so only one concurrent redemption succeeds. A web approval request is capped at three pending per source address, and its session ends with the approver that granted it (revoking or disabling the device). Five wrong attempts invalidate the active code, and failure budgets survive restarts. Each endpoint also allows five requests per source address and fifty in aggregate per minute; a new code does not reset these windows. Throttling answers 429 with a one-minute retry; invalid, expired and used codes share one 401; an exhausted budget answers 429 asking for a new code. No remaining-attempt count or expiry timestamp is exposed.
 - A reachable attacker can exhaust a short-code budget on purpose, so access belongs on trusted routes. The design follows OWASP's token guidance: randomness, hashed storage, single use, expiry and rate limiting.

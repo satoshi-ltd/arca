@@ -741,7 +741,7 @@ export async function start(home, options = {}) {
         "",
       );
       const admin =
-        Boolean(browserSession) || equal(credential, config.adminToken);
+        Boolean(browserSession) || (loopback && equal(credential, config.adminToken));
       const device = admin
         ? { id: config.id, role: "admin" }
         : s.db

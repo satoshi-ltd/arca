@@ -19,10 +19,12 @@ test("untrusted plaintext peers need the LAN option for pairing and bearer acces
   const base = `http://127.0.0.1:${daemon.port}`;
   const admin = daemon.engine.config.adminToken;
   const req = (route, peer, body, headers = {}) => fetch(base + route, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...(peer ? { "x-test-peer": peer } : {}), ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
-  const invitation = await (await req("/v1/pairing", null, { name: "device" }, { authorization: `Bearer ${admin}` })).json();
+  const issue = async () => (await req("/v1/pairing", null, { name: "device" }, { authorization: `Bearer ${admin}` })).json();
+  const device = (await (await req("/pair", null, { code: (await issue()).code })).json()).token;
+  const invitation = await issue();
   for (const peer of ["192.168.1.9", "2001:db8::5", "100.64.0.3"]) {
     assert.equal((await req("/pair", peer, { code: invitation.code })).status, 412, peer);
-    assert.equal((await req("/v1/status", peer, null, { authorization: `Bearer ${admin}` })).status, 412, `admin ${peer}`);
+    assert.equal((await req("/v1/catalog", peer, null, { authorization: `Bearer ${device}` })).status, 412, `device ${peer}`);
   }
   const pair = await req("/pair", "100.64.0.2", { code: invitation.code });
   assert.equal(pair.status, 201, "a verified Tailscale peer works with LAN off");
@@ -33,7 +35,32 @@ test("untrusted plaintext peers need the LAN option for pairing and bearer acces
   const cookie = accepted.headers.get("set-cookie").split(";")[0];
   assert.equal((await req("/v1/status", "2001:db8::5", null, { cookie })).status, 200);
   await req("/v1/network/lan", null, { enabled: true }, { authorization: `Bearer ${admin}` });
-  assert.equal((await req("/v1/status", "2001:db8::5", null, { authorization: `Bearer ${admin}` })).status, 200);
+  assert.equal((await req("/v1/catalog", "2001:db8::5", null, { authorization: `Bearer ${device}` })).status, 200);
+});
+
+test("the local administrator credential authenticates only from loopback", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-admin-loopback-"));
+  init(home, { port: 0 });
+  const detector = { read: async () => ({ state: "connected", self: { addresses: ["100.64.0.1"] }, peers: [{ addresses: ["100.64.0.2"] }] }) };
+  const daemon = await start(home, { timer: false, network: { detector } });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: req.headers["x-test-peer"], configurable: true }));
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const admin = daemon.engine.config.adminToken;
+  const req = (route, peer, body, headers = {}) => fetch(base + route, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", "x-test-peer": peer, ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const bearer = { authorization: `Bearer ${admin}` };
+  for (const peer of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) assert.equal((await req("/v1/status", peer, null, bearer)).status, 200, peer);
+  assert.equal((await req("/v1/status", "192.168.1.9", null, bearer)).status, 401, "refused as unknown before the LAN option is read");
+  assert.equal((await req("/v1/network/lan", "127.0.0.1", { enabled: true }, bearer)).status, 200);
+  for (const peer of ["100.64.0.2", "192.168.1.9", "2001:db8::5", "127.0.0.2"]) {
+    assert.equal((await req("/v1/status", peer, null, bearer)).status, 401, peer);
+    assert.equal((await req("/v1/pairing", peer, { name: "intruder" }, bearer)).status, 401, `pairing ${peer}`);
+  }
+  const webCode = issueWebCode(home).code;
+  const login = await req("/auth/login", "192.168.1.9", { code: webCode }, { origin: base });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  assert.equal((await req("/v1/status", "192.168.1.9", null, { cookie })).status, 200, "a browser session still administers remotely");
 });
 
 test("a hub that cannot read Tailscale status keeps tailnet-range peers working with the LAN option off", async (t) => {
@@ -43,8 +70,10 @@ test("a hub that cannot read Tailscale status keeps tailnet-range peers working 
   const daemon = await start(home, { timer: false, network: { detector: { read: async () => status } } });
   t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
   daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: req.headers["x-test-peer"], configurable: true }));
-  const admin = daemon.engine.config.adminToken;
-  const get = (peer) => fetch(`http://127.0.0.1:${daemon.port}/v1/status`, { headers: { "x-test-peer": peer, authorization: `Bearer ${admin}` } });
+  const local = { "x-test-peer": "127.0.0.1", "content-type": "application/json" };
+  const { code } = await (await fetch(`http://127.0.0.1:${daemon.port}/v1/pairing`, { method: "POST", headers: { ...local, authorization: `Bearer ${daemon.engine.config.adminToken}` }, body: JSON.stringify({ name: "device" }) })).json();
+  const { token } = await (await fetch(`http://127.0.0.1:${daemon.port}/pair`, { method: "POST", headers: local, body: JSON.stringify({ code }) })).json();
+  const get = (peer) => fetch(`http://127.0.0.1:${daemon.port}/v1/catalog`, { headers: { "x-test-peer": peer, authorization: `Bearer ${token}` } });
   assert.equal((await get("100.101.1.2")).status, 200, "Docker without the status file");
   status.state = "unavailable";
   assert.equal((await get("fd7a:115c:a1e0::9")).status, 200, "stale status file");
