@@ -401,3 +401,22 @@ test("a slow Tailscale check never holds the daemon start or its first hub reque
   while (!connections && Date.now() - started < 8000) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.ok(connections > 0 && Date.now() - started < 5000, `first hub request after ${Date.now() - started} ms`);
 });
+
+test("the Tailscale listener gives a request as long as the main one", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-tailnet-timeout-"));
+  init(home, { port: 0 });
+  const detector = { read: async () => ({ state: "connected", installed: true, self: { addresses: ["::1"] }, peers: [] }) };
+  const daemon = await start(home, { timer: false, network: { detector } });
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  daemon.engine.config.network = { ...daemon.engine.config.network, mode: "tailscale" };
+  await daemon.network.maintain();
+  assert.ok(daemon.network.listener, daemon.network.issue);
+  assert.equal(daemon.server.requestTimeout, 65000);
+  assert.equal(daemon.network.listener.requestTimeout, daemon.server.requestTimeout);
+  assert.equal(daemon.network.listener.keepAliveTimeout, daemon.server.keepAliveTimeout);
+  const answer = await fetch(`http://[::1]:${daemon.port}/.well-known/arca`);
+  assert.equal(answer.status, 200);
+});

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.57 — 2026-11-18
+
+- A hub or device that listens on its Tailscale address beside loopback (the desktop app, or a daemon installed as a service, in Tailscale mode) could cut a request after as little as 5 seconds and drop idle connections its clients still reused; uploads over a slow or relayed tailnet link now get the same 65 seconds and 30-second keep-alive as everywhere else. Docker servers were not affected.
+
+Needs: desktop build
+
 ## 0.9.56 — 2026-11-18
 
 - A device or server that is not the hub now answers only its own administrator: any other credential is refused outright, where before it relied on each route's own check (nothing could reach it, since only the hub pairs devices).

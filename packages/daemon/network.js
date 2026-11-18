@@ -6,8 +6,13 @@ import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
 export const release = {
-  version: "0.9.56",
+  version: "0.9.57",
 };
+export function tuneServer(server) {
+  server.requestTimeout = 65000;
+  // Clients reuse idle sockets for about a second less than this; Node's 5 s default races them into "fetch failed".
+  server.keepAliveTimeout = 30000;
+}
 export function lanAddress(address) {
   if (isIP(address || "") !== 4) return false;
   const [a, b] = address.split(".").map(Number);
@@ -212,7 +217,7 @@ export class Network {
     }
     if (["0.0.0.0", "::", address].includes(this.mainHost)) return;
     const server = http.createServer((req, res) => this.apiHandler(req, res));
-    server.requestTimeout = 5000;
+    tuneServer(server);
     try {
       await new Promise((resolve, reject) => {
         server.once("error", reject);

@@ -67,6 +67,7 @@ import {
   verifiedTailnetURL,
   verifiedLanURL,
   lanAddress,
+  tuneServer,
 } from "./network.js";
 import {
   runtimeInstallation,
@@ -2892,9 +2893,7 @@ export async function start(home, options = {}) {
     }
   });
   network.apiHandler = server.listeners("request")[0];
-  server.requestTimeout = 65000;
-  // Clients reuse idle sockets for about a second less than this; Node's 5 s default races them into "fetch failed".
-  server.keepAliveTimeout = 30000;
+  tuneServer(server);
   const host = options.host ?? config.host;
   if (
     !["127.0.0.1", "localhost", "::1"].includes(host) &&

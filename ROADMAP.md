@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-18, in this order.
 
-- **NET-TAILSCALE-TIMEOUT** — The Tailscale listener gives a request as long as the main one
-  `bug · agent · high` · small
-  Confirmed in the code: the listener bound to the Tailscale address sets `requestTimeout` to 5 s (`network.js`) while the main server allows 65 s, so a 1 MiB block needs 1.7 Mbit/s of upload and an 8 MiB one 13 Mbit/s; a phone on mobile data or a relayed tailnet link is cut and retries. Accept: both listeners share one timeout, and a test sends a block slower than 5 s through the Tailscale listener.
 - **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
   `bug · agent · high` · small
   A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
