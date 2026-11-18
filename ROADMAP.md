@@ -27,9 +27,26 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-Data safety first, then the most visible defects and the largest performance costs; normal-priority work follows in the same order.
+Approved 2026-11-18, in this order.
 
-_Empty: the maintainer approves the next batch from Proposed. Suggested first batch: SEC-ROUTE-AUTH-MATRIX, SEC-ADMIN-LOOPBACK, SEC-ERASE-KNOWN-FILES, SYNC-CASE-TOMBSTONE, SYNC-BITROT, SYNC-STAGE-SPACE, then MOB-MASS-DELETE with HUB-HOLD-PROPOSED-DELETES._
+- **SEC-ADMIN-LOOPBACK** — The local administrator credential never authenticates from another machine
+  `bug · agent · high` · small
+  The admin token is accepted from any socket (`server.js`, the `admin` check of the gate), yet its only users (the CLI and the desktop app) are on loopback and it rotates only on Erase, so a copied `config.json` is permanent remote administration. Accept: an admin bearer from a non-loopback socket answers 401, browser sessions are unchanged, tests cover both, and SPEC notes that a proxy on the same host still looks like loopback.
+- **SEC-ROUTE-AUTH-MATRIX** — A replica or a player never reaches a route meant for the administrator
+  `feature · agent · high` · medium
+  The gate refuses a caller with no credential, but which role may call each route is decided at about 170 places (54 `requireAdmin` calls and the player allow-list), and one forgotten check gives every paired device hub administration. Accept: one test starts a hub and calls every route it serves as nobody, as a player and as a linked replica, against a committed table of the least role each route needs; a route missing from the table fails the test, and so does any answer other than 401 or 403 below that role. The routes that take a file path refuse `..`, an absolute path and a `.arca-` name for the same three callers.
+- **NET-TAILSCALE-TIMEOUT** — The Tailscale listener gives a request as long as the main one
+  `bug · agent · high` · small
+  Confirmed in the code: the listener bound to the Tailscale address sets `requestTimeout` to 5 s (`network.js`) while the main server allows 65 s, so a 1 MiB block needs 1.7 Mbit/s of upload and an 8 MiB one 13 Mbit/s; a phone on mobile data or a relayed tailnet link is cut and retries. Accept: both listeners share one timeout, and a test sends a block slower than 5 s through the Tailscale listener.
+- **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
+  `bug · agent · high` · small
+  A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
+- **HUB-HOLD-PROPOSED-DELETES** — The hub holds a mass deletion a device sends it
+  `bug · agent · high` · medium
+  The 0.9.40 guard holds deletions a scan finds, not deletions a device proposes: a phone whose app storage was emptied, or a replica running an older version, still sends every deletion and the hub applies them for everyone. Holding them on the hub covers every device and every version, so the phone needs no rule of its own. Accept: the hub applies the same rolling-hour rule (at least 50 files and more than a quarter of the folder, renames excused one to one) to accepted deletion proposals per folder, answers held proposals so the device keeps its rows as pending, shows the folder's attention on the hub with the same Review, and the phone's folder row says the deletion is waiting for the hub; tests cover a replica that knows the answer and one that does not.
+- **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
+  `bug · agent · high` · medium
+  The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device and the good one leaves history after retention. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT) keep today's behaviour.
 
 ## In progress
 
@@ -50,30 +67,12 @@ _None._
 
 Each carries a recommendation; a yes or no is enough.
 
-- **DEC-VIDEO-INTEGRITY** — Require full-file integrity for Movies & TV?
-  `decision · maintainer · normal`
-  The video fingerprint hashes only the size and the first and last 4 MiB, so a same-size edit confined to the middle never syncs and corruption there is undetected. Recommendation: no. A film edited in place is rare and a full hash costs hub I/O and phone battery; SPEC states the limit. If yes: a bounded background full hash and a protocol field clients verify.
-- **DEC-HISTORY-DEFAULT** — Should new folders default to Off for all folders or only galleries?
-  `decision · maintainer · normal`
-  Folders without a stored choice default to 30 days, galleries included. Off removes the only backstop for a false deletion, so decide it after MOB-MASS-DELETE and HUB-HOLD-PROPOSED-DELETES. Recommendation: keep 30 days.
-- **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
-  `decision · maintainer · normal`
-  An edit made in Files enters sync like a user edit, the app-owned state JSON is visible, and deleting a synced folder's directory stops that folder until it is started again. Recommendation: keep it (Files access is part of a personal drive) and document the limits in SPEC.
-- **DEC-MOB-FOLD-WIDE** — Does the unfolded Fold get the wide search and file preview?
-  `decision · maintainer · normal`
-  The kit draws centred search, preview panes and a Files Preview column on the Fold, but the app shows them only from 1100 dp. Recommendation: redraw the kit to show what ships.
-- **DEC-CONVERTING-LEGACY** — Keep the `converting` gallery mode?
-  `decision · maintainer · low`
-  `gallery.js` writes it on purpose when Change album… repairs a damaged record. Recommendation: keep it, close this decision and fold SPEC's "Interrupted conversions" bullet into "Damaged records".
-- **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
-  `decision · maintainer · low`
-  Gallery mode `local` is accepted by `parseGallery`, nulled by `galleryConfig` and written by nothing. Recommendation: remove both tokens and SPEC's "same receipt pipeline" sentence.
 - **DEC-RENAME-MODIFIED** — Should the phone rename a file whose edits have not reached the hub?
   `decision · maintainer · low`
   Desktop and server replicas already do; the phone refuses with "Local file changed. Sync before renaming.". Recommendation: allow it; the hub rejects a stale deletion, so nothing is lost.
-- **DEC-LAST-CHANGE-SCOPE** — Is a folder's Last change the newest event or the newest saved version?
+- **DEC-CONVERTING-LEGACY** — Keep the `converting` gallery mode?
   `decision · maintainer · low`
-  After deleting a file the cell still shows the previous saved file. Recommendation: rename the label to "Last saved version".
+  `gallery.js` writes it on purpose when Change album… repairs a damaged record. Recommendation: keep it, close this decision and fold SPEC's "Interrupted conversions" bullet into "Damaged records".
 
 ### Native work waiting for a build
 
@@ -97,169 +96,108 @@ Agent tasks that end with JavaScript and contract tests and run only after a mai
 
 ## Proposed
 
-Ideas not yet approved, from the source audit of 2026-11-11 and later ones, tidied on 2026-11-18: related items are merged, and what was a micro-optimisation, a legacy state or a cosmetic corner is gone. Sections run from what keeps intruders out, to data safety, to everything else; within a section, order is priority, then effort (small is one function and its tests, medium a few files or one subsystem, large a design change or native work). Unless an entry says reproduced, its cause was traced in the code and not run, so its first step is the failing test its accept describes. Performance entries start by measuring: a fix lands only for a cost the measurement shows. No task in this lane is approved for implementation.
+Ideas not yet approved, from the source audit of 2026-11-11 and later ones, reviewed against the code on 2026-11-18. The security model is sound as built: every `/v1` route passes one gate that refuses a missing or unknown credential, a player has an allow-list, every synced path passes `validPath`, the daemon listens on loopback unless told otherwise and the Docker image runs unprivileged. What stays here is what an intruder or a failing disk could really use; hardening against a hostile hub, against the owner's own files, or for a case that needs an unlikely coincidence is gone, because the hub and the owner's devices are the root of trust (SPEC §1, Single-owner trust). Unless an entry says reproduced or confirmed, its cause was traced in the code and not run, so its first step is the failing test its accept describes. Effort: small is one function and its tests, medium a few files or one subsystem, large a design change. No task in this lane is approved for implementation.
 
-### Security — high
+### Security
 
-- **SEC-ROUTE-AUTH-MATRIX** — Every route refuses a caller it should refuse, proven by one test
-  `feature · agent · high`
-  Access is checked route by route across about 170 routes and nothing proves that a new or old one cannot be reached without its credential. Accept: a test starts a hub, a desktop replica and a server replica, finds every route the daemon serves, and with no credential, an expired or foreign-host session, a player ticket and a linked-device token asserts that each answers 401, 403, 404 or 405 except an allow-list of public routes (pairing, connect, discovery, web login, health), and that a route missing from both the list and the table fails the test; every route that takes a path, folder or file ID refuses `..`, an absolute path and a symlink that leaves its folder.
-- **SEC-ADMIN-LOOPBACK** — The local administrator credential never authenticates from another machine
-  `bug · agent · high`
-  The admin token is accepted from any socket, yet its only users (the CLI and the desktop app) are on loopback and it rotates only on Erase, so a copied `config.json` is permanent remote administration. Accept: an admin bearer from a non-loopback socket answers 401, browser sessions are unchanged, tests cover both, and SPEC notes that a proxy on the same host still looks like loopback.
-- **SEC-ERASE-KNOWN-FILES** — Erase deletes only what Arca knows, and leaves nothing behind in the index
-  `bug · agent · high`
-  Decided (recorded under the maintainer's delegation of security choices; veto by moving it back to Decisions): `addVolume` accepts any existing directory, such as a mount point or `~/Documents`, and Erase removes it wholesale, including files Arca never synced. Accept: Erase removes the files the index knows plus the marker, as `deleteSyncedCopy` does, never an unknown file or a directory that lost its marker, and names those it skipped in the same result as the folders the OS refused; and after Erase every table is empty whatever the order (`file_generations` is emptied before `local_files` writes it again), with a test on a replica holding `local_files` rows that fails today.
-- **SEC-DEPS** — Dependency advisories are checked in CI
-  `chore · agent · high`
-  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining one's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime.
-- **SEC-RUNTIME-CHECKSUMS** — The bundled Node and FFmpeg are pinned by committed checksums
-  `chore · agent · high`
-  Decided: the desktop bundles `ffmpeg-static` (FFmpeg 6.1.1, December 2023) fetched without a checksum and runs it unsandboxed on every probe, thumbnail and stream of files that arrive by sync, and `stage-runtime.js` takes Node's hash from the same origin as the binary. Accept: a maintained static FFmpeg build chosen at implementation and a committed checksum table per platform for it and for Node, checked by `stage-runtime.js` and `verify-bundle.js` (a test swaps a byte and the stage fails), and a CI check that fails when the bundled FFmpeg is older than a recorded minimum.
-- **SEC-ANDROID-EXPOSURE** — Another app on the phone cannot browse the library, read covers or copy app data
-  `bug · agent · high · native`
-  `MusicService` is exported and accepts every controller; `CoverProvider` serves covers to other apps; Android 12+ copies app data in a phone-to-phone migration whatever `allowBackup` says. Decided: exclude app data from device-to-device transfer with a `<device-transfer>` exclusion in `dataExtractionRules` (the phone syncs again from the hub). Accept: `onConnect` accepts only its own UID, trusted system controllers and an allowlist (Android Auto, Assistant, Wear); `CoverProvider` is limited to authorized consumers by URI grants while Media3 notifications and Android Auto keep working; the exclusion is pinned by the manifest test; JVM and contract tests cover access and grants.
-- **SEC-IOS-HARDENING** — The iPhone credential survives a locked background sync, and plaintext loads are never allowed
-  `bug · agent · high · native`
-  Decided: the credential is stored `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so a background task that starts on a locked phone cannot load it and ends as failed; use after-first-unlock, this device only, re-saved once. Separately `NSAllowsArbitraryLoads` is on although the native module already refuses HTTP outside verified private or tailnet addresses. Accept: the keychain option and the migration are pinned by a test, `NSAllowsLocalNetworking` replaces `NSAllowsArbitraryLoads` and the config test pins it.
+- **SEC-DEPS** — Advisories in the libraries that read your files are checked in CI
+  `chore · agent · normal` · small
+  The daemon has five runtime dependencies and all of them parse files that arrive by sync (`sharp`, `libheif-js`, `exifr`, `music-metadata`, `ffmpeg-static`). Accept: CI runs `npm audit --omit=dev --audit-level=high` on the root lockfile and fails on a finding; anything it reports today is fixed or listed with its reason in SPEC. Build tooling, the mobile graph and the Rust graph are audited once by hand and not gated.
+- **SEC-RUNTIME-CHECKSUMS** — The desktop's FFmpeg is current and pinned by a committed checksum
+  `chore · agent · normal` · medium
+  The desktop bundles `ffmpeg-static` (FFmpeg 6.1.1, December 2023), fetched without a checksum, and runs it on every probe, thumbnail and stream; the Docker image uses the distribution's package and is not affected. Accept: a maintained static build chosen at implementation, with a committed checksum per platform that `stage-runtime.js` and `verify-bundle.js` check (a test swaps a byte and the stage fails). Node keeps its official checksum file.
 
-### Security — normal
+### Security — native
 
-- **SEC-APPROVAL-FOCUS** — The web sign-in approval opens on Deny, never on Allow
-  `bug · agent · normal`
-  `modal()` gives Cancel the initial focus only when a confirmation option exists, so the approval prompt opens focused on "Raw details". Accept: every confirmation dialog, the approval prompt included, opens with Cancel (Deny) focused, with a DOM test.
-- **SEC-OPEN-LAUNCHERS-2** — More file kinds that run code are revealed, never opened
-  `bug · agent · normal`
-  Synced files carry no quarantine or Mark-of-the-Web, so the OS never warns. Not yet in the list: `com pif cpl msc vbe jse wsf wsh url chm reg msp application appref-ms fileloc inetloc webloc mpkg jar py pyw settingcontent-ms appx msix appinstaller diagcab xll iso img vhd vhdx scf library-ms psm1 psd1 ps1xml jnlp mobileconfig`; an extensionless Unix file with an executable bit opens in Terminal on macOS. Accept: the desktop and Rust lists gain these kinds, a Unix file with `mode & 0o111` and no extension is revealed, with tests; SPEC lists them and says the phone opens a synced `.apk` in the installer on purpose.
-- **SEC-FORM-ACTION** — Injected markup cannot submit a form, and hub-supplied IDs and revisions never reach HTML raw
-  `bug · agent · normal`
-  Neither content security policy sets `form-action`; a folder ID from the hub's catalog becomes an element `id` unvalidated on refresh, and `rev` values are rendered raw in History. Reaching them needs a malicious hub. Accept: `form-action 'self'` on the web and `'none'` in Tauri, the catalog refresh validates IDs as `hubCatalog` does, `rev` renders through a number, with DOM tests for a hostile ID and a string `rev`.
+- **SEC-ANDROID-EXPOSURE** — A phone-to-phone transfer does not clone the device
+  `bug · agent · normal · native` · small
+  Android 12+ copies app data in a device-to-device migration whatever `allowBackup` says, so the new phone starts with the old one's credential and device identity, and two phones then sync as one. Accept: a `<device-transfer>` exclusion in `dataExtractionRules`, pinned by the manifest test; the new phone pairs and syncs again from the hub.
+- **SEC-IOS-HARDENING** — The iPhone's background sync can read its credential while the phone is locked
+  `bug · agent · normal · native` · small
+  The credential is stored `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so a background task that starts on a locked phone cannot load it and ends as failed. Accept: after-first-unlock, this device only, re-saved once, pinned by a test; in the same change `NSAllowsLocalNetworking` replaces `NSAllowsArbitraryLoads` (the native module already refuses plain HTTP outside verified addresses) and the config test pins it.
 
-### Security — low
+### Data safety — high
 
-- **SEC-SIGNING-STEP** — The updater key never enters the build graph
-  `chore · agent · low`
-  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Do not assume `createUpdaterArtifacts` succeeds without a key.
-
-### Data safety and availability — high
-
-- **SYNC-CASE-TOMBSTONE** — A changed name that differs only by letter case from a synced one never deletes it
-  `bug · agent · high`
-  A partial scan looks for the changed name by its exact spelling, while the index rows for it are read without regard to ASCII letter case; when the changed name is not on disk but a synced file with the other spelling is, those rows are recorded as deleted although the files are still there. Reproduced on a hub by the review of 0.9.8 (index and disk hold `Dir/a.txt`; marking `dir` changed tombstones `Dir/a.txt`); the replica's proposal loop has the same shape. Accept: a partial scan whose scope is absent under that spelling but present under another keeps the indexed rows, on hub and replica, with tests on both that fail today.
-- **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
-  `bug · agent · high`
-  The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT) keep today's behaviour.
-- **SYNC-STAGE-SPACE** — A replica with less free space than its new content still uploads
-  `bug · agent · high`
-  A replica stages every new file into `objects` before the first upload; when they do not fit, the scan fails with "Insufficient free disk space" and the cycle repeats forever with nothing uploaded. Accept: a replica whose free space is below its new content uploads file by file until done.
-- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
-  `bug · agent · high`
-  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
-- **MOB-MASS-DELETE** — The phone holds a sudden mass disappearance as the hub and computers do
-  `bug · agent · high`
-  Since 0.9.40 the hub and desktop or server replicas hold a scan's mass deletion until someone confirms it, but the phone still queues a deletion for every indexed file missing from its app storage, guarded only by a missing root. Accept: the same rule (at least 50 files and more than a quarter of the folder within a rolling hour, renames excused one to one, empty files never a move) holds the phone's deletions, persisted across launches; the folder row shows the attention and a confirmation sheet offers Check again and Delete from every device with the desktop's words; source-contract and fake-engine tests.
-- **HUB-HOLD-PROPOSED-DELETES** — The hub holds a mass deletion a device sends it
-  `bug · agent · high`
-  The 0.9.40 guard holds deletions a scan finds, not deletions a device proposes: a phone or a replica that empties its own copy (or runs an older version) still sends every deletion and the hub applies them for everyone. Accept: the hub applies the same rolling-hour rule to accepted deletion proposals per folder, answers held proposals so the device keeps its row as pending, shows the folder's attention on the hub and offers the same Review, with tests on old and new replica versions.
-- **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
-  `bug · agent · high`
-  The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
+- **SYNC-STAGE-SPACE** — A replica does not need its content's size free a second time
+  `bug · agent · high` · medium
+  A replica stages every new file into `objects` before the first upload, and a relink (linking an existing folder, or after a hub went back) copies and hashes every file there too. When they do not fit, the scan fails with "Insufficient free disk space" and the cycle repeats forever with nothing uploaded. Accept: a replica whose free space is below its new content uploads file by file until done, and a relink of a folder identical to the hub's stages nothing (a test counts object copies).
 - **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
-  `feature · agent · high`
+  `feature · agent · high` · medium
   The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
-- **HUB-ASYNC-APPLY** — The daemon keeps answering while it writes a large file
-  `feature · agent · high`
-  Accepting or pulling a file hashes it, copies it and fsyncs it synchronously on the main thread; hub reselection recovers every row with no yield. A 4 GB upload freezes the hub for about a minute on a hard disk: every device shows the hub unavailable and the Compose healthcheck fails. Accept: with a stubbed slow copy, `/v1/status` answers within a second while a row materializes and during hub reselection, spies see no synchronous hash or copy on the main thread, and the journal and recovery tests keep passing. SPEC "Storage" changes with it.
+
+### Reliability — normal
+
 - **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
-  `feature · agent · high`
+  `feature · agent · normal` · medium
   The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete.
-
-### Data safety and availability — normal
-
-- **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
-  `bug · agent · normal`
-  An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
-- **NET-TAILSCALE-TIMEOUT** — The Tailscale listener gives a request as long as the main one
-  `bug · agent · normal`
-  The listener bound to the Tailscale address sets `requestTimeout` to 5 s while serving the whole API (the main server allows 65 s), so an 8 MiB upload block over a slow or relayed tailnet link may be cut. Accept: both listeners share one timeout, and a test sends a block slower than 5 s through the Tailscale listener.
-- **UX-ERRORS** — Errors name their real cause and sit at their field
-  `bug · agent · normal`
-  Four small defects: losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds; "Enter all six digits." and "Enter the full hub address…" appear as the "Could not complete action" card instead of inline, and the code cells stay filled after a rejected code. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds (404) and a stale rev answers 409 through `hubError`; an invalid field sets `aria-invalid` with an error message tied by `aria-describedby`, and a rejected code clears its cells; one test each.
 - **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
-  `feature · agent · normal`
-  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
+  `feature · agent · normal` · small
+  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart (every redeploy) during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
+- **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
+  `bug · agent · normal` · small
+  An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
 - **MOB-UPLOAD-BACKOFF** — A photo that cannot upload is not exported and hashed again every minute
-  `bug · agent · normal`
+  `bug · agent · normal` · small
   Every failure retries after a fixed minute, and the export runs before the exclusion check, so excluded or failing videos are copied and hashed three per cycle indefinitely. Accept: an excluded resource with a saved manifest is refused before `media.export`, repeated failures back off from one minute to one hour and reset on Retry or Sync now, with a test counting exports. SPEC's "back off for a minute" changes.
-- **MOB-SHARE-WAIT** — Saving a shared file neither waits without bound nor needs twice its size free
-  `bug · agent · normal`
-  Save awaits the running cycle with no deadline; `importFile` requires twice the file's size because it copies the inbox file instead of moving it; Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts. Accept: Save gives the running cycle a bounded time and says what it is waiting for, the inbox copy is moved into place, and Add files… uses the share's stall deadline, with tests for each.
-- **SYNC-ROLLBACK-ANCHOR** — A hub restored whole and changed again is still told apart on the next incremental sync
-  `feature · agent · normal`
-  When `history.json` is restored together with the index and the hub then records enough new revisions to pass a replica's cursor, an incremental cycle sees only higher revisions, so a path the hub changed again replaces the replica's newer file as an ordinary update. Accept: `/v1/changes` carries a digest of the revision at the replica's cursor, a mismatch is treated as the hub having gone back, and a test restores a hub whole, changes the same path past the cursor and sees the replica's version kept as a conflict copy.
-- **ROLLBACK-CLIENTS** — The phone and the full backup notice a hub that went back in time
-  `feature · agent · normal · depends: SYNC-ROLLBACK-ANCHOR`
-  The phone skips hub rows older than its own and then stays diverged (its newer files never upload and its edits are refused as stale); the backup worker's cursor gets 409 and later leaves a silent gap. Accept: both read the catalog's `history` epoch and head and, on a changed epoch or a cursor ahead of the head, relink as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub each.
+- **MOB-SHARE-WAIT** — Adding or saving a file on the phone never stops sync until a restart
+  `bug · agent · normal` · small
+  Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts; Save awaits the running cycle with no deadline; `importFile` needs twice the file's size because it copies the inbox file instead of moving it. Accept: Add files… uses the share's stall deadline and always releases `picking`, Save gives the running cycle a bounded time and says what it is waiting for, and the inbox copy is moved into place, with a test for each.
+- **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
+  `bug · agent · normal` · medium
+  The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
+- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
+  `bug · agent · normal` · small
+  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
+- **UX-ERRORS** — Three errors name their real cause
+  `bug · agent · normal` · small
+  Losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds; one test each.
+- **HUB-ASYNC-APPLY** — The daemon keeps answering while it writes a large file
+  `feature · agent · normal` · large
+  Accepting or pulling a file hashes it, copies it and fsyncs it synchronously on the main thread; hub reselection recovers every row with no yield. A 4 GB upload freezes the hub for about a minute on a hard disk: every device shows the hub unavailable and the Compose healthcheck fails. Measure it first on Atlas-like hardware with a real film; do it only if the freeze is confirmed. Accept: with a stubbed slow copy, `/v1/status` answers within a second while a row materializes and during hub reselection, and the journal and recovery tests keep passing. SPEC "Storage" changes with it.
 - **MOB-EXPORT-DEADLINE** — A large video's export is limited by stalls, not by total time
-  `bug · agent · normal · native`
-  iOS and Android give the whole export one 90 s deadline, so an iCloud original that needs longer never uploads. Accept: the deadline restarts on each chunk in Swift and Kotlin; the JS contract test covers the error codes.
-- **CI-FLAKY-LIVE-DAEMON** — The Rust test that finds a live daemon does not fail by chance
-  `chore · agent · normal`
-  `a_live_daemon_for_this_state_directory_is_found` failed once on the 0.9.52 pipeline and passed on rerun. Accept: the cause (a port or a timing race) is found and the test made deterministic, proven by running it in a loop.
+  `bug · agent · normal · native` · small
+  iOS and Android give the whole export one 90 s deadline, so an original that needs longer (an iCloud download, a long 4K clip) never uploads. Accept: the deadline restarts on each chunk in Swift and Kotlin; the JS contract test covers the error codes.
 
 ### Performance — measure first
 
-- **PERF-DAEMON-STATEMENTS** — The daemon's hot paths run the statements they need and no more
-  `feature · agent · normal`
-  Traced costs: each accepted proposal scans the folder's revision index for `MAX(rev)`, prunes with a 10,000-row `NOT IN` and makes five to seven fsync'd commits; the hourly retention pass loads every revision and hash; every replica cycle reads the whole index to collect an empty object store; a full pass writes two autocommit upserts per photo although nothing changed; a thumbnail served from disk costs an fsync'd write; `visibleRules()` does a SELECT and an `lstat` per row; search folds every path per query; `/v1/browse` re-aggregates its subtree per page. Accept: a script counts statements and fsyncs per operation on a 30,000-file fixture and the three largest costs it finds are fixed, each with a test that counts statements through a wrapper; the rest stay unfixed unless the numbers justify them.
-- **PERF-MOB-CACHES** — The phone does not rebuild or re-read what has not changed
-  `feature · agent · normal`
-  Traced costs: an open folder is walked, sorted and written as one JSON value on every refresh (20,000 photos is about 40,000 native calls); every cycle rebuilds each music library although the hub answered `unchanged`; inventory scans make one SQLite read per file; phone search parses every accented row. Accept: the same measure-first rule as PERF-DAEMON-STATEMENTS on a 20,000-photo folder and a large music library, the largest costs fixed with tests (unchanged walk keeps the previous array, a memoized library, one query per folder).
-- **PERF-APPROVAL-POLL** — A device that cannot approve web sign-ins does not ask for them every three seconds
-  `feature · agent · normal`
-  Desktop and phone poll `/v1/web-approvals` every 3 s while visible, authorised or not. Since 0.9.44 `/v1/events` returns an `approvals` generation only to a device that may approve, which is the signal to drive the request. Accept: after one unauthorised answer no further request is sent, and an authorised client polls only after an events signal or at a slower bounded cadence; tests count requests on desktop and phone.
+A fix lands only for a cost the measurement shows.
 
-### Interface and documents — normal
+- **PERF-DAEMON-STATEMENTS** — The daemon's hot paths run the statements they need and no more
+  `feature · agent · normal` · medium
+  Traced costs: each accepted proposal scans the folder's revision index for `MAX(rev)`, prunes with a 10,000-row `NOT IN` and makes five to seven fsync'd commits; the hourly retention pass loads every revision and hash; every replica cycle reads the whole index to collect an empty object store; a full pass writes two autocommit upserts per photo although nothing changed. Accept: a script counts statements and fsyncs per operation on a 30,000-file fixture and the three largest costs it finds are fixed, each with a test that counts statements through a wrapper; the rest stay unfixed.
+- **PERF-MOB-CACHES** — The phone does not rebuild or re-read what has not changed
+  `feature · agent · normal` · medium
+  Traced costs: an open folder is walked, sorted and written as one JSON value on every refresh (20,000 photos is about 40,000 native calls); every cycle rebuilds each music library although the hub answered `unchanged`. Accept: measured on a 20,000-photo folder and a large music library, then an unchanged walk keeps the previous array and the library is memoized, with tests.
+
+### Interface and documents
 
 - **MOB-UI-FIXES** — Five small phone defects
-  `bug · agent · normal`
+  `bug · agent · normal` · medium
   Android Back closes the Audio or Subtitles panel before the film; the Off position of a switch uses `line` (about 1.5:1) where desktop and SPEC §9 use `control` (3:1); the video player rotates on the nearly square Fold; the Photo uploads sheet shows no sign that a selected album is gone and Save is disabled without a reason; the player and photo viewer bars ignore the cutout and the gesture bar. Accept: `onRequestClose` closes an open panel first; `switchTrack` uses the control token with a 3:1 test in both palettes; a pure rotation rule skips the rotation under an aspect ratio of about 1.2 or on a wide layout; the album row reads "Unavailable" and the button carries its reason; a `layout.js` helper gives both bars their four margins, tested for portrait, landscape and the rotated player; the kit is regenerated.
-- **UX-DESK-A11Y** — The photo viewer shows its errors, and focus survives clearing a selection
-  `bug · agent · normal`
-  An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer; Clear selection hides its own toolbar, a confirmed delete returns focus to a hidden opener and Pause rebuilds the button it disabled, so focus falls to the page. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; after Clear selection and after a confirmed delete focus is a photo tile or the header's back button, and after Pause it is Resume; DOM tests.
-- **UX-COPY-SWEEP** — Dialogs, confirmations and labels follow the copy rules
-  `bug · agent · normal`
-  Desktop: "Create a shared folder on hub <name>" and "Path on <name>" use the hub's configured name, "Stop syncing on this hub?" does not name the folder, Connect stacks three hints under one field, Restore says "rev" and "sha", a video in a gallery is called a photo. Phone: "Photos deleted" for one photo or a video, "Originals stay in Photos" in a folder with no linked album, "File renamed" and "Diagnostics copied" toasts against Quiet successes, Up next counts "tracks" for episodes, tab labels can ellipsize at large text. Deleting with history Off says it cannot be undone (the wording is part of the approval). Accept: each string follows SPEC's rules and is pinned by a string test; SPEC settles the hub-name rule, which §5 Offline contradicts; the kit pages match; a tab-label cap constant is tested like `railLabelFontCap`.
+- **UX-DESK-A11Y** — The photo viewer shows its errors
+  `bug · agent · normal` · small
+  An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.
 - **DOC-KIT-DRIFT** — SPEC and the kit say what the code does
-  `chore · agent · normal`
-  Stale SPEC sentences found by the audit: the tray's Now playing row (§4 against §9), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. In the kit: `.kit-tray` re-declares production rules with drifted literals, and the Fold's music pane draws the ⋯ only for a show although its caption names the album's and artist's. Accept: each sentence and drawing matches the shipped behaviour; `npm run design -- --check` and the design tests pass; no code changes.
+  `chore · agent · normal` · medium
+  Stale SPEC sentences found by the audit: the tray's Now playing row (§4 against §9), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. SPEC also gains the limits of iOS exposing the Documents tree to Files (an edit there syncs like any edit; deleting a synced folder's directory stops that folder). In the kit: `.kit-tray` re-declares production rules with drifted literals, the Fold's music pane draws the ⋯ only for a show, and the unfolded Fold draws a centred search and preview panes the app shows only from 1100 dp, redrawn to what ships. Accept: each sentence and drawing matches the shipped behaviour; `npm run design -- --check` and the design tests pass; no code changes.
+- **UX-COPY-SWEEP** — Dialogs, confirmations and labels follow the copy rules
+  `bug · agent · low` · medium
+  Desktop: "Create a shared folder on hub <name>" and "Path on <name>" use the hub's configured name, "Stop syncing on this hub?" does not name the folder, Connect stacks three hints under one field, Restore says "rev" and "sha", a video in a gallery is called a photo, and a folder's "Last change" shows the last saved version after a deletion (rename it "Last saved version"). Phone: "Photos deleted" for one photo or a video, "Originals stay in Photos" in a folder with no linked album, "File renamed" and "Diagnostics copied" toasts against Quiet successes, Up next counts "tracks" for episodes. Deleting with history Off says it cannot be undone. The wording is part of the approval. Accept: each string follows SPEC's rules and is pinned by a string test; SPEC settles the hub-name rule, which §5 Offline contradicts; the kit pages match.
 
 ### Low priority
 
-- **SYNC-RELINK-NO-COPY** — Relinking a folder does not copy unchanged files into the state directory
-  `feature · agent · low`
-  A relink scan has no index to trust, so `capture` copies and hashes every file into `objects`: linking an existing folder, and the automatic relink after a hub went back, needs free space of about the folder's size on the state volume. Accept: a relink trusts a `scan_cache` record whose signature matches and stages only what must upload, with a test counting object copies for a folder identical to the hub's.
+- **ROLLBACK-CLIENTS** — The phone and the full backup notice a hub that went back in time
+  `feature · agent · low` · medium
+  After a hub is restored from an older copy, the phone skips hub rows older than its own and stays diverged (its newer files never upload and its edits are refused as stale); the backup worker's cursor gets 409 and later leaves a silent gap. Accept: both read the catalog's `history` epoch and head and, on a changed epoch or a cursor ahead of the head, relink as the desktop does, keeping newer local content as conflict copies or uploads, with a test against a restored hub each.
 - **NAV-BACK-LEVELS** — Back goes up one folder level, on the web and on Android
-  `feature · agent · low`
+  `feature · agent · low` · medium
   Idea. Files navigation keeps the subfolder out of the route, so Back in the web admin leaves the folder from three levels deep; Android Back from three levels deep, or with a hundred photos selected, drops to Folders. Accept: each level is a route entry (DOM test for Back and reload) and a pure `backStep(state)` reducer on the phone clears a photo selection first, with a test and no new control.
-- **DESK-DIALOG-SCROLL** — Long dialogs and the first-run wizard keep their actions in view
-  `bug · agent · low`
-  Today the whole dialog scrolls and no dialog pins its action row; the wizard's Start syncing sits below a long folder list. Accept: dialogs whose content outgrows the window (Choose folders, Add to playlist, the Erase path list, Pair a device, the conflict dialog) and the wizard scroll their body while the title and the action row stay visible at the 620 px minimum height; a DOM test fills one past the window height.
-- **MOB-VIDEO-ASSISTIVE** — The film player waits for people who use a switch, a keyboard or a screen reader's focus
-  `feature · agent · low · native`
-  Controls stay while TalkBack or VoiceOver is on, but Switch Access, Voice Access, Switch Control and external keyboards are not detected; the Up next card advances after ten seconds without being announced; opening the Audio or Subtitles panel does not move accessibility focus. Accept: the controls also stay while any of those is in use, Up next is announced and holds its countdown for a screen reader, and a panel takes focus when it opens; tests cover the rules.
-- **MOB-IOS-ERRORS** — iPhone file errors say what failed
-  `bug · agent · low · native`
-  The Swift `replaceFile` and partial-file checks throw `NetworkUnavailable` for a failed rename, so the phone shows "Connect to the hub's local Wi-Fi…" as a file's issue; Kotlin names each cause. Accept: Swift throws the same named errors and the JS contract maps them.
-- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
-  `feature · agent · low`
-  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index from the scanner worker (keeping one, mode 0600), Erase removes it, and the CLI documents how to restore it with the daemon stopped; `history.json` stays in place, so the restored index starts a new history epoch and replicas reconcile instead of reverting; after such a start the hub finishes one full scan before it serves heads; with tests.
-- **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
-  `chore · agent · low`
-  accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
+- **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path
+  `chore · agent · low` · small
+  Gallery mode `local` is accepted by `parseGallery`, nulled by `galleryConfig` and written by nothing, which the no-unused-code rule forbids. Accept: both tokens and SPEC's "same receipt pipeline" sentence are gone and the gallery tests pass.
 - **BRAND-ONE-LINE** — Arca is described with one tagline and one descriptor everywhere
-  `chore · agent · low`
-  Idea. Four descriptions coexist: “Your files. Your devices.” (site hero and social image), “Your files, at home.” (design kit), “Free self-hosted cloud for files, photos, music & movies” (site title) and “A personal drive for your own devices” (README, AGENTS). Accept: the tagline “Your files. Your devices.” and the descriptor “personal drive” are the only two, used in the site title and description, the social image, the kit's introduction, README's first line and the app manifests' descriptions; a test reads those sources and fails on another descriptor. The exact words are part of the approval.
+  `chore · agent · low` · small
+  Idea. Four descriptions coexist: “Your files. Your devices.” (site hero and social image), “Your files, at home.” (design kit), “Free self-hosted cloud for files, photos, music & movies” (site title) and “A personal drive for your own devices” (README, AGENTS). Accept: the tagline “Your files. Your devices.” and the descriptor “personal drive” are the only two, in the site title and description, the social image, the kit's introduction, README's first line and the app manifests' descriptions. The exact words are part of the approval.
 
 ## Later phases
 
