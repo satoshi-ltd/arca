@@ -54,7 +54,12 @@ export function withinPath(child, parent) {
     if (path.dirname(current) === current) return false;
   }
 }
-const UNREADABLE = new Set(["EACCES", "EPERM", "EBUSY", "ENOENT", "FILE_CHANGED"]);
+const UNREADABLE = new Set(["EACCES", "EPERM", "EBUSY", "ENOENT", "FILE_CHANGED", "CONTENT_DAMAGED"]);
+export const CONTENT_DAMAGED =
+  "Its content changed on disk without being saved, so it was not synced. Arca restores it from its last synced version when one is available.";
+const DAMAGED_MARK = -1;
+// Sub-millisecond change times mean the filesystem records every write; FAT and exFAT round theirs.
+const preciseTimes = (signature) => BigInt(signature.split(":")[4]) % 1000000n !== 0n;
 export const overlapPath = (a, b) => withinPath(a, b) || withinPath(b, a);
 export const stateOverlap = (home, root, location) =>
   withinPath(home, location) ||
@@ -1234,6 +1239,7 @@ export class Store {
           .prepare("INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)")
           .run(...entry);
     };
+    if (cached?.signature === before && cached.verified === DAMAGED_MARK) fail(CONTENT_DAMAGED, 409, "CONTENT_DAMAGED");
     if (
       cached &&
       cached.signature === before &&
@@ -1245,13 +1251,15 @@ export class Store {
       if (Date.now() - cached.verified < reverifyAfter(cached.hash))
         return { hash: cached.hash, size: cached.size };
       const object = this.blob(cached.hash);
-      if (
-        (hashOf(file) === cached.hash || (inPlace && hashFile(file) === cached.hash)) &&
-        signature() === before &&
-        (inPlace || !fs.existsSync(object) || hashOf(object) === cached.hash)
-      ) {
+      const intact = hashOf(file) === cached.hash || (inPlace && hashFile(file) === cached.hash);
+      const unchanged = signature() === before;
+      if (intact && unchanged && (inPlace || !fs.existsSync(object) || hashOf(object) === cached.hash)) {
         record([file, before, cached.hash, cached.size, Date.now()]);
         return { hash: cached.hash, size: cached.size };
+      }
+      if (!intact && unchanged && preciseTimes(before)) {
+        record([file, before, cached.hash, cached.size, DAMAGED_MARK]);
+        fail(CONTENT_DAMAGED, 409, "CONTENT_DAMAGED");
       }
     }
     if (quick && accepted && !inPlace && quickHashFile(file) === accepted && signature() === before) {
@@ -1277,6 +1285,10 @@ export class Store {
         fail("File changed while it was read, retrying", 409, "FILE_CHANGED");
       const hash = hashOf(tmp),
         size = fs.statSync(tmp).size;
+      if (cached?.signature === before && hash !== cached.hash && preciseTimes(before)) {
+        record([file, before, cached.hash, cached.size, DAMAGED_MARK]);
+        fail(CONTENT_DAMAGED, 409, "CONTENT_DAMAGED");
+      }
       const object = this.blob(hash);
       if (!fs.existsSync(object) || hashOf(object) !== hash) {
         const fd = fs.openSync(tmp, "r+");
@@ -2058,7 +2070,7 @@ export class Store {
     const signature = fileSignature(file);
     if (!signature) return null;
     const cached = this.db
-      .prepare("SELECT signature,hash FROM scan_cache WHERE path=?")
+      .prepare("SELECT signature,hash FROM scan_cache WHERE path=? AND verified>=0")
       .get(file);
     return cached?.signature === signature && cached.hash === hash
       ? file

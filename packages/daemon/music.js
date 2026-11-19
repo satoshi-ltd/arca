@@ -509,7 +509,7 @@ export class Music {
     const prefix = root + path.sep;
     const held = new Map(
       this.s.db
-        .prepare("SELECT path,hash FROM scan_cache WHERE substr(path,1,length(?))=?")
+        .prepare("SELECT path,hash FROM scan_cache WHERE substr(path,1,length(?))=? AND verified>=0")
         .all(prefix, prefix)
         .map((row) => [row.path, row.hash]),
     );

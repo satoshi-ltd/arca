@@ -32,9 +32,6 @@ Approved 2026-11-18, in this order.
 - **HUB-HOLD-PROPOSED-DELETES** — The hub holds a mass deletion a device sends it
   `bug · agent · high` · medium
   The 0.9.40 guard holds deletions a scan finds, not deletions a device proposes: a phone whose app storage was emptied, or a replica running an older version, still sends every deletion and the hub applies them for everyone. Holding them on the hub covers every device and every version, so the phone needs no rule of its own. Accept: the hub applies the same rolling-hour rule (at least 50 files and more than a quarter of the folder, renames excused one to one) to accepted deletion proposals per folder, answers held proposals so the device keeps its rows as pending, shows the folder's attention on the hub with the same Review, and the phone's folder row says the deletion is waiting for the hub; tests cover a replica that knows the answer and one that does not.
-- **SYNC-BITROT** — Content that changed under an unchanged file signature is flagged, not synced as an edit
-  `bug · agent · high` · medium
-  The periodic re-hash of a trusted file commits a mismatch as the new head revision, so a flipped bit on one disk replaces the good copy on every device and the good one leaves history after retention. Accept: with bytes changed and the stat signature identical, no revision or proposal is created, the folder names the file, and it is repaired from the hub's object when available. Filesystems without a reliable ctime (FAT, exFAT) keep today's behaviour.
 
 ## In progress
 

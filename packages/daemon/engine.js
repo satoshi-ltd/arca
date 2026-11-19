@@ -61,6 +61,7 @@ import {
   syncDirectory,
   overlapPath,
   fileSignature,
+  CONTENT_DAMAGED,
 } from "./storage.js";
 
 const CHUNK = 1024 * 1024;
@@ -502,6 +503,37 @@ export class Engine {
       } while (!complete);
     } finally {
       await fd.close();
+    }
+  }
+  async repairDamaged(v, disk, unreadable) {
+    const s = this.store;
+    for (const [name, reason] of [...(disk.unreadable ?? [])]) {
+      if (reason !== CONTENT_DAMAGED) continue;
+      const row = s.current(v.id, name);
+      if (!row || row.deleted || row.directory) continue;
+      const file = s.filePath(v, name);
+      if (s.db.prepare("SELECT hash FROM scan_cache WHERE path=?").get(file)?.hash !== row.hash) continue;
+      if (s.db.prepare("SELECT 1 FROM pending WHERE volume=? AND path=?").get(v.id, name)) continue;
+      if (this.config.role === "hub") {
+        if (s.streamOnly(v.id) || !fs.existsSync(s.blob(row.hash))) continue;
+      } else
+        try {
+          await this.download(row.hash, row.size);
+        } catch (error) {
+          if (error.syncInterrupted || this.syncAbort?.signal.aborted) throw error;
+          continue;
+        }
+      try {
+        s.queue(row, row.hash);
+        s.materializeRow(row, row.hash);
+      } catch {
+        // A leftover journal row would cap the change feed below its old revision for every replica.
+        s.db.prepare("DELETE FROM pending WHERE volume=? AND path=?").run(v.id, name);
+        continue;
+      }
+      if (this.config.role !== "hub") s.releaseObject(row.hash);
+      unreadable.delete(name);
+      disk.set(name, { hash: row.hash, size: row.size });
     }
   }
   async download(hash, size) {
@@ -1286,6 +1318,7 @@ export class Engine {
                 ? new Map()
                 : await this.scanner.scan(v, plan.paths, true);
             const unreadable = new Map(disk.unreadable);
+            await this.repairDamaged(v, disk, unreadable);
             const unread = () => [...unreadable.keys()];
             let unreadablePath = within(unreadable.keys());
             const known = new Map(
@@ -2478,6 +2511,7 @@ export class Engine {
               ),
         );
         for (const [name, reason] of disk.unreadable ?? []) unreadable.set(name, reason);
+        await this.repairDamaged(v, disk, unreadable);
         const unread = [...unreadable.keys()];
         const unreadablePath = within(unread);
         const known = s.rowsInScope(v.id, plan.paths);
