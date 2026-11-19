@@ -2764,7 +2764,7 @@ export async function start(home, options = {}) {
               409,
             );
           const remote = await reach(b.url, () => hubAddress(b));
-          if (b.code) {
+          const redeem = async () => {
             const paired = await reach(remote.origin, () =>
               fetch(`${remote.origin}/pair`, {
                 redirect: "error",
@@ -2786,7 +2786,6 @@ export async function start(home, options = {}) {
               typeof issued.hubId !== "string"
             )
               fail("Invalid pairing response", 502);
-            b.token = issued.token;
             if (config.onboarding && !s.volumes().length) {
               const next = {
                 ...config,
@@ -2798,11 +2797,30 @@ export async function start(home, options = {}) {
               };
               atomic(s.configPath, JSON.stringify(next, null, 2));
               Object.assign(config, next);
+            } else {
+              config.pendingPairing = { url: remote.origin, token: issued.token };
+              s.saveConfig();
             }
-          }
+            return issued.token;
+          };
+          const pending = !b.token && config.pendingPairing?.url === remote.origin ? config.pendingPairing : null;
+          if (pending) b.token = pending.token;
+          else if (b.code) b.token = await redeem();
           if (!/^[a-f0-9]{64}$/.test(b.token || ""))
             fail("Invalid device token");
-          const catalog = await reach(remote.origin, () => hubCatalog(remote.origin, b.token));
+          let catalog;
+          try {
+            catalog = await reach(remote.origin, () => hubCatalog(remote.origin, b.token));
+          } catch (error) {
+            if (!pending || error.code !== "HUB_REFUSED") throw error;
+            if (config.pendingPairing === pending) {
+              delete config.pendingPairing;
+              s.saveConfig();
+            }
+            if (!b.code) throw error;
+            b.token = await redeem();
+            catalog = await reach(remote.origin, () => hubCatalog(remote.origin, b.token));
+          }
           await authorizedWork(() => {
             const prior = config.hub || config.disconnectedHub;
             if (
@@ -2852,6 +2870,7 @@ export async function start(home, options = {}) {
                 })),
               };
               delete next.disconnectedHub;
+              delete next.pendingPairing;
               if (config.backup?.path)
                 next.backup = {
                   enabled: false,
@@ -2885,6 +2904,7 @@ export async function start(home, options = {}) {
             };
             config.hubDevices = [];
             delete config.disconnectedHub;
+            delete config.pendingPairing;
             config.catalog = catalog.volumes.map((v) => ({
               id: v.id,
               name: v.name,

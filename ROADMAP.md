@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-19.
 
-- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
-  `bug · agent · normal` · small
-  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
 - **SEC-DEPS** — Advisories in the libraries that read your files are checked in CI
   `chore · agent · normal` · small
   The daemon has five runtime dependencies and all of them parse files that arrive by sync (`sharp`, `libheif-js`, `exifr`, `music-metadata`, `ffmpeg-static`). Accept: CI runs `npm audit --omit=dev --audit-level=high` on the root lockfile and fails on a finding; anything it reports today is fixed or listed with its reason in SPEC. Build tooling, the mobile graph and the Rust graph are audited once by hand and not gated.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.67 — 2026-11-19
+
+- Connecting a computer or server to the hub survives a network hiccup right after the hub accepts the pairing code: trying again continues with the same registration instead of saying the code was already used and leaving an orphan device on the hub.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.9.66 — 2026-11-19
 
 - A computer or server removed from the hub while it syncs now says it no longer has access and offers to pair again, instead of "Cannot read properties of null" or "Hub 401" on each folder.
