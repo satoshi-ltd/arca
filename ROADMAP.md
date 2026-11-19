@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-19.
 
-- **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
-  `feature · agent · normal` · medium
-  The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete.
 - **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
   `bug · agent · normal` · small
   An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
@@ -118,6 +115,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Reliability — normal
 
+- **HUB-SCAN-SAME-FOLDER** — A proposal does not wait for a full scan of its own folder
+  `feature · agent · normal` · medium
+  Found by the review of HUB-SCAN-LOCK. A hub folder's scan holds that folder, so during a restart scan or the six-hour reconciliation of a large folder its own proposals, and the phones' gallery requests for it, wait for the whole scan and replicas can still mark the hub unavailable for that folder. A control that waited a second also holds back new folder work behind that scan. Accept: with a full scan of a folder held open by a stubbed scanner, a proposal for a path in that folder completes, and the scan never records a deletion or an older version over what the proposal committed.
 - **SYNC-SCOPE-SPELLING** — A change reported under another spelling of a synced name is still scanned
   `bug · agent · normal` · medium
   Found by the review of 0.9.58. A scope is matched to index rows without regard to letter case but scanned by its exact spelling, and `SyncWork.mark` does not normalise it to NFC: with `dir` dirty beside a synced `Dir`, an edit under `Dir` waits for the six-hour reconciliation, a hub deletion of `Dir/a.txt` arriving in that cycle is recorded without removing the file (which then comes back for everyone), and on macOS a deletion under a name the watcher reports decomposed is missed until that reconciliation. Accept: `mark` stores NFC, a scope is scanned under the spelling the disk holds, and the incoming-row loop rescans a path its scope covered only by folding; tests for the three cases.

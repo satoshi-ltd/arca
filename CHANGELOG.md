@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.64 — 2026-11-19
+
+- While the hub scans a large folder (after a restart or in its six-hour check), other folders keep syncing: uploads never wait for the scan, and changes and phone gallery requests wait only for a scan of their own folder. Before, every device saw the hub as unavailable until the whole scan ended.
+- Pausing or another action while the hub scans no longer waits for a folder scan that had not started yet, and a busy hub can no longer keep a queued action waiting indefinitely.
+
+Needs: hub redeploy
+
 ## 0.9.63 — 2026-11-19
 
 - Pausing, restarting or redeploying during the first scan of a large folder no longer throws away the hashing already done: the scan saves its progress every 256 files and when it stops, so the next scan picks up where it left off.

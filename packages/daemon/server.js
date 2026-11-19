@@ -807,7 +807,6 @@ export async function start(home, options = {}) {
           [
             "/v1/delete-file",
             "/v1/video/delete",
-            "/v1/gallery/delete",
             "/v1/rename-file",
             "/v1/restore",
             "/v1/conflict-choice",
@@ -833,12 +832,25 @@ export async function start(home, options = {}) {
         )
           engine.interruptCycle();
         return engine.exclusive(() => {
-          checkCredential();
-          if (engine.destroying || config.destroyPending || config.needsSetup)
-            fail("Erasing this device is pending; retry Erase this device", 409);
+          usable();
           return work();
         });
       };
+      const usable = () => {
+        checkCredential();
+        if (engine.destroying || config.destroyPending || config.needsSetup)
+          fail("Erasing this device is pending; retry Erase this device", 409);
+      };
+      const folderWork = (volume, work) =>
+        engine.folderWork(typeof volume === "string" ? volume : "", () => {
+          usable();
+          return work();
+        });
+      const uploadWork = (key, work) =>
+        engine.folderWork(`upload:${key}`, () => {
+          usable();
+          return work();
+        });
       const requireAdmin = () => {
         if (!admin) fail("Local administrator credential required", 403);
       };
@@ -1841,7 +1853,7 @@ export async function start(home, options = {}) {
             fail("Invalid upload bounds");
           return send(
             200,
-            await authorizedWork(async () => {
+            await uploadWork(`${device.id}-${hash}`, async () => {
               if (
                 fs.existsSync(file) &&
                 fs.statSync(file).size === size &&
@@ -2039,10 +2051,13 @@ export async function start(home, options = {}) {
             return send(200, await engine.hubAction(route, b));
           }
           requireHub();
-          if (route.endsWith("/delete")) assertReportedFolder(s, device, admin, b.volume);
+          if (route.endsWith("/delete")) {
+            assertReportedFolder(s, device, admin, b.volume);
+            if (engine.folderStates.get(b.volume)?.state === "scanning") engine.interruptCycle();
+          }
           return send(
             200,
-            await authorizedWork(() => {
+            await folderWork(b.volume, () => {
               const source = device?.id || config.id;
               if (route.endsWith("/register"))
                 return registerGalleryAsset(s, b, source);
@@ -2089,7 +2104,7 @@ export async function start(home, options = {}) {
           requireHub();
           return send(
             200,
-            await authorizedWork(async () => {
+            await folderWork(b.volume, async () => {
               if (
                 b.captured !== undefined &&
                 (typeof b.captured !== "string" ||
@@ -2940,6 +2955,7 @@ export async function start(home, options = {}) {
   };
   let stopping = false,
     running = false,
+    cycling = null,
     changedTimer,
     timer,
     lastActivity = Date.now(),
@@ -3045,7 +3061,13 @@ export async function start(home, options = {}) {
     requestedFull = false;
     try {
       flushEvents();
-      await engine.exclusive(() => engine.cycle({ incremental: !full }));
+      // A hub cycle takes each folder's lock itself, so uploads and proposals for other folders are not queued behind it.
+      cycling = (
+        config.role === "hub"
+          ? engine.cycle({ incremental: !full })
+          : engine.exclusive(() => engine.cycle({ incremental: !full }))
+      );
+      await cycling;
       failures = engine.error ? Math.min(failures + 1, 5) : 0;
       offline = !!engine.hubUnavailable;
       if (!offline && !engine.error) viewSilentAt = 0;
@@ -3253,7 +3275,8 @@ export async function start(home, options = {}) {
     await bounded(images.close());
     await bounded(engine.videoDownloads.close());
     videoSessions.close();
-    await bounded(engine.tail);
+    await bounded(cycling?.catch(() => {}));
+    await bounded(engine.exclusive(() => {}));
     engine.close();
     releaseLock(lock);
   }

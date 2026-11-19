@@ -64,6 +64,7 @@ import {
   CONTENT_DAMAGED,
 } from "./storage.js";
 
+const EXCLUSIVE_GRACE_MS = 1000;
 const CHUNK = 1024 * 1024;
 const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
 const HOLD_ATTEMPTS = 24;
@@ -160,6 +161,10 @@ export class Engine {
     this.tail = Promise.resolve();
     this.transferIdleMs = 60000;
     this.requestContext = new AsyncLocalStorage();
+    this.lockContext = new AsyncLocalStorage();
+    this.cycleAborts = new Set();
+    this.folderTails = new Map();
+    this.keyedWork = new Map();
     this.store.db.exec(
       "CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY,response TEXT NOT NULL)",
     );
@@ -182,24 +187,73 @@ export class Engine {
     if (this.paused) this.interruptCycle();
   }
   interruptCycle() {
-    this.syncAbort?.abort(
-      Object.assign(new Error("Synchronization yielded to a user action"), {
-        syncInterrupted: true,
-      }),
-    );
+    for (const abort of this.cycleAborts)
+      abort.abort(
+        Object.assign(new Error("Synchronization yielded to a user action"), {
+          syncInterrupted: true,
+        }),
+      );
     this.scanner.interrupt();
     this.backupEngine?.interruptCycle();
   }
   checkSyncInterrupted() {
-    if (this.syncAbort?.signal.aborted) throw this.syncAbort.signal.reason;
+    const abort = this.requestContext.getStore();
+    if (abort?.signal.aborted) throw abort.signal.reason;
     if (this.paused || this.stopVolumes.size)
       throw Object.assign(new Error("Synchronization stopped"), {
         syncInterrupted: true,
       });
   }
   exclusive(work) {
-    const next = this.tail.then(work);
+    const next = this.tail.then(async () => {
+      let release;
+      const turn = new Promise((resolve) => (release = resolve));
+      const claim = () => (this.running = turn);
+      // Keyed work that arrives after this grace waits for the queued exclusive, so steady traffic cannot starve it.
+      const grace = setTimeout(claim, EXCLUSIVE_GRACE_MS);
+      try {
+        const others = () => [...this.keyedWork].filter(([, gate]) => gate !== turn).map(([done]) => done);
+        for (let waiting = others(); waiting.length; waiting = others()) await Promise.all(waiting);
+        claim();
+        return await this.held({ all: true }, work);
+      } finally {
+        clearTimeout(grace);
+        this.running = null;
+        release();
+      }
+    });
     this.tail = next.catch(() => {});
+    return next;
+  }
+  async held(lock, work) {
+    lock.held = true;
+    try {
+      return await this.lockContext.run(lock, work);
+    } finally {
+      lock.held = false;
+    }
+  }
+  holding(volume) {
+    const lock = this.lockContext.getStore();
+    return Boolean(lock?.held && (lock.all || (volume !== undefined && lock.volume === volume)));
+  }
+  locked(work) {
+    return this.holding() ? work() : this.exclusive(work);
+  }
+  // Keyed work (a hub folder, an upload) runs beside other keys and waits only for exclusive work already running; exclusive work waits until no key is busy.
+  folderWork(key, work) {
+    if (this.holding(key)) return work();
+    const gate = this.running;
+    const next = Promise.all([gate, this.folderTails.get(key)]).then(() =>
+      this.held({ volume: key }, work),
+    );
+    const done = next.catch(() => {});
+    this.folderTails.set(key, done);
+    this.keyedWork.set(done, gate);
+    done.then(() => {
+      this.keyedWork.delete(done);
+      if (this.folderTails.get(key) === done) this.folderTails.delete(key);
+    });
     return next;
   }
   backupState() {
@@ -1155,14 +1209,17 @@ export class Engine {
       this.hubVerified === hubIdentity(this.config.hub)
         ? "syncing"
         : "checking";
-    this.syncAbort = this.requestContext.getStore();
+    const abort = this.requestContext.getStore();
+    this.syncAbort = abort;
+    this.cycleAborts.add(abort);
     if (!this.hubUnavailable) this.error = null;
     try {
-      if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000) {
-        cleanupTransfers(this.store);
-        if (this.config.role === "hub") applyFolderRetention(this.store);
-        this.lastCleanup = Date.now();
-      }
+      if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000)
+        await this.locked(() => {
+          cleanupTransfers(this.store);
+          if (this.config.role === "hub") applyFolderRetention(this.store);
+          this.lastCleanup = Date.now();
+        });
       const s = this.store;
       const folderErrors = [];
       let deviceWide = false;
@@ -1174,16 +1231,18 @@ export class Engine {
             /* The folder pass below reports recovery failures. */
           }
       if (this.config.role === "hub") {
-        for (const v of s.volumes())
-          try {
-            const policy = this.policyKey(v);
-            if (this.work.state(v.id).policy !== policy) {
-              s.forgetExcluded(v.id);
-              this.work.policy(v.id, policy);
+        await this.locked(() => {
+          for (const v of s.volumes())
+            try {
+              const policy = this.policyKey(v);
+              if (this.work.state(v.id).policy !== policy) {
+                s.forgetExcluded(v.id);
+                this.work.policy(v.id, policy);
+              }
+            } catch {
+              /* The folder scan reports an unreadable or invalid policy. */
             }
-          } catch {
-            /* The folder scan reports an unreadable or invalid policy. */
-          }
+        });
         await this.scanHub(undefined, { incremental });
       } else if (this.config.hub) {
         const catalog = await this.metadata("/v1/catalog");
@@ -1277,7 +1336,7 @@ export class Engine {
               if (
                 error.syncInterrupted ||
                 error.hubUnavailable ||
-                this.syncAbort?.signal.aborted
+                abort.signal.aborted
               )
                 throw error;
               issues.push(`${name}: ${error.message}`);
@@ -1793,8 +1852,8 @@ export class Engine {
             if (marker?.gallery) this.gallery?.prepare(v.id);
             if (marker?.music) this.music?.prepare(v.id);
           } catch (e) {
-            if (this.syncAbort.signal.aborted)
-              throw this.syncAbort.signal.reason;
+            if (abort.signal.aborted)
+              throw abort.signal.reason;
             if (e.syncInterrupted || e.hubUnavailable) throw e;
             this.folderStates.set(v.id, {
               state: "error",
@@ -1888,7 +1947,7 @@ export class Engine {
           this.backupError = null;
           this.backupWaiting = false;
         } catch (e) {
-          if (this.syncAbort.signal.aborted) throw this.syncAbort.signal.reason;
+          if (abort.signal.aborted) throw abort.signal.reason;
           const offline = Boolean(e.hubUnavailable || backup?.hubUnavailable);
           this.backupWaiting = offline;
           this.backupError = offline ? null : e.message;
@@ -1916,7 +1975,7 @@ export class Engine {
       this.phase = "idle";
       this.progress = null;
     } catch (e) {
-      if (this.syncAbort.signal.aborted) e = this.syncAbort.signal.reason;
+      if (abort.signal.aborted) e = abort.signal.reason;
       if (this.config.role === "replica" && !this.config.hub) return;
       if (e.syncInterrupted) {
         if (this.progress?.volume)
@@ -1955,11 +2014,12 @@ export class Engine {
       } catch {
         /* A locked or vanished object is retried after the next cycle. */
       }
-      if (!this.syncAbort.signal.aborted && !this.hubUnavailable)
+      if (!abort.signal.aborted && !this.hubUnavailable)
         await this.reportMachine();
       void this.flushPositions();
       void this.videoDownloads?.wake();
-      this.syncAbort = null;
+      this.cycleAborts.delete(abort);
+      if (this.syncAbort === abort) this.syncAbort = null;
     }
   }
   registerBackupVolume(v) {
@@ -2516,7 +2576,7 @@ export class Engine {
       this.checkSyncInterrupted();
     };
     let deviceWide = false;
-    for (const v of s
+    for (let v of s
       .volumes()
       .filter((v) => v.selected && (!volume || v.id === volume))) {
       checkpoint();
@@ -2525,126 +2585,131 @@ export class Engine {
         errors.push(`${v.name}: ${waiting.message}`);
         continue;
       }
-      const plan = this.work.plan(v, incremental, paths);
-      if (plan.paths?.length === 0) {
-        if (!paths && !this.folderBackoff.waiting(v.id)) this.folderBackoff.succeeded(v.id);
-        continue;
-      }
-      this.folderStates.set(v.id, {
-        state: "scanning",
-        lastCompleted: v.last_sync,
-      });
-      try {
-        const issues = [];
-        const space = new SpaceShortfall();
-        try {
-          s.recover(v.id);
-        } catch (error) {
-          if (!error.failures) throw error;
-          for (const failure of error.failures) {
-            issues.push(`${failure.path}: ${failure.error.message}`);
-            space.fail(failure.path, failure.error);
-          }
-        }
-        const disk = await this.scanner.scan(v, plan.paths, true);
+      await this.folderWork(v.id, async () => {
         checkpoint();
-        const unreadable = new Map(
-          plan.paths === null
-            ? []
-            : [...(this.folderIssues.get(v.id)?.unreadable ?? [])].filter(
-                ([name]) => !covers(plan.paths, name),
-              ),
-        );
-        for (const [name, reason] of disk.unreadable ?? []) unreadable.set(name, reason);
-        await this.repairDamaged(v, disk, unreadable);
-        const unread = [...unreadable.keys()];
-        const unreadablePath = within(unread);
-        const known = s.rowsInScope(v.id, plan.paths);
-        const excluded = s.ignoreRules(v);
-        const diskNames = new Set(
-          [...disk.keys()].map((name) => name.toLowerCase()),
-        );
-        const missing = known.filter(
-          (row) =>
-            !row.deleted &&
-            covers(plan.paths, row.path) &&
-            !disk.has(row.path) &&
-            !diskNames.has(row.path.toLowerCase()) &&
-            !unreadablePath(row.path) &&
-            !excluded(row.path, !!row.directory) &&
-            s.unwritten(v.id, row.path)?.deleted !== 0 &&
-            s.goneFromScope(v, plan.paths, row.path),
-        );
-        const held = this.holdDeletions(
-          v,
-          missing,
-          disk,
-          (name) => disk.has(name) || diskNames.has(name.toLowerCase()),
-          plan.paths,
-          (name, directory) => excluded(name, directory),
-        );
-        for (const row of missing.sort((a, b) => b.path.localeCompare(a.path))) {
-          await new Promise((resolve) => setImmediate(resolve));
-          checkpoint();
-          if (!held(row.path) && s.unwritten(v.id, row.path)?.deleted !== 0)
-            s.commit(v.id, row.path, null, this.config.id);
-        }
-        for (const [name, item] of disk) {
-          // Let status and control requests run between durable file commits.
-          await new Promise((resolve) => setImmediate(resolve));
-          checkpoint();
-          const old = s.current(v.id, name);
-          if (
-            item.directory &&
-            old?.deleted &&
-            old.directory &&
-            this.unmanagedDirectory(v, name, disk)
-          )
-            continue;
-          if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
-            s.commit(
-              v.id,
-              name,
-              item,
-              this.config.id,
-              false,
-              null,
-              null,
-              s.caseAlias(v.id, name)?.path,
-            );
-            this.activity++;
-          }
-        }
-        this.work.complete(v, plan);
-        for (const name of unread) this.work.retry(v.id, name);
-        const time = new Date().toISOString();
-        if (!issues.length && !unread.length)
-          s.db
-            .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
-            .run(time, v.id);
-        if (issues.length || unread.length) this.reportIssues(v, issues, unreadable, space);
-        else {
-          this.folderIssues.delete(v.id);
-          this.folderStates.set(v.id, { state: "synced", lastCompleted: time });
-        }
-        if (!paths) this.folderBackoff.succeeded(v.id);
-      } catch (e) {
-        if (e.syncInterrupted) {
-          this.folderStates.set(v.id, {
-            state: "pending",
-            lastCompleted: v.last_sync,
-          });
-          throw e;
+        v = s.volumes().find((row) => row.id === v.id && row.selected);
+        if (!v) return;
+        const plan = this.work.plan(v, incremental, paths);
+        if (plan.paths?.length === 0) {
+          if (!paths && !this.folderBackoff.waiting(v.id)) this.folderBackoff.succeeded(v.id);
+          return;
         }
         this.folderStates.set(v.id, {
-          state: "error",
-          error: e.message,
+          state: "scanning",
           lastCompleted: v.last_sync,
-          ...neededSpace(e),
         });
-        if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
-        errors.push(`${v.name}: ${e.message}`);
-      }
+        try {
+          const issues = [];
+          const space = new SpaceShortfall();
+          try {
+            s.recover(v.id);
+          } catch (error) {
+            if (!error.failures) throw error;
+            for (const failure of error.failures) {
+              issues.push(`${failure.path}: ${failure.error.message}`);
+              space.fail(failure.path, failure.error);
+            }
+          }
+          const disk = await this.scanner.scan(v, plan.paths, true);
+          checkpoint();
+          const unreadable = new Map(
+            plan.paths === null
+              ? []
+              : [...(this.folderIssues.get(v.id)?.unreadable ?? [])].filter(
+                  ([name]) => !covers(plan.paths, name),
+                ),
+          );
+          for (const [name, reason] of disk.unreadable ?? []) unreadable.set(name, reason);
+          await this.repairDamaged(v, disk, unreadable);
+          const unread = [...unreadable.keys()];
+          const unreadablePath = within(unread);
+          const known = s.rowsInScope(v.id, plan.paths);
+          const excluded = s.ignoreRules(v);
+          const diskNames = new Set(
+            [...disk.keys()].map((name) => name.toLowerCase()),
+          );
+          const missing = known.filter(
+            (row) =>
+              !row.deleted &&
+              covers(plan.paths, row.path) &&
+              !disk.has(row.path) &&
+              !diskNames.has(row.path.toLowerCase()) &&
+              !unreadablePath(row.path) &&
+              !excluded(row.path, !!row.directory) &&
+              s.unwritten(v.id, row.path)?.deleted !== 0 &&
+              s.goneFromScope(v, plan.paths, row.path),
+          );
+          const held = this.holdDeletions(
+            v,
+            missing,
+            disk,
+            (name) => disk.has(name) || diskNames.has(name.toLowerCase()),
+            plan.paths,
+            (name, directory) => excluded(name, directory),
+          );
+          for (const row of missing.sort((a, b) => b.path.localeCompare(a.path))) {
+            await new Promise((resolve) => setImmediate(resolve));
+            checkpoint();
+            if (!held(row.path) && s.unwritten(v.id, row.path)?.deleted !== 0)
+              s.commit(v.id, row.path, null, this.config.id);
+          }
+          for (const [name, item] of disk) {
+            // Let status and control requests run between durable file commits.
+            await new Promise((resolve) => setImmediate(resolve));
+            checkpoint();
+            const old = s.current(v.id, name);
+            if (
+              item.directory &&
+              old?.deleted &&
+              old.directory &&
+              this.unmanagedDirectory(v, name, disk)
+            )
+              continue;
+            if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
+              s.commit(
+                v.id,
+                name,
+                item,
+                this.config.id,
+                false,
+                null,
+                null,
+                s.caseAlias(v.id, name)?.path,
+              );
+              this.activity++;
+            }
+          }
+          this.work.complete(v, plan);
+          for (const name of unread) this.work.retry(v.id, name);
+          const time = new Date().toISOString();
+          if (!issues.length && !unread.length)
+            s.db
+              .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
+              .run(time, v.id);
+          if (issues.length || unread.length) this.reportIssues(v, issues, unreadable, space);
+          else {
+            this.folderIssues.delete(v.id);
+            this.folderStates.set(v.id, { state: "synced", lastCompleted: time });
+          }
+          if (!paths) this.folderBackoff.succeeded(v.id);
+        } catch (e) {
+          if (e.syncInterrupted) {
+            this.folderStates.set(v.id, {
+              state: "pending",
+              lastCompleted: v.last_sync,
+            });
+            throw e;
+          }
+          this.folderStates.set(v.id, {
+            state: "error",
+            error: e.message,
+            lastCompleted: v.last_sync,
+            ...neededSpace(e),
+          });
+          if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
+          errors.push(`${v.name}: ${e.message}`);
+        }
+      });
     }
     if (errors.length)
       throw Object.assign(new Error(errors.join("; ")), {
@@ -2993,7 +3058,7 @@ export class Engine {
             // Remote registration cleanup must not prevent confirmed local deletion.
           }
         }
-        await this.scanner.worker?.terminate();
+        await Promise.all(Object.values(this.scanner.workers).map((worker) => worker?.terminate()));
         this.scanner = new Scanner(this.store.home);
         await this.videoDownloads?.halt();
         await this.videoSessions?.halt();

@@ -3467,7 +3467,7 @@ test("machine removal interrupts background work without waiting for an offline 
     const started = new Promise((resolve) => { entered = resolve; });
     const controller = new AbortController();
     const blocked = hub.engine.exclusive(async () => {
-      hub.engine.syncAbort = controller;
+      hub.engine.cycleAborts.add(controller);
       await new Promise((resolve) => {
         release = resolve;
         controller.signal.addEventListener("abort", resolve, { once: true });
@@ -3490,7 +3490,7 @@ test("machine removal interrupts background work without waiting for an offline 
     } finally {
       release();
       await blocked;
-      hub.engine.syncAbort = null;
+      hub.engine.cycleAborts.delete(controller);
     }
   }
 });
