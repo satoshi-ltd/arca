@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.61 — 2026-11-19
+## 0.9.62 — 2026-11-19
 
 - A computer or server replica no longer needs free space for a second copy of its new files: it reads them in place and copies each one only while it uploads, freeing that copy before the next. Before, a folder larger than the free space failed with "Insufficient free disk space" on every cycle and nothing uploaded.
 - Linking a folder that already holds the hub's files, or relinking after the hub went back, no longer copies every file to compare it.

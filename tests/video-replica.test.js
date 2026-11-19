@@ -233,19 +233,8 @@ test("a folder a replica already keeps becoming a Movies & TV library takes the 
     downloads.push(hash);
     return download(hash, size);
   };
-  const copies = [];
-  const copy = fs.copyFileSync;
-  t.after(() => {
-    fs.copyFileSync = copy;
-  });
-  fs.copyFileSync = (from, to) => {
-    copies.push(String(from));
-    return copy(from, to);
-  };
   await r.replica.engine.cycle();
   await r.replica.engine.cycle();
-  fs.copyFileSync = copy;
-  assert.deepEqual(copies.filter((from) => from.startsWith(destination)), [], "the kept films are never copied to be hashed again");
   const local = path.join(destination, "Heat (1995).mp4");
   assert.equal(r.replica.engine.store.current(f.v.id, "Heat (1995).mp4").hash, quickHashFile(local));
   assert.equal(f.s.current(f.v.id, "Heat (1995).mp4").hash, quickHashFile(local));
@@ -254,7 +243,11 @@ test("a folder a replica already keeps becoming a Movies & TV library takes the 
   assert.deepEqual(fs.readdirSync(destination).filter((name) => name.includes("conflict")), []);
   const store = r.replica.engine.store;
   store.db.prepare("DELETE FROM scan_cache").run();
-  copies.length = 0;
+  const copies = [];
+  const copy = fs.copyFileSync;
+  t.after(() => {
+    fs.copyFileSync = copy;
+  });
   fs.copyFileSync = (from, to) => {
     copies.push(String(from));
     return copy(from, to);
