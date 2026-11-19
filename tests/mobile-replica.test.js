@@ -6387,3 +6387,27 @@ test("a phone keeps a Movies & TV folder as a complete two-way copy fingerprinte
   await replica.unselect(volume.id);
   assert.ok(!(await f.store.folder(replica.scope, volume.id)), "Stop syncing removes the copy");
 });
+test("a phone's mass deletion held by the hub comes back to the phone, and stays after Keep files", async (t) => {
+  const f = await fixture(t);
+  const { volume, replica, daemon } = f;
+  const album = Array.from({ length: 100 }, (_, i) => `album/${i}.jpg`);
+  fs.mkdirSync(path.join(volume.path, "album"));
+  for (const name of album) fs.writeFileSync(path.join(volume.path, name), name);
+  for (let i = 0; i < 20; i++) fs.writeFileSync(path.join(volume.path, `k${i}.txt`), `k${i}`);
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  await replica.select(volume);
+  await sync(f);
+  const phone = (name) => f.files.work(replica.scope, volume.id, name);
+  fs.rmSync(phone("album"), { recursive: true });
+  await sync(f);
+  await sync(f);
+  const live = album.filter((name) => daemon.engine.store.current(volume.id, name)?.deleted === 0);
+  assert.equal(live.length, 51);
+  assert.deepEqual(album.filter((name) => fs.existsSync(phone(name))), live);
+  assert.equal((await f.store.rows(replica.scope, volume.id)).filter((row) => row.unapplied).length, 0);
+  assert.equal(daemon.engine.status().volumes.find((v) => v.id === volume.id).sync.held.files, 51);
+  await daemon.engine.reviewDeletions(volume.id, false);
+  await sync(f);
+  assert.deepEqual(album.filter((name) => fs.existsSync(phone(name))), live);
+  assert.equal(daemon.engine.status().volumes.find((v) => v.id === volume.id).sync.held, undefined);
+});

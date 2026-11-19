@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.59";
+const APP_VERSION = "0.9.60";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2417,7 +2417,9 @@ function stateWord(v, state) {
   return ["Up to date", "Syncing", "Scanning", "Catalog only"].includes(state[0]) ? "" : state[0];
 }
 const heldLine = (held) =>
-  `${held.files === 1 ? "1 file is" : `${held.files.toLocaleString("en")} files are`} missing from this folder. Nothing has been deleted on other devices.`;
+  held.from
+    ? `${held.files === 1 ? "1 file" : `${held.files.toLocaleString("en")} files`} deleted on ${held.from.join(", ")} ${held.files === 1 ? "is" : "are"} kept on the hub. Nothing has been deleted on other devices.`
+    : `${held.files === 1 ? "1 file is" : `${held.files.toLocaleString("en")} files are`} missing from this folder. Nothing has been deleted on other devices.`;
 function folderMetaParts(v, state, p) {
   if (p) return { rest: progressLabel(p) };
   const error =
@@ -9991,11 +9993,13 @@ async function imageLibrary() {
 }
 
 function heldDeletions(folder) {
-  const { files, directories, more } = folder.sync.held;
+  const { files, directories, more, from } = folder.sync.held;
   modal(
     modalHeader(
       `Delete ${countLabel(files, "file")} from every device?`,
-      `These files are no longer in “${escape(folder.name)}” on this ${status.role === "hub" ? "hub" : "device"}. If a disk was disconnected or a folder was moved, put it back and choose Check again: nothing has been deleted on other devices yet.`,
+      from
+        ? `${escape(from.join(", "))} deleted these files from “${escape(folder.name)}”. The hub kept them and sent them back, so nothing has been deleted on other devices yet.`
+        : `These files are no longer in “${escape(folder.name)}” on this ${status.role === "hub" ? "hub" : "device"}. If a disk was disconnected or a folder was moved, put it back and choose Check again: nothing has been deleted on other devices yet.`,
       "trash-2",
     ) +
       `<ul>${directories.map((place) => `<li class="path">${escape(place)}</li>`).join("")}${more ? `<li>and ${more.toLocaleString("en")} more</li>` : ""}</ul><p class="hint">Deleting is sent to every device. Recovery afterwards depends on this folder’s version retention.</p>`,
@@ -10013,7 +10017,7 @@ function heldDeletions(folder) {
   recheck.className = "secondary";
   recheck.dataset.action = "recheck-deletions";
   recheck.dataset.id = folder.id;
-  recheck.textContent = "Check again";
+  recheck.textContent = from ? "Keep files" : "Check again";
   $("#cancel-dialog").after(recheck);
   $("#cancel-dialog").focus();
 }

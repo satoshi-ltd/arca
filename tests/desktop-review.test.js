@@ -567,3 +567,25 @@ test("a folder holding a mass disappearance asks before deleting it from every d
   await until(() => !ui.q("#dialog-error").hidden);
   assert.match(ui.q("#dialog-error").textContent, /The missing files changed\. Review them again\.$/);
 });
+
+test("deletions a device sent are reviewed on the hub as kept files, with Keep files", async (t) => {
+  const held = { files: 51, directories: ["/srv/arca/photos/album"], more: 0, token: "sent", from: ["Pixel"] };
+  const ui = await boot(t, hub([{ ...base, id: "photos", name: "photos", path: "/srv/arca/photos", sync: { ...base.sync, held } }]), {
+    answers: { "/v1/review-deletions": () => ({ accepted: true }) },
+  });
+  const row = () => ui.q('.folder-card[data-id="photos"]');
+  await until(() => row());
+  assert.equal(row().querySelector(".meta").textContent, "Needs attention · 51 files deleted on Pixel are kept on the hub. Nothing has been deleted on other devices.");
+  const dialog = ui.q("#dialog");
+  row().querySelector('[data-action="folder-problem"]').click();
+  await until(() => dialog.open && ui.q("#dialog-recheck"));
+  assert.equal(dialog.querySelector("h2").textContent, "Delete 51 files from every device?");
+  assert.equal(
+    dialog.querySelector(".modal-title p").textContent,
+    "Pixel deleted these files from “photos”. The hub kept them and sent them back, so nothing has been deleted on other devices yet.",
+  );
+  assert.deepEqual(ui.qa(".dialog-actions button").filter((b) => !b.hidden).map((b) => b.textContent.trim()), ["Cancel", "Keep files", "Delete from every device"]);
+  ui.q("#dialog-recheck").click();
+  await until(() => ui.calls.some(([route]) => route === "/v1/review-deletions"));
+  assert.equal(JSON.stringify(ui.calls.find(([route]) => route === "/v1/review-deletions")[1]), JSON.stringify({ id: "photos", confirm: false }));
+});

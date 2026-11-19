@@ -78,6 +78,8 @@ const contradicts = (indexed, row) =>
 const fileCount = (n) => (n === 1 ? "1 file" : `${n} files`);
 const MASS_DELETE_FILES = 50;
 const DELETION_WINDOW_MS = 60 * 60 * 1000;
+export const DELETION_HELD =
+  "The hub kept this file because a large deletion in this folder waits for review on the hub.";
 const unreadIssue = (unreadable) =>
   unreadable.size
     ? `Could not read ${fileCount(unreadable.size)} in this folder: ${[...unreadable]
@@ -290,7 +292,7 @@ export class Engine {
                     lastCompleted: v.last_sync,
                   };
             const held = v.selected ? s.heldDeletions(v) : null;
-            return held ? { ...state, held } : state;
+            return held ? { ...state, held: { ...held, ...this.heldFrom(v.id) } } : state;
           })(),
           ...totals,
           conflictRevision:
@@ -743,8 +745,17 @@ export class Engine {
         ? landed
         : null;
     // An applied request cannot take the lost-reply mutation shortcut.
+    // A same-content revision, such as a held deletion's, does not make proposals based on the one before it stale.
+    const keptSince =
+      !!head?.hash &&
+      head.path === name &&
+      s.db
+        .prepare("SELECT rev,hash FROM revisions WHERE volume=? AND path=? AND rev<? ORDER BY rev DESC LIMIT 1")
+        .get(volume, name, head.rev)?.rev === base &&
+      s.db.prepare("SELECT hash FROM revisions WHERE volume=? AND rev=?").get(volume, base)?.hash === head.hash;
     const stale =
       (head?.rev ?? 0) !== base &&
+      !keptSince &&
       !(
         !replayed &&
         !directory &&
@@ -752,6 +763,20 @@ export class Engine {
         this.ownProposalAtBase(volume, name, head, base, device)
       );
     let result;
+    if (
+      !item &&
+      !stale &&
+      !replayed &&
+      body.checked !== true &&
+      head === old &&
+      old?.path === name &&
+      !old.deleted &&
+      !old.directory &&
+      name !== IGNORE_FILE &&
+      v.selected &&
+      this.holdProposedDeletion(volume, old, device)
+    )
+      return { row: s.current(volume, name), conflict: true, reason: DELETION_HELD };
     const moved = stale && hash && !replayed && name !== IGNORE_FILE
       ? this.renameTarget(volume, name, head, base, { hash, size })
       : null;
@@ -1384,6 +1409,7 @@ export class Engine {
                       path: row.path,
                       base: row.rev,
                       hash: null,
+                      checked: true,
                     }),
                     row.path,
                     null,
@@ -2613,7 +2639,7 @@ export class Engine {
       waiting = new Map(),
       confirmed = new Set();
     for (const hold of s.db
-      .prepare("SELECT path,rev,confirmed FROM deletion_holds WHERE volume=?")
+      .prepare("SELECT path,rev,confirmed,device FROM deletion_holds WHERE volume=?")
       .all(v.id)) {
       const row = s.current(v.id, hold.path);
       if (
@@ -2621,7 +2647,7 @@ export class Engine {
         row.deleted ||
         row.rev !== hold.rev ||
         excluded(row.path, !!row.directory) ||
-        (covers(scope, row.path) && present(row.path))
+        (!hold.device && covers(scope, row.path) && present(row.path))
       )
         dropped.push(hold.path);
       else if (hold.confirmed) confirmed.add(hold.path);
@@ -2715,6 +2741,7 @@ export class Engine {
     const s = this.store,
       v = s.volume(id);
     if (!v.selected) fail("This folder is not synchronized on this device", 409);
+    const release = s.db.prepare("DELETE FROM deletion_holds WHERE volume=? AND path=? AND device IS NOT NULL");
     if (confirm) {
       const rows = s.heldRows(id);
       if (!rows.length || s.heldDeletions(v, rows)?.token !== token)
@@ -2724,14 +2751,58 @@ export class Engine {
       );
       s.db.exec("BEGIN IMMEDIATE");
       try {
-        for (const row of rows) mark.run(id, row.path, row.rev);
+        for (const row of rows) if (!row.device) mark.run(id, row.path, row.rev);
         s.db.exec("COMMIT");
       } catch (error) {
         s.db.exec("ROLLBACK");
         throw error;
       }
-    }
+      for (const row of rows.filter((row) => row.device)) {
+        const current = s.current(id, row.path);
+        try {
+          s.commit(id, row.path, null, row.device, true, current.hash);
+        } catch (error) {
+          if (!error.accepted) throw error;
+        }
+        release.run(id, row.path);
+      }
+    } else for (const row of s.heldRows(id)) if (row.device) release.run(id, row.path);
     this.work.mark(id);
+  }
+  heldFrom(volume) {
+    const s = this.store;
+    const rows = s.heldRows(volume);
+    if (!rows.length || rows.some((row) => !row.device)) return {};
+    const name = s.db.prepare("SELECT name FROM devices WHERE id=?");
+    return { from: [...new Set(rows.map((row) => name.get(row.device)?.name ?? "another device"))].sort() };
+  }
+  holdProposedDeletion(volume, row, device) {
+    const s = this.store;
+    const now = Date.now();
+    s.db.prepare("DELETE FROM deletion_log WHERE at<?").run(now - DELETION_WINDOW_MS);
+    const waiting = s.db.prepare("SELECT 1 FROM deletion_holds WHERE volume=? AND confirmed=0 LIMIT 1").get(volume);
+    const logged = s.db
+      .prepare("SELECT COALESCE(SUM(files),0) AS n FROM deletion_log WHERE volume=? AND at>=?")
+      .get(volume, now - DELETION_WINDOW_MS).n;
+    const live = s.db
+      .prepare("SELECT COUNT(*) AS n FROM files WHERE volume=? AND deleted=0 AND directory=0")
+      .get(volume).n;
+    if (
+      s.db
+        .prepare("SELECT 1 FROM deletion_holds WHERE volume=? AND path=? AND rev=? AND device IS NOT NULL")
+        .get(volume, row.path, row.rev)
+    )
+      return true;
+    if (waiting || (logged + 1 >= MASS_DELETE_FILES && (logged + 1) * 4 > live + logged)) {
+      // The device already applied row.rev; only a newer revision of the same content makes it restore the file.
+      const kept = s.commit(volume, row.path, { hash: row.hash, size: row.size }, this.config.id);
+      s.db
+        .prepare("INSERT OR REPLACE INTO deletion_holds(volume,path,rev,confirmed,device) VALUES(?,?,?,0,?)")
+        .run(volume, row.path, kept.rev, device.id);
+      return true;
+    }
+    s.db.prepare("INSERT INTO deletion_log(volume,at,files) VALUES(?,?,1)").run(volume, now);
+    return false;
   }
   reportIssues(v, unwritten, unreadable = new Map(), space = new SpaceShortfall()) {
     this.folderIssues.set(v.id, { unwritten, unreadable, space });

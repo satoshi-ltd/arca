@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.60 — 2026-11-19
+
+- The hub now holds a mass deletion that a phone or an older computer sends it, using the same rule as its own scans (50 files and more than a quarter of the folder within an hour): it keeps the files, sends them back to that device, and shows the folder under Needs attention with Review. Before, a phone whose app storage was emptied deleted those files everywhere.
+- Review names the device and offers Keep files or Delete from every device. Renaming a large folder on an up-to-date computer is never held.
+
+Needs: hub redeploy · desktop build · server replica redeploy
+
 ## 0.9.59 — 2026-11-19
 
 - A file whose bytes change on disk while nothing wrote it (silent disk damage) is no longer synced to every device as an edit: the hub restores it from its own copy and a computer restores it from the hub, keeping the damaged bytes beside it as a `.conflict-local-` copy. Without a good copy the folder names the file instead. FAT and exFAT drives, which cannot tell damage from an edit, behave as before.

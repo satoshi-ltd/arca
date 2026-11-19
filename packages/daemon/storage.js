@@ -527,6 +527,13 @@ export class Store {
       this.db.exec("ALTER TABLE backup_damaged ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
     if (
       !this.db
+        .prepare("PRAGMA table_info(deletion_holds)")
+        .all()
+        .some((column) => column.name === "device")
+    )
+      this.db.exec("ALTER TABLE deletion_holds ADD COLUMN device TEXT");
+    if (
+      !this.db
         .prepare("PRAGMA table_info(backup_ack)")
         .all()
         .some((column) => column.name === "hold")
@@ -1559,7 +1566,7 @@ export class Store {
   heldRows(id) {
     return this.db
       .prepare(
-        "SELECT f.path,f.rev,f.directory FROM deletion_holds h JOIN files f ON f.volume=h.volume AND f.path=h.path AND f.rev=h.rev AND f.deleted=0 WHERE h.volume=? AND h.confirmed=0 ORDER BY f.path",
+        "SELECT f.path,f.rev,f.directory,h.device FROM deletion_holds h JOIN files f ON f.volume=h.volume AND f.path=h.path AND f.rev=h.rev AND f.deleted=0 WHERE h.volume=? AND h.confirmed=0 ORDER BY f.path",
       )
       .all(id);
   }
