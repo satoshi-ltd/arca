@@ -429,9 +429,8 @@ export class Engine {
     if (this.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
     return this.json(route, body, { signal: AbortSignal.timeout(timeout) });
   }
-  async upload(hash, onProgress) {
+  async upload(hash, size, stage, onProgress) {
     const file = this.store.blob(hash);
-    const size = fs.statSync(file).size;
     const hub = this.config.hub;
     const progress = (done) => {
       if (onProgress) onProgress(done, size);
@@ -455,6 +454,7 @@ export class Engine {
       progress(size);
       return;
     }
+    stage();
     const fd = await fs.promises.open(file, "r");
     try {
       do {
@@ -1445,7 +1445,7 @@ export class Engine {
               const uploads = new Map();
               for (const [name, item] of pending)
                 if (item.hash && !uploads.has(item.hash))
-                  uploads.set(item.hash, { name, size: item.size, done: 0 });
+                  uploads.set(item.hash, { name, size: item.size, done: 0, staged: false });
               const update = () => {
                 Object.assign(this.progress, {
                   direction: "upload",
@@ -1461,51 +1461,70 @@ export class Engine {
                 });
               };
               update();
-              const results = await Promise.allSettled(
-                [...uploads].map(([hash, item]) =>
-                  this.upload(hash, (done) => {
-                    item.done = done;
-                    update();
-                  }),
-                ),
-              );
-              const failedHashes = new Set();
-              [...uploads].forEach(([hash, item], index) => {
-                if (results[index].status !== "rejected") return;
-                remote(item.name, results[index].reason);
-                failedHashes.add(hash);
-              });
-              for (const [name, item] of pending) {
-                this.checkSyncInterrupted();
-                if (failedHashes.has(item.hash)) {
-                  blocked.set(name.toLowerCase(), name);
-                  continue;
+              const later = new Set();
+              try {
+                const results = await Promise.allSettled(
+                  [...uploads].map(([hash, item]) =>
+                    this.upload(
+                      hash,
+                      item.size,
+                      () => (item.staged = s.stage(v, item.name, hash)),
+                      (done) => {
+                        item.done = done;
+                        update();
+                      },
+                    ),
+                  ),
+                );
+                const failedHashes = new Set();
+                const freed = [...uploads.values()].some((item) => item.staged);
+                [...uploads].forEach(([hash, item], index) => {
+                  if (results[index].status !== "rejected") return;
+                  // Staged objects are released after this batch, so a file that found no room beside them gets another turn.
+                  if (freed && results[index].reason?.status === 507 && !item.staged) {
+                    later.add(hash);
+                    return;
+                  }
+                  remote(item.name, results[index].reason);
+                  failedHashes.add(hash);
+                });
+                for (const [name, item] of pending) {
+                  this.checkSyncInterrupted();
+                  if (later.has(item.hash)) continue;
+                  if (failedHashes.has(item.hash)) {
+                    blocked.set(name.toLowerCase(), name);
+                    continue;
+                  }
+                  const old = s.pathHead(v.id, name);
+                  const modified =
+                    item.hash && mediaKind(name)
+                      ? fileDate(s.filePath(v, name))
+                      : null;
+                  if (modified) s.rememberFileDate(item.hash, modified);
+                  try {
+                    acknowledge(
+                      await this.json("/v1/propose", {
+                        volume: v.id,
+                        path: name,
+                        base: old?.rev ?? 0,
+                        ...item,
+                        ...(modified && { modified }),
+                      }),
+                      name,
+                      entryKey(item),
+                    );
+                  } catch (error) {
+                    remote(name, error);
+                  }
+                  proposed = true;
                 }
-                const old = s.pathHead(v.id, name);
-                const modified =
-                  item.hash && mediaKind(name)
-                    ? fileDate(s.filePath(v, name))
-                    : null;
-                if (modified) s.rememberFileDate(item.hash, modified);
-                try {
-                  acknowledge(
-                    await this.json("/v1/propose", {
-                      volume: v.id,
-                      path: name,
-                      base: old?.rev ?? 0,
-                      ...item,
-                      ...(modified && { modified }),
-                    }),
-                    name,
-                    entryKey(item),
-                  );
-                } catch (error) {
-                  remote(name, error);
-                }
-                proposed = true;
+              } finally {
+                for (const [hash, item] of uploads)
+                  if (item.staged) s.releaseObject(hash);
               }
+              changed.splice(cursor, 0, ...batch.filter(([, item]) => later.has(item.hash)));
               for (const [, item] of batch)
-                if (!item.directory) this.countProgress(item.size);
+                if (!item.directory && !later.has(item.hash)) this.countProgress(item.size);
             }
             Object.assign(this.progress, {
               stage: "receive",
@@ -2274,7 +2293,7 @@ export class Engine {
       this.store.forgetVolume(v.id);
     const scans = [];
     for (const v of this.store.volumes().filter((v) => v.selected))
-      scans.push([v, await this.scanner.scan(v)]);
+      scans.push([v, await this.scanner.scan(v, null, false, true)]);
     this.closeBackup();
     const next = {
       ...this.config,

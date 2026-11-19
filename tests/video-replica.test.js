@@ -259,7 +259,7 @@ test("a folder a replica already keeps becoming a Movies & TV library takes the 
     copies.push(String(from));
     return copy(from, to);
   };
-  assert.equal(store.capture(local, quickHashFile(local), false, true).hash, quickHashFile(local));
+  assert.equal(store.capture(local, false, true).hash, quickHashFile(local));
   fs.copyFileSync = copy;
   assert.deepEqual(copies, [], "a kept film whose fingerprint is already known is never copied to be hashed");
 });

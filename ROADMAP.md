@@ -27,7 +27,26 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_Empty._
+Approved 2026-11-19.
+
+- **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
+  `feature · agent · normal` · small
+  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart (every redeploy) during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
+- **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
+  `feature · agent · normal` · medium
+  The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete.
+- **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
+  `bug · agent · normal` · small
+  An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
+- **UX-ERRORS** — Three errors name their real cause
+  `bug · agent · normal` · small
+  Losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds; one test each.
+- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
+  `bug · agent · normal` · small
+  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
+- **SEC-DEPS** — Advisories in the libraries that read your files are checked in CI
+  `chore · agent · normal` · small
+  The daemon has five runtime dependencies and all of them parse files that arrive by sync (`sharp`, `libheif-js`, `exifr`, `music-metadata`, `ffmpeg-static`). Accept: CI runs `npm audit --omit=dev --audit-level=high` on the root lockfile and fails on a finding; anything it reports today is fixed or listed with its reason in SPEC. Build tooling, the mobile graph and the Rust graph are audited once by hand and not gated.
 
 ## In progress
 
@@ -81,9 +100,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Security
 
-- **SEC-DEPS** — Advisories in the libraries that read your files are checked in CI
-  `chore · agent · normal` · small
-  The daemon has five runtime dependencies and all of them parse files that arrive by sync (`sharp`, `libheif-js`, `exifr`, `music-metadata`, `ffmpeg-static`). Accept: CI runs `npm audit --omit=dev --audit-level=high` on the root lockfile and fails on a finding; anything it reports today is fixed or listed with its reason in SPEC. Build tooling, the mobile graph and the Rust graph are audited once by hand and not gated.
 - **SEC-RUNTIME-CHECKSUMS** — The desktop's FFmpeg is current and pinned by a committed checksum
   `chore · agent · normal` · medium
   The desktop bundles `ffmpeg-static` (FFmpeg 6.1.1, December 2023), fetched without a checksum, and runs it on every probe, thumbnail and stream; the Docker image uses the distribution's package and is not affected. Accept: a maintained static build chosen at implementation, with a committed checksum per platform that `stage-runtime.js` and `verify-bundle.js` check (a test swaps a byte and the stage fails). Node keeps its official checksum file.
@@ -99,27 +115,15 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Data safety — high
 
-- **SYNC-STAGE-SPACE** — A replica does not need its content's size free a second time
-  `bug · agent · high` · medium
-  A replica stages every new file into `objects` before the first upload, and a relink (linking an existing folder, or after a hub went back) copies and hashes every file there too. When they do not fit, the scan fails with "Insufficient free disk space" and the cycle repeats forever with nothing uploaded. Accept: a replica whose free space is below its new content uploads file by file until done, and a relink of a folder identical to the hub's stages nothing (a test counts object copies).
 - **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
   `feature · agent · high` · medium
   The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
 
 ### Reliability — normal
 
-- **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
-  `feature · agent · normal` · medium
-  The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete.
-- **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
-  `feature · agent · normal` · small
-  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart (every redeploy) during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
 - **SYNC-SCOPE-SPELLING** — A change reported under another spelling of a synced name is still scanned
   `bug · agent · normal` · medium
   Found by the review of 0.9.58. A scope is matched to index rows without regard to letter case but scanned by its exact spelling, and `SyncWork.mark` does not normalise it to NFC: with `dir` dirty beside a synced `Dir`, an edit under `Dir` waits for the six-hour reconciliation, a hub deletion of `Dir/a.txt` arriving in that cycle is recorded without removing the file (which then comes back for everyone), and on macOS a deletion under a name the watcher reports decomposed is missed until that reconciliation. Accept: `mark` stores NFC, a scope is scanned under the spelling the disk holds, and the incoming-row loop rescans a path its scope covered only by folding; tests for the three cases.
-- **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
-  `bug · agent · normal` · small
-  An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
 - **MOB-UPLOAD-BACKOFF** — A photo that cannot upload is not exported and hashed again every minute
   `bug · agent · normal` · small
   Every failure retries after a fixed minute, and the export runs before the exclusion check, so excluded or failing videos are copied and hashed three per cycle indefinitely. Accept: an excluded resource with a saved manifest is refused before `media.export`, repeated failures back off from one minute to one hour and reset on Retry or Sync now, with a test counting exports. SPEC's "back off for a minute" changes.
@@ -129,12 +133,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 - **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
   `bug · agent · normal` · medium
   The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
-- **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
-  `bug · agent · normal` · small
-  Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.
-- **UX-ERRORS** — Three errors name their real cause
-  `bug · agent · normal` · small
-  Losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds; one test each.
 - **HUB-ASYNC-APPLY** — The daemon keeps answering while it writes a large file
   `feature · agent · normal` · large
   Accepting or pulling a file hashes it, copies it and fsyncs it synchronously on the main thread; hub reselection recovers every row with no yield. A 4 GB upload freezes the hub for about a minute on a hard disk: every device shows the hub unavailable and the Compose healthcheck fails. Measure it first on Atlas-like hardware with a real film; do it only if the freeze is confirmed. Accept: with a stubbed slow copy, `/v1/status` answers within a second while a row materializes and during hub reselection, and the journal and recovery tests keep passing. SPEC "Storage" changes with it.

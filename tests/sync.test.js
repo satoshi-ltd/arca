@@ -460,7 +460,7 @@ test("a failure while deleting an unlinked copy never reaches the hub", async (t
     assert.equal(hub.engine.store.current(volume.id, name).deleted, 0, `${name} stays on the hub`);
 });
 
-test("a replica keeps an interrupted upload's capture and downloads identical files once", async (t) => {
+test("a replica's interrupted upload leaves no second copy and resumes, and identical files download once", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const a = await connect("a");
   await a.sync();
@@ -468,13 +468,15 @@ test("a replica keeps an interrupted upload's capture and downloads identical fi
   const big = Buffer.alloc(2 * 1024 * 1024, 7);
   write(a, volume, "big.bin", big);
   const upload = a.engine.upload.bind(a.engine);
-  a.engine.upload = async () => {
+  a.engine.upload = async (hash, size, stage) => {
+    stage();
     throw Object.assign(new Error("Synchronization stopped"), { syncInterrupted: true });
   };
   await a.sync();
-  assert.ok(fs.existsSync(store.blob(digest(big))), "the captured change survives the interruption");
+  assert.equal(fs.existsSync(store.blob(digest(big))), false, "an interrupted upload releases its staged copy");
   a.engine.upload = upload;
   await a.sync();
+  assert.equal(read(hub, volume, "big.bin"), big.toString());
   assert.equal(fs.existsSync(store.blob(digest(big))), false, "released once the hub accepts it");
   for (const name of ["one.bin", "two.bin", "three.bin"]) write(hub, volume, name, "same content");
   await hub.sync();
@@ -1650,9 +1652,9 @@ test("folder progress advances across empty files and snapshot totals are report
   for (const name of ["a", "b", "c"]) write(replica, volume, name, "");
   const observed = [];
   const upload = replica.engine.upload.bind(replica.engine);
-  replica.engine.upload = async (hash) => {
+  replica.engine.upload = async (...args) => {
     observed.push({ ...replica.engine.progress });
-    return upload(hash);
+    return upload(...args);
   };
   await replica.sync();
   assert.deepEqual(
@@ -1671,9 +1673,9 @@ test("folder progress counts files and bytes, never directories", async (t) => {
   write(sender, volume, "b.txt", "abc");
   const sent = [];
   const upload = sender.engine.upload.bind(sender.engine);
-  sender.engine.upload = async (hash, progress) => {
+  sender.engine.upload = async (...args) => {
     sent.push({ ...sender.engine.progress });
-    return upload(hash, progress);
+    return upload(...args);
   };
   await sender.sync();
   assert.equal(sent.length, 2);

@@ -5,8 +5,8 @@ export class Scanner {
     this.sequence = 0;
     this.pending = new Map();
   }
-  scan(volume, paths = null, skipUnreadable = false) {
-    return this.request({ volume, paths, skipUnreadable });
+  scan(volume, paths = null, skipUnreadable = false, staged = false) {
+    return this.request({ volume, paths, skipUnreadable, staged });
   }
   snapshot(volume) {
     return this.request({ operation: "snapshot", volume });

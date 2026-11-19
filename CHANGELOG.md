@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.61 — 2026-11-19
+
+- A computer or server replica no longer needs free space for a second copy of its new files: it reads them in place and copies each one only while it uploads, freeing that copy before the next. Before, a folder larger than the free space failed with "Insufficient free disk space" on every cycle and nothing uploaded.
+- Linking a folder that already holds the hub's files, or relinking after the hub went back, no longer copies every file to compare it.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.9.60 — 2026-11-19
 
 - The hub now holds a mass deletion that a phone or an older computer sends it, using the same rule as its own scans (50 files and more than a quarter of the folder within an hour): it keeps the files, sends them back to that device, and shows the folder under Needs attention with Review. Before, a phone whose app storage was emptied deleted those files everywhere.

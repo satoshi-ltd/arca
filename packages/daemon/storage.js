@@ -1229,7 +1229,8 @@ export class Store {
       fs.rmdirSync(directory);
     } catch {}
   }
-  capture(file, accepted = null, inPlace = false, quick = inPlace) {
+  capture(file, inPlace = false, quick = inPlace, staged = false) {
+    const unstaged = inPlace || (this.config.role === "replica" && !staged);
     const hashOf = quick ? quickHashFile : hashFile;
     const signature = () => {
       const s = fs.statSync(file, { bigint: true });
@@ -1250,9 +1251,7 @@ export class Store {
     if (
       cached &&
       cached.signature === before &&
-      (inPlace ||
-        cached.hash === accepted ||
-        fs.existsSync(this.blob(cached.hash)))
+      (unstaged || fs.existsSync(this.blob(cached.hash)))
     ) {
       // Coarse-timestamp filesystems can hide a same-size rewrite, so trusted content is re-hashed every one to two weeks.
       if (Date.now() - cached.verified < reverifyAfter(cached.hash))
@@ -1260,7 +1259,7 @@ export class Store {
       const object = this.blob(cached.hash);
       const intact = hashOf(file) === cached.hash || (inPlace && hashFile(file) === cached.hash);
       const unchanged = signature() === before;
-      if (intact && unchanged && (inPlace || !fs.existsSync(object) || hashOf(object) === cached.hash)) {
+      if (intact && unchanged && (unstaged || !fs.existsSync(object) || hashOf(object) === cached.hash)) {
         record([file, before, cached.hash, cached.size, Date.now()]);
         return { hash: cached.hash, size: cached.size };
       }
@@ -1269,13 +1268,8 @@ export class Store {
         fail(CONTENT_DAMAGED, 409, "CONTENT_DAMAGED");
       }
     }
-    if (quick && accepted && !inPlace && quickHashFile(file) === accepted && signature() === before) {
-      const size = fs.statSync(file).size;
-      record([file, before, accepted, size, Date.now()]);
-      return { hash: accepted, size };
-    }
-    if (inPlace) {
-      const hash = quickHashFile(file);
+    if (unstaged) {
+      const hash = hashOf(file);
       const size = fs.statSync(file).size;
       if (before !== signature())
         fail("File changed while it was read, retrying", 409, "FILE_CHANGED");
@@ -1309,6 +1303,35 @@ export class Store {
       }
       record([file, before, hash, size, Date.now()]);
       return { hash, size };
+    } finally {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    }
+  }
+  stage(v, name, hash) {
+    const object = this.blob(hash);
+    const hashOf = this.videoFolder(v.id) ? quickHashFile : hashFile;
+    if (fs.existsSync(object) && hashOf(object) === hash) return false;
+    const file = this.filePath(v, name);
+    const changed = () => fail("File changed while it was read, retrying", 409, "FILE_CHANGED");
+    let size;
+    try {
+      size = fs.statSync(file).size;
+    } catch {
+      changed();
+    }
+    requireSpace(this.objects, size);
+    const tmp = path.join(this.objects, `${crypto.randomUUID()}.tmp`);
+    try {
+      try {
+        fs.copyFileSync(file, tmp);
+      } catch (error) {
+        if (!fs.existsSync(file)) changed();
+        throw Object.assign(error, error.code === "ENOSPC" ? { status: 507, bytes: size, location: this.objects } : { status: 409 });
+      }
+      fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
+      if (hashOf(tmp) !== hash) changed();
+      fs.renameSync(tmp, object);
+      return true;
     } finally {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     }
@@ -1428,7 +1451,7 @@ export class Store {
   excluded(volume, name, directory = this.current(volume, name)?.directory) {
     return this.visibleRules(volume)(name, !!directory);
   }
-  scan(v, scopes = null, checkpoint = () => {}, skipUnreadable = false) {
+  scan(v, scopes = null, checkpoint = () => {}, skipUnreadable = false, staged = false) {
     this.assertVolume(v);
     const inPlace = this.streamOnly(v.id);
     const quick = this.videoFolder(v.id);
@@ -1493,18 +1516,8 @@ export class Store {
         result.set(name, directoryItem());
         walk(name);
       } else if (entry.isFile()) {
-        const known =
-          this.config.role === "hub" ? null : this.current(v.id, name);
         try {
-          result.set(
-            name,
-            this.capture(
-              this.filePath(v, name),
-              known && !known.deleted ? known.hash : null,
-              inPlace,
-              quick,
-            ),
-          );
+          result.set(name, this.capture(this.filePath(v, name), inPlace, quick, staged));
         } catch (error) {
           skip(name, error);
         }
