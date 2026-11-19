@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.66 — 2026-11-19
+
+- A computer or server removed from the hub while it syncs now says it no longer has access and offers to pair again, instead of "Cannot read properties of null" or "Hub 401" on each folder.
+- A server's web page no longer asks you to sign in again when the hub refuses a pairing code or this device's credential; it shows the hub's reason.
+- A device deleting on the hub where only video and audio libraries allow it is told so, instead of "Local administrator credential required".
+
+Needs: hub redeploy · desktop build · server replica redeploy
+
 ## 0.9.65 — 2026-11-19
 
 - Renaming or removing a file whose name Arca cannot sync (such as `Why not?.docx`) now clears the folder's error at the next sync, instead of up to six hours later.

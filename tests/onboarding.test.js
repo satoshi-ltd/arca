@@ -201,7 +201,7 @@ test("a hub that refuses the pairing code still gives its own reason", async (t)
   await new Promise((resolve) => hub.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => hub.close(resolve)));
   const response = await post(replica, "/v1/connect", { url: `http://127.0.0.1:${hub.address().port}`, code: "001002" });
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "Pairing code expired, already used or refused");
 });
 

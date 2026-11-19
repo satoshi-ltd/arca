@@ -107,7 +107,7 @@ export function errorNotice(
     "",
   );
   const offline = isHubUnreachable(error);
-  const revoked = /\b401\b|revoked|unauthorized|hub refused credential/i.test(
+  const revoked = /\b401\b|revoked|unauthorized|no longer has access|refused this device's credential|was removed there/i.test(
     details,
   );
   const forbidden =
@@ -126,7 +126,7 @@ export function errorNotice(
         ? "Hub unreachable"
         : `Hub ${hubName} unreachable`
       : revoked
-        ? /revoked/i.test(details)
+        ? /revoked|no longer has access|was removed there/i.test(details)
           ? "Hub access revoked"
           : "Hub sign-in required"
         : forbidden

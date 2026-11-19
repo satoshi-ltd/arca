@@ -218,7 +218,7 @@ export async function start(home, options = {}) {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(10000),
     });
-    if (response.status === 401) fail("Hub refused credential", 401);
+    if (response.status === 401) fail("The hub refused this device's credential. Pair it again with a new code.", 409, "HUB_REFUSED");
     if (!response.ok) {
       const reason = await response.json().then((body) => (typeof body?.error === "string" ? body.error.slice(0, 300) : ""), () => "");
       if (response.status >= 500) fail(reason || `The hub at ${origin} did not answer (${response.status}). Try again when it is running.`, 503);
@@ -2236,7 +2236,9 @@ export async function start(home, options = {}) {
             s.volume(b.volume);
             if (!video().isVideo(b.volume) && !music().isMusic(b.volume))
               fail("A player can only delete in video and audio libraries", 403);
-          } else requireAdmin();
+          } else if (!admin && device.role === "replica")
+            fail("A linked device can only delete in video and audio libraries; other folders delete through its own copy", 403);
+          else requireAdmin();
           return send(
             200,
             await authorizedWork(() =>
@@ -2716,8 +2718,8 @@ export async function start(home, options = {}) {
           if (identity.role !== "hub" || identity.id !== hub.id)
             fail("That address belongs to a different hub. Use replacement-hub recovery to switch existing folders.", 409);
           const catalog = await reach(remote.origin, () => hubCatalog(remote.origin, hub.token)).catch((error) => {
-            if (error.status === 401)
-              fail("The hub at that address does not accept this device: it was removed there. Pair this device again from that hub.", 401);
+            if (error.code === "HUB_REFUSED")
+              fail("The hub at that address does not accept this device: it was removed there. Pair this device again from that hub.", 409);
             throw error;
           });
           if (catalog.id !== hub.id)
@@ -2776,7 +2778,8 @@ export async function start(home, options = {}) {
             // Every answer of a hub's /pair is JSON, and its refusals carry an error: anything else is another server.
             if (!answer || (!paired.ok && (typeof answer.error !== "string" || !answer.error)))
               unreachable(remote.origin);
-            if (!paired.ok) fail(answer.error, paired.status);
+            // A hub's 401 is about the pairing code, never this browser's session.
+            if (!paired.ok) fail(answer.error, paired.status === 401 ? 409 : paired.status);
             const issued = answer;
             if (
               !/^[a-f0-9]{64}$/.test(issued.token || "") ||
@@ -2899,8 +2902,9 @@ export async function start(home, options = {}) {
     } catch (e) {
       if (!e.status && !e.syncInterrupted && e.name !== "AbortError" && !/cancelled$/.test(e.message))
         console.error(`${req.method} ${req.url?.split("?")[0]}: ${e.stack || e}`);
+      // A hub's 401 is about this device's credential, never the browser's own session.
       if (!res.headersSent)
-        send(e.status || 500, {
+        send((e.fromHub && e.status === 401 ? 409 : e.status) || 500, {
           error: e.status ? e.message : "Internal error",
           ...(e.status && typeof e.code === "string" ? { code: e.code } : {}),
         });

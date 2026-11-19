@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-19.
 
-- **UX-ERRORS** — Three errors name their real cause
-  `bug · agent · normal` · small
-  Losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds; one test each.
 - **UX-PAIR-ORPHAN** — A pairing the hub accepted is not lost when the next request fails
   `bug · agent · normal` · small
   Outside the first-run wizard, `/v1/connect` redeems the code, the hub registers the device, and when the catalog request then fails at the network level the replica drops the credential: the retry says the code was already used and the hub keeps an orphan device. Accept: the accepted credential is saved before the catalog request as the wizard already does, a retry continues without a new code, and a test fails the catalog once.

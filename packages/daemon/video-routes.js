@@ -25,7 +25,7 @@ function hubError(error) {
   if (detail && error.status) {
     try {
       const parsed = JSON.parse(detail);
-      if (typeof parsed?.error === "string") return Object.assign(new Error(parsed.error), { status: error.status });
+      if (typeof parsed?.error === "string") return Object.assign(new Error(parsed.error), { status: error.status, fromHub: error.fromHub });
     } catch {
       return error;
     }

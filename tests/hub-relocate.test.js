@@ -135,7 +135,7 @@ test("a new address is refused and nothing changes for another hub, a refused cr
   unchanged();
   const revoked = await f.copy({ home: stale }, "revoked");
   await revoked.api("/v1/revoke", { id: f.invite.id });
-  await assert.rejects(f.replica.api("/v1/hub-url", { url: revoked.url, confirmed: true }), { status: 401, message: /Pair this device again/ });
+  await assert.rejects(f.replica.api("/v1/hub-url", { url: revoked.url, confirmed: true }), { status: 409, message: /Pair this device again/ });
   unchanged();
   await assert.rejects(f.replica.api("/v1/hub-url", { url: "http://127.0.0.1:1", confirmed: true }), { status: 503, message: /Could not reach/ });
   unchanged();

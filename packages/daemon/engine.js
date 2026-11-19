@@ -64,6 +64,8 @@ import {
   CONTENT_DAMAGED,
 } from "./storage.js";
 
+export const ACCESS_LOST =
+  "This device no longer has access to the hub. Connect it again with a new pairing code.";
 const EXCLUSIVE_GRACE_MS = 1000;
 const CHUNK = 1024 * 1024;
 const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
@@ -434,8 +436,10 @@ export class Engine {
       response.status === 401 &&
       this.config.role === "replica" &&
       this.config.hub === hub
-    )
+    ) {
       this.clearHubConnection();
+      this.error = ACCESS_LOST;
+    }
     if (!response.ok) {
       const version = this.connectionVersion || 0;
       const message = await response.text().catch((error) => {
@@ -451,6 +455,7 @@ export class Engine {
       );
       throw Object.assign(error, {
         status: response.status,
+        fromHub: true,
         ...(unavailable && { hubUnavailable: true }),
       });
     }
@@ -1246,6 +1251,10 @@ export class Engine {
         await this.scanHub(undefined, { incremental });
       } else if (this.config.hub) {
         const catalog = await this.metadata("/v1/catalog");
+        if (!this.config.hub) {
+          this.error = ACCESS_LOST;
+          fail(ACCESS_LOST, 401);
+        }
         this.hubListsRetained = catalog.retainedRevisions === true;
         this.hubSendsAdded = catalog.addedDates === true;
         this.hubUnavailable = false;
@@ -1854,7 +1863,7 @@ export class Engine {
           } catch (e) {
             if (abort.signal.aborted)
               throw abort.signal.reason;
-            if (e.syncInterrupted || e.hubUnavailable) throw e;
+            if (e.syncInterrupted || e.hubUnavailable || !this.config.hub) throw e;
             this.folderStates.set(v.id, {
               state: "error",
               error: e.message,
@@ -3130,7 +3139,10 @@ export class Engine {
     }
     try {
       return await this.exclusive(async () => {
-        if (!this.config.hub) return { disconnected: true };
+        if (!this.config.hub) {
+          this.error = null;
+          return { disconnected: true };
+        }
         try {
           await this.request("/v1/leave", {
             method: "POST",
@@ -3145,6 +3157,7 @@ export class Engine {
               503,
             );
         }
+        if (!this.config.hub) this.error = null;
         return this.config.hub
           ? this.clearHubConnection()
           : { disconnected: true, filesRetained: true };

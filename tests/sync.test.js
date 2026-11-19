@@ -1465,7 +1465,7 @@ test("machine roster is read-only for replicas and excludes credentials and file
     (e) => e.status === 403,
   );
   await hub.api("/v1/revoke", { id: mac.invite.id });
-  await assert.rejects(mac.api("/v1/machines"), (e) => e.status === 401);
+  await assert.rejects(mac.api("/v1/machines"), (e) => e.status === 409);
 });
 
 test("case-colliding names identify both paths without changing files or accepted history", async (t) => {
@@ -3091,7 +3091,7 @@ test("file deletion rejects stale content, preserves history and propagates from
       { volume: volume.id, path: "delete.txt", rev: first.rev },
       replica.invite.token,
     ),
-    /administrator/,
+    /video and audio libraries/,
   );
   await hub.api("/v1/delete-file", {
     volume: volume.id,
