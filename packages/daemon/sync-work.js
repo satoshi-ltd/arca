@@ -1,10 +1,28 @@
 // Persistent local work is acknowledged only after a successful synchronization.
+import fs from "node:fs";
+import path from "node:path";
+import { validPath } from "./storage.js";
 export const RECONCILE_MS = 6 * 60 * 60 * 1000;
 export const ACTIVE_POLL_MS = 15000;
 export const IDLE_POLL_MS = 60000;
 export const IDLE_AFTER_MS = 5 * 60 * 1000;
 export const SAFETY_POLL_MS = 10 * 60 * 1000;
 export const EVENTS_FRESH_MS = 30000;
+const usable = (name) => {
+  try {
+    validPath(name);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const present = (v, name) => {
+  try {
+    return Boolean(fs.lstatSync(path.join(v.path, ...name.split("/")), { throwIfNoEntry: false }));
+  } catch {
+    return true;
+  }
+};
 export const coversExactly = (paths, name) =>
   paths === null || paths.some((p) => name === p || name.startsWith(p + "/"));
 export function covers(paths, name) {
@@ -89,9 +107,12 @@ export class SyncWork {
       entries.some((e) => e.path === "");
     const retried = paths === undefined ? [...(this.retries.get(v.id) || [])] : [];
     let scope = paths ?? (full ? null : [...entries.map((e) => e.path), ...retried]);
+    const listed = scope?.length;
+    if (scope && paths === undefined) scope = scope.filter((p) => usable(p) || present(v, p));
+    const dropped = scope?.length !== listed;
     if (scope)
       scope = scope.filter(
-        (p, i) =>
+        (p, i, scope) =>
           !scope.some(
             (other, j) =>
               j !== i && (p.startsWith(other + "/") || (other === p && j < i)),
@@ -103,6 +124,7 @@ export class SyncWork {
       acknowledge: paths === undefined,
       full: scope === null,
       retried,
+      dropped,
     };
   }
   complete(v, plan) {

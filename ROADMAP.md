@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-19.
 
-- **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
-  `bug · agent · normal` · small
-  An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
 - **UX-ERRORS** — Three errors name their real cause
   `bug · agent · normal` · small
   Losing access mid-cycle reads "Cannot read properties of null" because the cycle reads `connection.id` after it was cleared (reproduced); a 401 passed through from `/v1/connect` in a server replica's web UI is taken for the browser session ending and shows sign-in; a replica deleting where it may not gets "Local administrator credential required" instead of the library kinds. Accept: revoking during a scan reports the lost access; only a 401 about the browser's own session shows sign-in; the hub's linked branch names the library kinds; one test each.

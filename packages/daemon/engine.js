@@ -2592,6 +2592,11 @@ export class Engine {
         const plan = this.work.plan(v, incremental, paths);
         if (plan.paths?.length === 0) {
           if (!paths && !this.folderBackoff.waiting(v.id)) this.folderBackoff.succeeded(v.id);
+          if (plan.dropped) {
+            this.work.complete(v, plan);
+            if (!this.folderIssues.has(v.id))
+              this.folderStates.set(v.id, { state: "synced", lastCompleted: new Date().toISOString() });
+          }
           return;
         }
         this.folderStates.set(v.id, {

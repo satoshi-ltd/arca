@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.65 — 2026-11-19
+
+- Renaming or removing a file whose name Arca cannot sync (such as `Why not?.docx`) now clears the folder's error at the next sync, instead of up to six hours later.
+
+Needs: hub redeploy · desktop build · server replica redeploy
+
 ## 0.9.64 — 2026-11-19
 
 - While the hub scans a large folder (after a restart or in its six-hour check), other folders keep syncing: uploads never wait for the scan, and changes and phone gallery requests wait only for a scan of their own folder. Before, every device saw the hub as unavailable until the whole scan ended.
