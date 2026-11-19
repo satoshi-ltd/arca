@@ -27,11 +27,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-Approved 2026-11-19.
-
-- **SEC-DEPS** — Advisories in the libraries that read your files are checked in CI
-  `chore · agent · normal` · small
-  The daemon has five runtime dependencies and all of them parse files that arrive by sync (`sharp`, `libheif-js`, `exifr`, `music-metadata`, `ffmpeg-static`). Accept: CI runs `npm audit --omit=dev --audit-level=high` on the root lockfile and fails on a finding; anything it reports today is fixed or listed with its reason in SPEC. Build tooling, the mobile graph and the Rust graph are audited once by hand and not gated.
+_Empty._
 
 ## In progress
 
@@ -85,6 +81,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Security
 
+- **SEC-DEV-DEPS** — The test and build tooling carries no known high advisory
+  `chore · agent · low` · small
+  Found by the hand audit of SEC-DEPS (2026-11-19): `undici` 7.29.1, pulled in by `jsdom` for the DOM tests, has high advisories (fixed from 7.31); it never ships. The mobile graph has three moderate `minimatch` advisories through Expo whose only fix is a breaking Expo downgrade, and the Rust graph was not audited because `cargo-audit` is not installed. Accept: the root dev lockfile updates `undici` with `npm audit --audit-level=high` exiting 0, validated with `validate-local`; the mobile and Rust findings are recorded here with their reason.
 - **SEC-RUNTIME-CHECKSUMS** — The desktop's FFmpeg is current and pinned by a committed checksum
   `chore · agent · normal` · medium
   The desktop bundles `ffmpeg-static` (FFmpeg 6.1.1, December 2023), fetched without a checksum, and runs it on every probe, thumbnail and stream; the Docker image uses the distribution's package and is not affected. Accept: a maintained static build chosen at implementation, with a committed checksum per platform that `stage-runtime.js` and `verify-bundle.js` check (a test swaps a byte and the stage fails). Node keeps its official checksum file.

@@ -41,6 +41,9 @@ jobs:
       - run: npm ci
       - name: Check version agreement
         run: node scripts/check-release.js
+      - name: Audit runtime dependencies
+        if: runner.os == 'Linux'
+        run: npm audit --omit=dev --audit-level=high
       - name: Run tests
         run: |
           set -euo pipefail

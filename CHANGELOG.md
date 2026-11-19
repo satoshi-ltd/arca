@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.68 — 2026-11-19
+
+- Every build now checks the libraries that read your synced photos, music and videos against published security advisories, and stops before release when one has a high or critical issue.
+
 ## 0.9.67 — 2026-11-19
 
 - Connecting a computer or server to the hub survives a network hiccup right after the hub accepts the pairing code: trying again continues with the same registration instead of saying the code was already used and leaving an orphan device on the hub.

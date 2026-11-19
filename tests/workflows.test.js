@@ -317,3 +317,11 @@ test("the release note says the desktop app updates itself", () => {
   assert.match(notes, /--notes "[^"]*The desktop app updates itself from signed releases[^"]*"/);
   assert.doesNotMatch(notes, /No automatic updates/);
 });
+
+test("the Linux test job fails on a high advisory in the libraries that ship and read synced files", () => {
+  const { steps } = audit(source("publish.yml"), "publish.yml").workflow.jobs.tests;
+  const at = steps.findIndex((step) => step.run === "npm audit --omit=dev --audit-level=high");
+  assert.ok(at > steps.findIndex((step) => step.run === "npm ci"), "after the install");
+  assert.ok(at < steps.findIndex((step) => step.name === "Run tests"), "before the tests");
+  assert.equal(steps[at].if, "runner.os == 'Linux'");
+});
