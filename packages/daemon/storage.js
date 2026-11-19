@@ -145,6 +145,7 @@ export async function fingerprintMatches(file, hash) {
   return quickHashFile(file) === hash || (await hashFileAsync(file)) === hash;
 }
 const SPACE_RESERVE = 16 * 1024 * 1024;
+const SCAN_CACHE_BATCH = 256;
 function existingDirectory(location) {
   let directory = location;
   while (!fs.existsSync(directory)) {
@@ -1241,11 +1242,14 @@ export class Store {
       .prepare("SELECT * FROM scan_cache WHERE path=?")
       .get(file);
     const record = (entry) => {
-      if (this.scanCacheWrites) this.scanCacheWrites.push(entry);
-      else
-        this.db
-          .prepare("INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)")
-          .run(...entry);
+      if (!this.scanCacheWrites) return this.writeScanCache([entry]);
+      this.scanCacheWrites.push(entry);
+      if (this.scanCacheWrites.length % SCAN_CACHE_BATCH === 0)
+        try {
+          this.flushScanCache();
+        } catch {
+          /* The batch stays queued for the next boundary or the final flush. */
+        }
     };
     if (cached?.signature === before && cached.verified === DAMAGED_MARK) fail(CONTENT_DAMAGED, 409, "CONTENT_DAMAGED");
     if (
@@ -1306,6 +1310,24 @@ export class Store {
     } finally {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     }
+  }
+  writeScanCache(entries) {
+    if (!entries.length) return;
+    const insert = this.db.prepare(
+      "INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)",
+    );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const entry of entries) insert.run(...entry);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  flushScanCache() {
+    this.writeScanCache(this.scanCacheWrites);
+    this.scanCacheWrites.length = 0;
   }
   stage(v, name, hash) {
     const object = this.blob(hash);

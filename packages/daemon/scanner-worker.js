@@ -33,20 +33,18 @@ parentPort.on("message", ({ id, operation, volume, paths, skipUnreadable, staged
         });
     };
     checkpoint();
-    const scanned = store.scan(volume, paths, checkpoint, skipUnreadable, staged);
+    let scanned;
+    try {
+      scanned = store.scan(volume, paths, checkpoint, skipUnreadable, staged);
+    } catch (error) {
+      try {
+        store.flushScanCache();
+      } catch {}
+      throw error;
+    }
+    store.flushScanCache();
     result = { id, entries: [...scanned], unreadable: [...scanned.unreadable] };
     checkpoint();
-    store.db.exec("BEGIN IMMEDIATE");
-    try {
-      const insert = store.db.prepare(
-        "INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)",
-      );
-      for (const entry of store.scanCacheWrites) insert.run(...entry);
-      store.db.exec("COMMIT");
-    } catch (e) {
-      store.db.exec("ROLLBACK");
-      throw e;
-    }
   } catch (e) {
     result = {
       id,

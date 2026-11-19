@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.63 — 2026-11-19
+
+- Pausing, restarting or redeploying during the first scan of a large folder no longer throws away the hashing already done: the scan saves its progress every 256 files and when it stops, so the next scan picks up where it left off.
+
+Needs: hub redeploy · desktop build · server replica redeploy
+
 ## 0.9.62 — 2026-11-19
 
 - A computer or server replica no longer needs free space for a second copy of its new files: it reads them in place and copies each one only while it uploads, freeing that copy before the next. Before, a folder larger than the free space failed with "Insufficient free disk space" on every cycle and nothing uploaded.

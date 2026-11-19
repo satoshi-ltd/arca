@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 Approved 2026-11-19.
 
-- **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
-  `feature · agent · normal` · small
-  The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart (every redeploy) during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
 - **HUB-SCAN-LOCK** — Uploads and proposals do not wait behind a full hub scan
   `feature · agent · normal` · medium
   The hub's whole cycle, every folder, is one entry in the exclusive queue that upload blocks and `/v1/propose` also wait in, so during a restart scan or the six-hour reconciliation replicas shrink their blocks and then mark the hub unavailable. Accept: with a hub scan held open by a stubbed scanner, an upload block and a proposal for another folder complete.
