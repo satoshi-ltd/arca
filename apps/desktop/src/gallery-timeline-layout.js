@@ -109,25 +109,29 @@ export function photoFlow(ratios, { width, target, gap }) {
   });
   if (start < tiles.length)
     close(tiles.length, Math.min(target, fit(sum, space)));
-  const round = (value) => Math.round(value * 100) / 100;
   let top = 0;
   rows.forEach((row, number) => {
     if (number) top += gap;
-    row.top = round(top);
-    let left = 0;
+    row.top = top;
+    const exact = row.height;
+    row.height = Math.max(1, Math.round(exact));
+    let left = 0,
+      end = -gap;
     for (let index = row.start; index < row.end; index++) {
       const tile = tiles[index];
       if (index > row.start) left += gap;
+      const start = Math.max(Math.round(left), end + gap);
+      left += exact * tile.ratio;
       tile.row = number;
-      tile.left = round(left);
+      tile.left = start;
       tile.top = row.top;
-      tile.height = round(row.height);
-      tile.width = Math.max(1, Math.floor(row.height * tile.ratio * 100) / 100);
-      left += row.height * tile.ratio;
+      tile.height = row.height;
+      tile.width = Math.max(1, Math.min(Math.round(left), width) - start);
+      end = start + tile.width;
     }
     top += row.height;
   });
-  return { tiles, rows, height: round(top) };
+  return { tiles, rows, height: top };
 }
 const ZOOM_STOPS = ["years", "months", "small", "medium", "large"];
 const ROW_SCALES = { small: 2 / 3, medium: 1, large: 4 / 3 };

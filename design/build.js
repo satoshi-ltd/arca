@@ -50,6 +50,7 @@ const scale = () => [
   ["text-control", px(type.control.desktop)],
   ["text-control-line", px(type.control.desktopLine)],
   ["text-row", px(type.row.desktop)],
+  ["text-row-line", px(type.row.desktopLine)],
   ["text-heading", px(type.heading.desktop)],
   ["text-heading-line", px(type.heading.desktopLine)],
   ["text-title", px(type.title.desktop)],

@@ -6,7 +6,7 @@ export const type = Object.freeze({
   caption: { desktop: 11, desktopLine: 16, touch: 13, touchLine: 18 },
   body: { desktop: 12, desktopLine: 18, touch: 15, touchLine: 22 },
   control: { desktop: 13, desktopLine: 16, touch: 15, touchLine: 20 },
-  row: { desktop: 14, touch: 16, touchLine: 22 },
+  row: { desktop: 14, desktopLine: 18, touch: 16, touchLine: 22 },
   heading: { desktop: 16, desktopLine: 22, touch: 18, touchLine: 24 },
   title: { desktop: 20, desktopLine: 26, touch: 26, touchLine: 32 },
   display: { desktop: 28, desktopLine: 34, touch: 28, touchLine: 34 },

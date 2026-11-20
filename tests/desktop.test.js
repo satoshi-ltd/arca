@@ -8624,10 +8624,10 @@ test("a page whose first new photo closes the row above re-lays that whole row",
   const row = all().slice(0, 4);
   const next = all()[4];
   assert.ok(tilePx(next, "--photo-top") > tilePx(row[0], "--photo-top"), "the new photo starts the next row");
-  for (const tile of row) assert.ok(Math.abs(tilePx(tile, "--photo-height") - 184.17) < 0.05, `the closed row takes its new height, not ${tilePx(tile, "--photo-height")}`);
+  for (const tile of row) assert.equal(tilePx(tile, "--photo-height"), 184, "the closed row takes its new height, on a whole pixel");
   const last = row.at(-1);
-  assert.ok(Math.abs(tilePx(last, "--photo-left") + tilePx(last, "--photo-width") - 1000) < 0.5, "the closed row fills the wall with no blank strip");
-  assert.ok(Math.abs(tilePx(next, "--photo-top") - (tilePx(row[0], "--photo-top") + 184.17 + 6)) < 0.05, "one tile gap below, with no label room");
+  assert.equal(tilePx(last, "--photo-left") + tilePx(last, "--photo-width"), 1000, "the closed row fills the wall with no blank strip");
+  assert.equal(tilePx(next, "--photo-top"), tilePx(row[0], "--photo-top") + 184 + 6, "one tile gap below, with no label room");
 });
 
 test("On this day cards take the wall's current row height as 4:3 photos and load a preview sharp enough for it", async (t) => {

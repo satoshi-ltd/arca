@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.71 — 2026-11-20
+
+- On the desktop and the web, text lines are whole pixels in every engine: list titles and subtitles, settings hints, version and size cells, the tray's shortcut, tooltips and mono values no longer sit half a pixel off, so rows, cards and the icons beside them line up the same on macOS, Windows and Linux.
+- The photo wall lays every row and tile on whole pixels with exact 6px gaps, so edges between photos stay sharp instead of blending into a soft seam.
+- The large busy indicator's dots, the icon on an artist's small album covers and the older-version arrow on Devices now fit and sit centred in their boxes instead of blurring, overflowing or sitting low.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.9.70 — 2026-11-20
 
 - On the phone, a segmented control's highlight sits on its option instead of a point high, a gallery tile's selection circle no longer grows when the photo is selected, and an episode's watched check, download ring and a notice's icon line up with what is beside them.

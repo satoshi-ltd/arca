@@ -83,6 +83,7 @@ a:hover {
 code {
   font-family: var(--font-mono);
   font-size: var(--text-caption);
+  line-height: var(--text-caption-line);
 }
 .muted,
 .hint,
@@ -354,7 +355,7 @@ svg.lucide {
 .update-mark {
   display: flex;
   align-items: center;
-  height: calc(var(--text-body) * 1.4);
+  height: var(--text-body-line);
 }
 .update-mark > svg {
   width: 14px;
@@ -368,7 +369,7 @@ svg.lucide {
 .update-card strong {
   font-size: var(--text-body);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--text-body-line);
 }
 .update-card button {
   grid-column: 1 / -1;
@@ -400,7 +401,7 @@ svg.lucide {
 .status-card > span {
   font-size: var(--text-caption);
   color: var(--soft);
-  line-height: 1.4;
+  line-height: var(--text-caption-line);
 }
 .backup-link svg {
   width: 14px;
@@ -648,6 +649,7 @@ main {
 .row-main {
   flex: 1;
   min-width: 0;
+  line-height: var(--text-row-line);
 }
 .row-main strong {
   font-size: var(--text-row);
@@ -655,6 +657,7 @@ main {
 }
 .row-main p {
   font-size: var(--text-body);
+  line-height: var(--text-body-line);
   color: var(--soft);
   overflow-wrap: anywhere;
 }
@@ -693,6 +696,10 @@ main {
 .pill .busy-grid {
   width: var(--pill-icon);
   height: var(--pill-icon);
+}
+.pill .busy-grid,
+.favorite-state .busy-grid {
+  gap: 1.5px;
 }
 .ok {
   color: var(--okFg);
@@ -817,7 +824,9 @@ main {
   margin-bottom: var(--space-1);
 }
 .stat > strong {
+  display: block;
   font-size: var(--text-heading);
+  line-height: var(--text-heading-line);
   font-weight: 600;
 }
 .stat > p {
@@ -957,6 +966,7 @@ main {
   justify-content: center;
   gap: 2px;
   font-size: var(--text-caption);
+  line-height: var(--text-caption-line);
   color: var(--soft);
   white-space: nowrap;
 }
@@ -976,7 +986,6 @@ main {
 }
 .device-folders > .device-size {
   color: var(--mute);
-  line-height: 1.4;
 }
 .device-older,
 .device-seen-text {
@@ -1042,6 +1051,7 @@ main {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--text-body);
+    line-height: var(--text-body-line);
     color: var(--soft);
   }
   .device-cells > .device-cell,
@@ -1062,8 +1072,9 @@ main {
   }
   .device-cells .device-older svg {
     position: static;
+    margin-top: calc((var(--text-body-line) - var(--pill-icon)) / 2);
     margin-right: var(--space-1);
-    vertical-align: text-bottom;
+    vertical-align: top;
   }
   .device-cells .device-seen .status-dot {
     display: inline-block;
@@ -1357,7 +1368,7 @@ main {
 .setting-row .row-main p {
   overflow-wrap: anywhere;
   font-size: var(--text-body);
-  line-height: 1.45;
+  line-height: var(--text-body-line);
 }
 .setting-row input {
   width: 280px;
@@ -1636,7 +1647,7 @@ input + .message {
 .access-brand p {
   max-width: 100%;
   overflow-wrap: anywhere;
-  line-height: 1.6;
+  line-height: var(--text-caption-line);
   font-size: var(--text-caption);
   color: var(--soft);
 }
@@ -1655,7 +1666,7 @@ input + .message {
 }
 .access-card .session-note {
   font-size: var(--text-body);
-  line-height: 1.5;
+  line-height: var(--text-body-line);
   text-align: center;
   color: var(--mute);
   margin-top: var(--space-4);
@@ -1790,7 +1801,7 @@ h1:focus {
 }
 .onboarding-body h1 {
   font-size: var(--text-title);
-  line-height: 1.15;
+  line-height: var(--text-title-line);
 }
 .onboarding-body h1:has(.accent-text) {
   font-size: var(--text-title);
@@ -1929,7 +1940,11 @@ h1:focus {
 .role-card input {
   margin: var(--space-1) 0;
 }
+.role-card > div {
+  line-height: var(--text-body-line);
+}
 .role-card strong {
+  display: block;
   font-weight: 600;
 }
 .role-card p {
@@ -1940,7 +1955,7 @@ h1:focus {
 .busy-grid {
   display: inline-grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.5px;
+  gap: 1px;
   width: 14px;
   height: 14px;
   flex: none;
@@ -2041,9 +2056,13 @@ progress::-moz-progress-bar {
   gap: var(--space-3);
   margin: var(--space-4) 0;
 }
+.retention-stats .panel > .hint {
+  display: block;
+}
 .retention-stats .panel strong {
   display: block;
   font-size: var(--text-title);
+  line-height: var(--text-title-line);
 }
 .sr-only {
   position: absolute;
@@ -2182,7 +2201,7 @@ html:has(.tray-body) {
   background: transparent;
   overflow: hidden;
   font-size: var(--text-control);
-  line-height: 1.4;
+  line-height: var(--text-body-line);
 }
 #tray-content {
   padding: var(--space-2);
@@ -2293,7 +2312,7 @@ html:has(.tray-body) {
 }
 .tray-menu kbd {
   margin-left: auto;
-  font: var(--text-caption) var(--font-mono);
+  font: var(--text-caption) / var(--text-caption-line) var(--font-mono);
   color: var(--mute);
 }
 .tray-menu hr {
@@ -2701,7 +2720,7 @@ label {
   max-width: 260px;
   text-align: right;
   font-size: var(--text-body);
-  line-height: 1.45;
+  line-height: var(--text-body-line);
   color: var(--mute);
 }
 .device-row .row-main {
@@ -2745,7 +2764,7 @@ label {
   font-size: var(--text-body);
 }
 .role-note p {
-  line-height: 1.5;
+  line-height: var(--text-body-line);
 }
 .status-card strong.er {
   color: var(--erFg);
@@ -3191,7 +3210,7 @@ summary {
   width: 100%;
   min-height: 280px;
   resize: vertical;
-  line-height: 1.6;
+  line-height: var(--dialog-body-line);
   white-space: pre;
 }
 
@@ -4106,6 +4125,13 @@ dialog.photo-viewer {
 .photo-viewer-image.panning img {
   cursor: grabbing;
 }
+.photo-viewer-image > div:has(> p) {
+  line-height: var(--dialog-body-line);
+}
+.photo-viewer-image > div:has(> p) > svg {
+  display: block;
+  margin-bottom: var(--space-1);
+}
 .photo-viewer-image .photo-preview-placeholder {
   width: 100%;
   height: 100%;
@@ -4342,6 +4368,7 @@ dialog.photo-viewer {
 
 .photo-info-summary .mono {
   font-size: var(--text-row);
+  line-height: var(--text-row-line);
 }
 .photo-info-summary .hint,
 .photo-info-row dd .hint {
@@ -4873,7 +4900,7 @@ dialog.photo-viewer {
   color: var(--surface);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  line-height: 1.4;
+  line-height: var(--text-caption-line);
   box-shadow: var(--shadow-menu);
   pointer-events: none;
   animation: label-in var(--motion-fast) var(--motion-ease);
@@ -5051,6 +5078,7 @@ dialog.photo-viewer {
   border-bottom: 0;
 }
 .music-row > .music-cover > svg,
+.music-artist-albums > .music-cover > svg,
 .resume-card > .music-cover > svg {
   width: 18px;
   height: 18px;
@@ -5147,7 +5175,7 @@ dialog.photo-viewer {
 }
 .music-head-info h2 {
   font-size: calc(var(--text-title) * 1.5);
-  line-height: 1.15;
+  line-height: var(--text-display-line);
   letter-spacing: -0.03em;
   overflow-wrap: anywhere;
 }
@@ -5723,7 +5751,7 @@ dialog.quicklook:not([open]) {
   margin: 0;
   padding: var(--space-4);
   background: var(--surface);
-  font: var(--text-body) / 1.6 var(--font-mono);
+  font: var(--text-body) / var(--text-body-line) var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   align-self: stretch;
@@ -6458,6 +6486,7 @@ label.toggle {
   align-items: center;
   gap: var(--space-1) var(--space-3);
   font-weight: 600;
+  line-height: var(--text-control-line);
 }
 .video-badge {
   display: inline-flex;
@@ -6478,7 +6507,7 @@ label.toggle {
   overflow: hidden;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  line-height: 1.5;
+  line-height: var(--dialog-body-line);
 }
 .video-backdrop .music-head-info p.video-line {
   font-size: var(--text-body);
@@ -6640,11 +6669,15 @@ label.toggle {
   background: linear-gradient(var(--mediaFade), transparent);
   transition: opacity var(--motion-fast) var(--motion-ease);
 }
+.video-top > div {
+  line-height: var(--text-row-line);
+}
 .video-top strong {
   font-size: var(--text-row);
 }
 .video-top p {
   font-size: var(--text-body);
+  line-height: var(--text-body-line);
   color: var(--onMedia);
 }
 .video-controls {
