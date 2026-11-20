@@ -1579,10 +1579,10 @@ export function styles(
       justifyContent: "center",
     },
     switchTrack: {
-      width: 40,
-      height: 24,
+      width: g.switchWidth,
+      height: g.switchHeight,
       borderRadius: g.cardRadius,
-      padding: sp[1],
+      padding: g.switchInset,
       backgroundColor: c.line,
     },
     switchFill: {
@@ -1595,8 +1595,8 @@ export function styles(
       backgroundColor: c.accent,
     },
     switchThumb: {
-      width: 18,
-      height: 18,
+      width: g.switchKnob,
+      height: g.switchKnob,
       borderRadius: r.pill,
       backgroundColor: c.switchThumb,
     },

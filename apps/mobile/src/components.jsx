@@ -842,7 +842,7 @@ export function Toggle({
           <Animated.View
             style={[
               s.switchThumb,
-              { transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, 16] }) }] },
+              { transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, I18nManager.isRTL ? -g.switchTravel : g.switchTravel] }) }] },
             ]}
           />
         </View>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.69 — 2026-11-20
+
+- The phone's switches now keep their knob centred in the track, off and on, on Android and iOS; before, it sat a pixel low and touched the right edge when on.
+
+Needs: native build
+
 ## 0.9.68 — 2026-11-19
 
 - Every build now checks the libraries that read your synced photos, music and videos against published security advisories, and stops before release when one has a high or critical issue.

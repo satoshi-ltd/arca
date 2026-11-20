@@ -129,7 +129,16 @@ export const desktopColors = {
   },
 };
 
+const switchWidth = 40,
+  switchHeight = 24,
+  switchKnob = 18,
+  switchInset = (switchHeight - switchKnob) / 2;
 export const geometry = {
+  switchWidth,
+  switchHeight,
+  switchKnob,
+  switchInset,
+  switchTravel: switchWidth - switchKnob - 2 * switchInset,
   referenceTracking: 4,
   rowGap: space[3],
   workspaceInset: space[6],

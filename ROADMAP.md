@@ -27,7 +27,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_Empty._
+- **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
+  `bug · agent · high`
+  Requested by the maintainer after the switch's off-centre knob. Accept: each phone style whose sizes, insets, offsets or text metrics do not add up, or that differs from its design-kit class, is fixed from shared tokens with a test; what only a device can show is listed for the maintainer to check.
 
 ## In progress
 

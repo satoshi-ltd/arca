@@ -38,6 +38,11 @@
   --m-media-thumb: rgba(255, 255, 255, 0.12);
   --m-media-glyph: rgba(255, 255, 255, 0.6);
   --m-media-caption: rgba(255, 255, 255, 0.72);
+  --m-switch-width: 40px;
+  --m-switch-height: 24px;
+  --m-switch-knob: 18px;
+  --m-switch-inset: 3px;
+  --m-switch-travel: 16px;
   --m-reference-tracking: 4px;
   --m-row-gap: 12px;
   --m-workspace-inset: 24px;

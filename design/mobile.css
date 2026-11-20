@@ -1034,17 +1034,17 @@
   place-items: center;
 }
 .m-switch {
-  width: 40px;
-  height: 24px;
+  width: var(--m-switch-width);
+  height: var(--m-switch-height);
   display: flex;
-  padding: 3px;
+  padding: var(--m-switch-inset);
   border-radius: var(--m-card-radius);
   background: var(--m-line);
 }
 .m-switch::after {
   content: "";
-  width: 18px;
-  height: 18px;
+  width: var(--m-switch-knob);
+  height: var(--m-switch-knob);
   border-radius: 50%;
   background: var(--m-switch-thumb);
 }
