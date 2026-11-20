@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.70 — 2026-11-20
+
+- On the phone, a segmented control's highlight sits on its option instead of a point high, a gallery tile's selection circle no longer grows when the photo is selected, and an episode's watched check, download ring and a notice's icon line up with what is beside them.
+- Labels inside pills, chips, tabs and the pairing code are centred the same on Android as on iOS, and small icons in pills and badges, on the phone and the desktop, sit on whole pixels instead of blurring.
+
+Needs: native build · desktop build
+
 ## 0.9.69 — 2026-11-20
 
 - The phone's switches now keep their knob centred in the track, off and on, on Android and iOS; before, it sat a pixel low and touched the right edge when on.

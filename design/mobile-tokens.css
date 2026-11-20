@@ -43,6 +43,10 @@
   --m-switch-knob: 18px;
   --m-switch-inset: 3px;
   --m-switch-travel: 16px;
+  --m-segment-inset: 3px;
+  --m-photo-mark: 20px;
+  --m-photo-mark-icon: 14px;
+  --m-photo-mark-inset: 3px;
   --m-reference-tracking: 4px;
   --m-row-gap: 12px;
   --m-workspace-inset: 24px;
@@ -90,7 +94,8 @@
   --m-pill-right: 10px;
   --m-pill-y: 4px;
   --m-pill-gap: 6px;
-  --m-pill-icon: 13px;
+  --m-pill-icon: 12px;
+  --m-chip-icon: 14px;
   --m-button-small-height: 32px;
   --m-button-small-icon: 16px;
   --m-button-icon: 20px;

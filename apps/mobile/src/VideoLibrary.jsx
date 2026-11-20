@@ -132,7 +132,11 @@ function EpisodeState({ ep, row }) {
   if (!ep.watched && !glyph) return null;
   return (
     <View style={s.videoState}>
-      {ep.watched && <Icon name="check" size={20} color={c.accent} />}
+      {ep.watched && (
+        <View style={s.videoGlyph}>
+          <Icon name="check" size={20} color={c.accent} />
+        </View>
+      )}
       <DownloadGlyph glyph={glyph} />
     </View>
   );

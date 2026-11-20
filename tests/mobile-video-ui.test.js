@@ -252,8 +252,8 @@ test("a movie page offers Download in its dock and every episode row shows only 
   assert.match(dock, /\{ring \? <Ring large value=\{value\} \/> : <Icon name=\{icon\} size=\{20\} color=\{c\.ink\} \/>\}/);
   assert.match(theme, /videoDockTile: \{\s+flex: 1,\s+minWidth: 0,/, "the tiles share the column equally");
   const episode = library.slice(library.indexOf("function EpisodeState("), library.indexOf("function VideoCard("));
-  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}\s+<DownloadGlyph glyph=\{glyph\} \/>/, "the watched check stays beside one state glyph in every state");
-  assert.match(read("components.jsx"), /export function DownloadGlyph\(\{ glyph \}\) \{[\s\S]{0,120}if \(!glyph\) return null;\s+return \(\s+<View accessible accessibilityLabel=\{glyph\.label\} style=\{s\.videoGlyph\}>\s+\{glyph\.icon \? <Icon name=\{glyph\.icon\} size=\{20\} color=\{c\.mute\} \/> : <ProgressRing fraction=\{glyph\.ring\} size=\{17\} thickness=\{2\} \/>\}/);
+  assert.match(episode, /\{ep\.watched && \(\s+<View style=\{s\.videoGlyph\}>\s+<Icon name="check" size=\{20\} color=\{c\.accent\} \/>\s+<\/View>\s+\)\}\s+<DownloadGlyph glyph=\{glyph\} \/>/, "the watched check stays beside one state glyph in every state");
+  assert.match(read("components.jsx"), /export function DownloadGlyph\(\{ glyph \}\) \{[\s\S]{0,120}if \(!glyph\) return null;\s+return \(\s+<View accessible accessibilityLabel=\{glyph\.label\} style=\{s\.videoGlyph\}>\s+\{glyph\.icon \? <Icon name=\{glyph\.icon\} size=\{20\} color=\{c\.mute\} \/> : <ProgressRing fraction=\{glyph\.ring\} size=\{16\} thickness=\{2\} \/>\}/);
   assert.doesNotMatch(episode, /<Tag\b/, "no text tag for the download state");
   assert.doesNotMatch(episode, /Pressable|onPress|cancel|<Ring\b|"download"/, "an episode row holds no download or cancel button");
   assert.match(library, /<EpisodeState ep=\{ep\} row=\{row\} \/>\s+\{!!more && \([\s\S]*?\)\}\s+<\/PressScale>/);

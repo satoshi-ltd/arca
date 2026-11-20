@@ -32,7 +32,7 @@ import {
   useDesign,
 } from "./components";
 import { Pop, useMotion } from "./motion";
-import { motion } from "./design-tokens.js";
+import { geometry as g, motion } from "./design-tokens.js";
 import {
   mergeTimeline,
   monthLabel,
@@ -272,7 +272,7 @@ const Tile = memo(function Tile({
       {found && <Animated.View pointerEvents="none" style={[s.photoFound, { opacity: glow }]} />}
       {selected && (
         <Pop style={s.photoBadge}>
-          <Icon name="check" size={14} color={c.onMedia} />
+          <Icon name="check" size={g.photoMarkIcon} color={c.onMedia} />
         </Pop>
       )}
       {!selected && selecting && size >= 40 && (
@@ -285,7 +285,7 @@ const Tile = memo(function Tile({
         (item.kind === "video" || !!item.upload) && (
         <View style={s.photoBadge}>
           <Icon
-            size={14}
+            size={g.photoMarkIcon}
             color={c.onMedia}
             name={
               item.upload

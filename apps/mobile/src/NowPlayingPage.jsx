@@ -58,7 +58,7 @@ function SleepButton({ sleep, podcast, onPress }) {
   const label = sleepLabel(sleep, now, podcast);
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`Sleep timer, ${label}`} hitSlop={touchSlop(Platform.OS, g.buttonSmallHeight)} onPress={onPress} style={s.sleepChip}>
-      <Icon name="moon" size={g.pillIcon} color={c.ink} />
+      <Icon name="moon" size={g.chipIcon} color={c.ink} />
       <Text style={s.sleepChipText}>{label}</Text>
     </Pressable>
   );

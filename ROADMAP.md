@@ -29,7 +29,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 - **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
   `bug · agent · high`
-  Requested by the maintainer after the switch's off-centre knob. Accept: each phone style whose sizes, insets, offsets or text metrics do not add up, or that differs from its design-kit class, is fixed from shared tokens with a test; what only a device can show is listed for the maintainer to check.
+  Requested by the maintainer after the switch's off-centre knob. The arithmetic defects shipped in 0.9.70. Left: about 25 places where the app and the kit (`design/mobile.css`) draw the same element differently (gaps of 8 against 6, 10 or 14; the sheet header 72 against 64; the setup display title 26 against 36; the Fold's compact rail; field insets 12 against 16; the mini player's controls and Now playing's header), which wait for the maintainer to say which side wins; and the Android text centring checks only a device can confirm. Accept: each remaining difference resolved on the side the maintainer chooses, with a test, and the device checks listed for the maintainer.
 
 ## In progress
 

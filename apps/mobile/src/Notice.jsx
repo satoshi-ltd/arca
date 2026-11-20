@@ -116,17 +116,19 @@ export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled,
       accessibilityLiveRegion={info ? "polite" : "assertive"}
     >
       <Animated.View style={[s.noticeMain, pill && s.noticePillMain, { opacity: swap }]} {...swipe.panHandlers}>
-        <Icon
-          name={iconNames[item.icon] || item.icon || "check-circle"}
-          size={noticeMetrics.icon}
-          color={
-            info
-              ? c.accent
-              : item.kind === "warning"
-                ? c.warning
-                : c.danger
-          }
-        />
+        <View style={!pill && s.noticeIcon}>
+          <Icon
+            name={iconNames[item.icon] || item.icon || "check-circle"}
+            size={noticeMetrics.icon}
+            color={
+              info
+                ? c.accent
+                : item.kind === "warning"
+                  ? c.warning
+                  : c.danger
+            }
+          />
+        </View>
         <View style={pill ? s.noticePillContent : s.flex}>
           <Text style={[s.noticeTitle, pill && s.noticePillTitle]}>
             {item.title}

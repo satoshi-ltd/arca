@@ -540,8 +540,8 @@
   position: absolute;
   right: 4px;
   bottom: 4px;
-  width: 20px;
-  height: 20px;
+  width: var(--m-photo-mark);
+  height: var(--m-photo-mark);
   box-sizing: border-box;
   border: 2px solid var(--m-on-media);
   border-radius: 10px;
@@ -710,7 +710,7 @@
   position: absolute;
   right: 4px;
   bottom: 4px;
-  padding: 3px;
+  padding: var(--m-photo-mark-inset);
   border-radius: var(--m-pill-radius);
   background: var(--m-media-scrim);
   color: var(--m-on-media);
@@ -1055,7 +1055,7 @@
 .m-segments {
   display: flex;
   gap: 2px;
-  padding: 3px;
+  padding: var(--m-segment-inset);
   border-radius: var(--m-control-radius);
   background: var(--m-segment-track);
 }
@@ -2752,7 +2752,7 @@
   display: flex;
   align-items: center;
   height: var(--m-tag-height);
-  padding: 0 6px;
+  padding: 0 var(--m-tag-x);
   border-radius: var(--m-tag-radius);
   background: var(--m-media-bar);
   color: var(--m-on-media);
@@ -2845,6 +2845,11 @@
 .m-video-rating.m-video-next {
   top: 6px;
   bottom: auto;
+  height: auto;
+  padding: var(--m-pill-y) var(--m-pill-left);
+  border-radius: var(--m-pill-radius);
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
 }
 
 .m-video-languages {

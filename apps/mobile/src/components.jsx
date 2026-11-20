@@ -1283,7 +1283,7 @@ export function DownloadGlyph({ glyph }) {
   if (!glyph) return null;
   return (
     <View accessible accessibilityLabel={glyph.label} style={s.videoGlyph}>
-      {glyph.icon ? <Icon name={glyph.icon} size={20} color={c.mute} /> : <ProgressRing fraction={glyph.ring} size={17} thickness={2} />}
+      {glyph.icon ? <Icon name={glyph.icon} size={20} color={c.mute} /> : <ProgressRing fraction={glyph.ring} size={16} thickness={2} />}
     </View>
   );
 }
