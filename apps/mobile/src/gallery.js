@@ -14,6 +14,7 @@ import {
 import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
+const stageName = (item) => digest(item.id).slice(0, 32);
 export function galleryConfig(folder) {
   const config = parseGallery(folder?.gallery);
   return config?.mode !== "local" ? config : null;
@@ -176,7 +177,7 @@ export class Gallery {
       await r.store.setGallery(r.scope, volume, source);
       if (reselect) {
         await r.store.dropQueuedGallery(r.scope, volume);
-        await r.files.clearGalleryStage(r.scope, volume);
+        await this.clearStaleStage(volume, source);
         source.summary = await r.store.gallerySummary(r.scope, volume);
         source.issue = source.summary.failed
           ? "Some photos could not be uploaded. Retry to continue."
@@ -579,8 +580,11 @@ export class Gallery {
     }
     r.check();
     await r.space(0);
-    const stage = r.files.galleryStage(r.scope, folder.id);
-    await r.files.clearGalleryStage(r.scope, folder.id);
+    const name = stageName(item);
+    const stage = r.files.galleryStage(r.scope, folder.id, name);
+    const ready = await this.prepared(folder.id, item);
+    if (!ready) await this.unstage(folder.id, name);
+    let keep = false;
     try {
       r.check();
       const exported = item.picked
@@ -590,11 +594,13 @@ export class Gallery {
               uri: r.files.picked(r.scope, folder.id, item.id),
             },
           ]
-        : await this.media.export(item.id, stage).catch((error) => {
+        : ready?.exported ||
+          (await this.media.export(item.id, stage).catch((error) => {
             throw Object.assign(new Error(error.message, { cause: error }), {
               code: "SOURCE_UNAVAILABLE",
             });
-          });
+          }));
+      const staged = [];
       if (!exported.length)
         throw new Error("No original photo or video resources are available.");
       const resources = [];
@@ -610,11 +616,22 @@ export class Gallery {
           );
         if (!stat || stat.directory || stat.size > 100 * 1024 ** 3)
           throw new Error("Unsupported gallery resource size");
+        const hash =
+          ready?.exported.find((known) => known.uri === resource.uri)?.hash ||
+          (await r.files.hash(resource.uri));
+        staged.push({
+          key: resource.key,
+          name: resource.name,
+          uri: resource.uri,
+          hash,
+          size: stat.size,
+          mtime: stat.mtime ?? null,
+        });
         const prepared = {
           key: resource.key,
           name: resource.name,
           path: galleryPath(item.prefix, item, resource),
-          hash: await r.files.hash(resource.uri),
+          hash,
           size: stat.size,
           accepted: false,
         };
@@ -681,6 +698,11 @@ export class Gallery {
       item.resources = resources;
       item.state = "uploading";
       await save();
+      await this.stage(folder.id, name, {
+        id: item.id,
+        modificationTime: item.modificationTime ?? null,
+        exported: staged,
+      });
       if (await this.register(folder, item)) return;
       for (const resource of resources) {
         r.check();
@@ -721,10 +743,75 @@ export class Gallery {
       item.issue = null;
       item.retryAt = 0;
       await save();
+    } catch (error) {
+      keep =
+        ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+        isHubUnreachable(error);
+      throw error;
     } finally {
-      // Temporary exports are separate from the synchronized working copy.
-      await r.files.clearGalleryStage(r.scope, folder.id);
+      // Staging survives only a yield, an interruption or a lost hub; every other exit clears it.
+      if (!keep) await this.unstage(folder.id, name);
     }
+  }
+  stageKey(volume, scope = this.r.scope) {
+    return `galleryStage:${scope}:${volume}`;
+  }
+  async stage(volume, name, record) {
+    const records = (await this.r.store.get(this.stageKey(volume))) || {};
+    await this.r.store.set(this.stageKey(volume), { ...records, [name]: record });
+  }
+  async unstage(volume, name) {
+    const r = this.r;
+    const records = (await r.store.get(this.stageKey(volume))) || {};
+    delete records[name];
+    if (Object.keys(records).length) {
+      await r.files.clearGalleryStage(r.scope, volume, name);
+      await r.store.set(this.stageKey(volume), records);
+    } else {
+      await r.files.clearGalleryStage(r.scope, volume);
+      await r.store.set(this.stageKey(volume), null);
+    }
+  }
+  async prepared(volume, item) {
+    const r = this.r;
+    const record = ((await r.store.get(this.stageKey(volume))) || {})[stageName(item)];
+    if (
+      record?.id !== item.id ||
+      record.modificationTime !== (item.modificationTime ?? null) ||
+      !record.exported?.length
+    )
+      return null;
+    for (const known of record.exported) {
+      const stat = await r.files.stat(known.uri);
+      if (
+        !stat ||
+        stat.directory ||
+        stat.size !== known.size ||
+        (stat.mtime ?? null) !== known.mtime
+      )
+        return null;
+    }
+    if (!item.picked && (await this.gone(item.id))) return null;
+    return record;
+  }
+  async clearStaleStage(volume, source) {
+    const r = this.r;
+    const records = (await r.store.get(this.stageKey(volume))) || {};
+    const kept = {};
+    for (const [name, record] of Object.entries(records)) {
+      const owner = await r.store.galleryAsset(r.scope, volume, record.id);
+      if (
+        owner &&
+        !["accepted", "removed", "unavailable"].includes(owner.state) &&
+        (source?.enabled || owner.manual || owner.picked)
+      )
+        kept[name] = record;
+    }
+    if (!Object.keys(kept).length) await r.files.clearGalleryStage(r.scope, volume);
+    else
+      for (const name of await r.files.galleryStaged(r.scope, volume))
+        if (!(name in kept)) await r.files.clearGalleryStage(r.scope, volume, name);
+    await r.store.set(this.stageKey(volume), Object.keys(kept).length ? kept : null);
   }
   async sendManual(folder, source) {
     const r = this.r;
@@ -789,7 +876,7 @@ export class Gallery {
       }
       await r.store.forgetCorruptPick(r.scope, folder.id, id);
     }
-    await r.files.clearGalleryStage(r.scope, folder.id);
+    await this.clearStaleStage(folder.id, source);
     const catalog = r.client.state().catalog;
     if (
       catalog?.gallery &&
@@ -904,6 +991,16 @@ export class Gallery {
               name: asset.filename,
               prefix: source.prefix,
               state: "pending",
+            });
+          } else if (
+            !["accepted", "removed", "unavailable"].includes(known.state) &&
+            Number.isFinite(asset.modificationTime) &&
+            Number.isFinite(known.modificationTime) &&
+            asset.modificationTime !== known.modificationTime
+          ) {
+            await r.store.putGalleryAsset(r.scope, folder.id, {
+              ...known,
+              modificationTime: asset.modificationTime,
             });
           } else if (known.state === "unavailable") {
             await r.store.putGalleryAsset(r.scope, folder.id, {

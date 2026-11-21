@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.72 — 2026-11-21
+
+- A photo or video upload from the phone's library that is cut off by its turn, interrupted or loses the hub now resumes from the copy it already exported instead of exporting and hashing the original again on every turn, so a large video no longer keeps Photos "Incomplete" for hours while the other folders wait behind it.
+
+Needs: native build
+
 ## 0.9.71 — 2026-11-20
 
 - On the desktop and the web, text lines are whole pixels in every engine: list titles and subtitles, settings hints, version and size cells, the tray's shortcut, tooltips and mono values no longer sit half a pixel off, so rows, cards and the icons beside them line up the same on macOS, Windows and Linux.

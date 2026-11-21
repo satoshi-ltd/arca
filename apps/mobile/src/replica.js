@@ -183,7 +183,7 @@ export class Replica {
     if (this.files.clearGalleryStage && this.scope)
       for (const folder of await this.store.folders(this.scope))
         if (galleryConfig(folder)) {
-          await this.files.clearGalleryStage(this.scope, folder.id);
+          await this.gallery.clearStaleStage(folder.id, galleryConfig(folder));
           const source = galleryConfig(folder);
           if (source.mode === "damaged") continue;
           if (/^(Request cancelled|Sync paused)$/.test(source.issue || ""))
@@ -501,6 +501,7 @@ export class Replica {
       await this.store.set(this.inventoryKey(id), 0);
       if (this.files.clearGalleryStage)
         await this.files.clearGalleryStage(scope, id);
+      await this.store.set(this.gallery.stageKey(id, scope), null);
       await this.files.removeFolder(scope, id);
       await this.store.forgetFolder(scope, id);
       await this.store.set(`journal:${scope}:${id}`, []);

@@ -107,6 +107,7 @@ async function fixture(t, { timeout } = {}) {
         ? {
             size: fs.statSync(p).isDirectory() ? 0 : fs.statSync(p).size,
             directory: fs.statSync(p).isDirectory(),
+            mtime: fs.statSync(p).mtimeMs,
           }
         : null,
     free: async () => 1e12,
@@ -1425,10 +1426,19 @@ async function galleryFixture(
 ) {
   const f = await fixture(t);
   const { replica: r, files, store } = f;
-  files.galleryStage = (s, v) =>
-    path.join(f.root, "mobile", s, "gallery-stage", v);
-  files.clearGalleryStage = async (s, v) =>
-    fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  files.galleryStage = (s, v, a) =>
+    path.join(f.root, "mobile", s, "gallery-stage", a ? `${v}-${a}` : v);
+  files.galleryStaged = (s, v) => {
+    const parent = path.dirname(files.galleryStage(s, v));
+    return fs.existsSync(parent)
+      ? fs.readdirSync(parent).filter((name) => name.startsWith(`${v}-`)).map((name) => name.slice(v.length + 1))
+      : [];
+  };
+  files.clearGalleryStage = async (s, v, a) => {
+    for (const name of a ? [a] : [null, ...files.galleryStaged(s, v)])
+      fs.rmSync(files.galleryStage(s, v, name), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  };
+  const staging = (s, v) => fs.existsSync(files.galleryStage(s, v)) || files.galleryStaged(s, v).length > 0;
   files.picked = (s, v, k) => {
     for (const part of [s, v, k])
       if (typeof part !== "string" || !/^[a-zA-Z0-9-]+$/.test(part)) throw new Error("Invalid folder identity");
@@ -1453,6 +1463,7 @@ async function galleryFixture(
       };
     },
     export: async (id, destination) => {
+      assert.equal(path.basename(path.dirname(destination)), "gallery-stage", "the native exporters refuse any other parent");
       exports.push(id);
       if (!data.has(id)) throw new Error("Photo no longer accessible");
       fs.mkdirSync(destination, { recursive: true });
@@ -1479,7 +1490,7 @@ async function galleryFixture(
   const uploaded = async () =>
     (await store.galleryAsset(r.scope, f.volume.id, assets[0].id))
       ?.resources?.[0];
-  return { ...f, assets, data, media, exports, enable, uploaded };
+  return { ...f, assets, data, media, exports, enable, uploaded, staging: () => staging(r.scope, f.volume.id) };
 }
 
 test("the phone reports its folders before it links an album, so the hub accepts the link at once", async (t) => {
@@ -1538,7 +1549,7 @@ test("linked album uploads originals and keeps the complete shared folder locall
     fs.readFileSync(path.join(volume.path, item.path)),
     f.data.get("photo-1"),
   );
-  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  assert.equal(f.staging(), false);
   assert.deepEqual(
     fs.readFileSync(files.work(r.scope, volume.id, item.path)),
     f.data.get("photo-1"),
@@ -1852,7 +1863,7 @@ test("gallery retries lost acceptance after remote deletion without reacquiring 
   assert.equal(fs.existsSync(path.join(volume.path, resource.path)), false);
 });
 
-test("gallery pauses, resumes a partial upload, cleans staging and does not block healthy folders", async (t) => {
+test("gallery pauses, resumes a partial upload from its kept export, cleans staging once accepted and does not block healthy folders", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, client, files, volume } = f;
   f.data.set("photo-1", crypto.randomBytes(CHUNK * 2 + 23));
@@ -1869,8 +1880,11 @@ test("gallery pauses, resumes a partial upload, cleans staging and does not bloc
   };
   await r.sync();
   assert.equal(r.error, null);
-  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  assert.equal(f.staging(), true, "an interrupted upload keeps its export");
+  const exported = f.exports.length;
   await sync(f);
+  assert.equal(f.exports.length, exported, "and resumes from it");
+  assert.equal(f.staging(), false);
   const resource = await f.uploaded();
   assert.deepEqual(
     fs.readFileSync(path.join(volume.path, resource.path)),
@@ -2004,6 +2018,101 @@ test("album uploads get their turn before the download and a yield there still l
   await r.sync();
   assert.deepEqual(order.slice(0, 2), ["uploads", "download"]);
   assert.equal(r.error, null);
+});
+
+test("a Photos upload cut off by its turn resumes from the same export without exporting or hashing the original again", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, files, store, volume } = f;
+  const stage = files.galleryStage(r.scope, volume.id);
+  const hash = files.hash.bind(files);
+  let stagedHashes = 0;
+  files.hash = async (uri) => {
+    if (uri.startsWith(stage)) stagedHashes++;
+    return hash(uri);
+  };
+  const check = r.checkTransferTurn.bind(r);
+  let yields = 0;
+  r.checkTransferTurn = () => {
+    if (r.syncingVolume === volume.id && yields < 2) {
+      yields++;
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    }
+    return check();
+  };
+  await f.enable();
+  await sync(f);
+  await sync(f);
+  assert.equal(yields, 2, "the upload was cut off twice");
+  assert.ok((await f.uploaded())?.accepted);
+  assert.deepEqual(f.exports, ["photo-1"]);
+  assert.equal(stagedHashes, 1);
+  assert.equal(f.staging(), false, "the export is removed once the upload is accepted");
+  assert.equal(await store.get(r.gallery.stageKey(volume.id)), null);
+});
+
+test("a kept Photos export survives other photos' turns and is dropped when it changed, left Photos or uploads were turned off", async (t) => {
+  const assets = ["photo-1", "photo-2"].map((id, i) => ({ id, filename: `IMG_${i}.HEIC`, creationTime: 1750000000000 }));
+  const f = await galleryFixture(t, assets),
+    { replica: r, files, store, volume } = f;
+  f.media.exists = async (id) => f.data.has(id);
+  await r.gallery.configure(volume.id, { albums: [{ id: "camera", title: "Camera" }], videos: true }, true);
+  await r.gallery.setEnabled(volume.id, false);
+  for (const { id, filename } of assets)
+    await store.putGalleryAsset(r.scope, volume.id, { id, name: filename, prefix: "Machine-test", state: "pending", retryAt: 0, creationTime: 1750000000000 });
+  const folder = await store.folder(r.scope, volume.id);
+  const policy = await r.gallery.policy(volume.id);
+  const check = r.checkTransferTurn.bind(r);
+  const cut = () => {
+    r.checkTransferTurn = () => {
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    };
+  };
+  const send = async (id) => r.gallery.send(folder, await store.galleryAsset(r.scope, volume.id, id), policy);
+  const yields = async (id) => assert.rejects(send(id), (error) => error.code === "SYNC_YIELD");
+  const staged = (id) => f.exports.filter((exported) => exported === id).length;
+
+  cut();
+  await yields("photo-1");
+  await yields("photo-2");
+  r.checkTransferTurn = check;
+  await send("photo-1");
+  await send("photo-2");
+  assert.equal(staged("photo-1"), 1, "another photo's turn keeps the first export");
+  assert.equal(staged("photo-2"), 1);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "accepted");
+
+  await store.putGalleryAsset(r.scope, volume.id, { id: "photo-3", name: "c.HEIC", prefix: "Machine-test", state: "pending", retryAt: 0 });
+  f.data.set("photo-3", Buffer.from("third"));
+  assets.push({ id: "photo-3", filename: "c.HEIC" });
+  cut();
+  await yields("photo-3");
+  const [kept] = files.galleryStaged(r.scope, volume.id);
+  fs.writeFileSync(path.join(files.galleryStage(r.scope, volume.id, kept), "original"), "THIRD");
+  r.checkTransferTurn = check;
+  await send("photo-3");
+  assert.equal(staged("photo-3"), 2, "a staged copy that changed is exported again");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-3")).resources[0].hash, crypto.createHash("sha256").update("third").digest("hex"));
+
+  await store.putGalleryAsset(r.scope, volume.id, { id: "photo-4", name: "d.HEIC", prefix: "Machine-test", state: "pending", retryAt: 0 });
+  f.data.set("photo-4", Buffer.from("deleted soon"));
+  assets.push({ id: "photo-4", filename: "d.HEIC" });
+  cut();
+  await yields("photo-4");
+  f.data.delete("photo-4");
+  r.checkTransferTurn = check;
+  await assert.rejects(send("photo-4"), (error) => error.code === "SOURCE_UNAVAILABLE", "a photo deleted from Photos is not uploaded from its kept export");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-4")).resources.some((resource) => resource.accepted), false);
+
+  await store.putGalleryAsset(r.scope, volume.id, { id: "photo-5", name: "e.HEIC", prefix: "Machine-test", state: "pending", retryAt: 0 });
+  f.data.set("photo-5", Buffer.from("off"));
+  assets.push({ id: "photo-5", filename: "e.HEIC" });
+  cut();
+  await yields("photo-5");
+  r.checkTransferTurn = check;
+  assert.equal(files.galleryStaged(r.scope, volume.id).length, 1);
+  await r.sync();
+  assert.equal(f.staging(), false, "with uploads off, no export stays on the phone");
+  assert.equal(await store.get(r.gallery.stageKey(volume.id)), null);
 });
 
 test("a failing album upload pass still downloads the shared folder and reports the upload failure", async (t) => {
@@ -2214,7 +2323,7 @@ test("gallery handles limited access, low storage, changed originals and destroy
   assert.equal(r.error, null);
   assert.match((await f.store.gallery(r.scope, volume.id)).issue, /Original changed/);
   assert.equal((await store.gallery(r.scope, volume.id)).limited, true);
-  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  assert.equal(f.staging(), false);
   await r.destroy(true);
   assert.equal((await store.gallerySummary(null, volume.id)).discovered, 0);
   assert.equal(f.data.get("photo-1").toString(), "new original");

@@ -23,11 +23,30 @@ export const files = {
     const directory = new Directory(Paths.cache, "arca-gallery");
     if (directory.exists) directory.delete();
   },
-  galleryStage: (scope, volume) =>
-    new Directory(root, id(scope), "gallery-stage", id(volume)).uri,
-  async clearGalleryStage(scope, volume) {
-    const directory = new Directory(this.galleryStage(scope, volume));
-    if (directory.exists) directory.delete();
+  // The native exporters only accept a destination whose parent is named gallery-stage.
+  galleryStage: (scope, volume, asset) =>
+    new Directory(
+      root,
+      id(scope),
+      "gallery-stage",
+      asset ? `${id(volume)}-${id(asset)}` : id(volume),
+    ).uri,
+  galleryStaged(scope, volume) {
+    const directory = new Directory(root, id(scope), "gallery-stage");
+    const prefix = `${id(volume)}-`;
+    return directory.exists
+      ? directory
+          .list()
+          .map((entry) => entry.name)
+          .filter((name) => name.startsWith(prefix))
+          .map((name) => name.slice(prefix.length))
+      : [];
+  },
+  async clearGalleryStage(scope, volume, asset) {
+    for (const name of asset ? [asset] : [null, ...this.galleryStaged(scope, volume)]) {
+      const directory = new Directory(this.galleryStage(scope, volume, name));
+      if (directory.exists) directory.delete();
+    }
   },
   picked: (scope, volume, key) =>
     new File(root, id(scope), "picked", id(volume), id(key)).uri,

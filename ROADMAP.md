@@ -27,6 +27,10 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **MOB-SYNC-STARVATION** — A stuck Photos folder never stops the phone's other folders from syncing
+  `bug · agent · high`
+  Reported by the maintainer on the Fold: Photos stays "Incomplete" and the other folders stop syncing. 0.9.72 stops each upload turn from re-exporting and re-hashing the original, the likeliest cause. Left: a cycle restarts at the first folder (alphabetical) and ends early on a hub-unreachable or interrupted error raised inside any folder, so a folder that keeps failing that way starves every folder after it; confirm with a trace from a development build on the Fold. Accept: with one folder that fails, times out or loops every cycle, every other selected folder still completes a sync, with a test.
+
 - **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
   `bug · agent · high`
   Requested by the maintainer after the switch's off-centre knob. The arithmetic defects shipped in 0.9.70. Left: about 25 places where the app and the kit (`design/mobile.css`) draw the same element differently (gaps of 8 against 6, 10 or 14; the sheet header 72 against 64; the setup display title 26 against 36; the Fold's compact rail; field insets 12 against 16; the mini player's controls and Now playing's header), which wait for the maintainer to say which side wins; and the Android text centring checks only a device can confirm. Accept: each remaining difference resolved on the side the maintainer chooses, with a test, and the device checks listed for the maintainer.
@@ -107,6 +111,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Reliability — normal
 
+- **PHOTOS-DB-LOCKED** — A hub answer never fails on a briefly locked photo index
+  `bug · agent · normal` · small
+  Seen once on the Windows runner (run 44690626609, passed on rerun): `tests/proposed-deletes.test.js` "another device's edit of a held file, based on the revision before the hold, lands without a conflict copy" failed with `Photos: Hub 409: {"error":"Photos: database is locked"}`. A slow disk can make the photo index's SQLite busy long enough for a sync request to fail, which a real hub on a busy disk could hit too. Accept: with the photo index held by a second writer for longer than today's wait, the request waits and completes instead of answering 409.
 - **HUB-SCAN-SAME-FOLDER** — A proposal does not wait for a full scan of its own folder
   `feature · agent · normal` · medium
   Found by the review of HUB-SCAN-LOCK. A hub folder's scan holds that folder, so during a restart scan or the six-hour reconciliation of a large folder its own proposals, and the phones' gallery requests for it, wait for the whole scan and replicas can still mark the hub unavailable for that folder. A control that waited a second also holds back new folder work behind that scan. Accept: with a full scan of a folder held open by a stubbed scanner, a proposal for a path in that folder completes, and the scan never records a deletion or an older version over what the proposal committed.
