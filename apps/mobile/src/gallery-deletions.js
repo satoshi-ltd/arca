@@ -8,11 +8,12 @@ export class GalleryDeletions {
   }
   async delete(volume, item) {
     const r = this.r;
-    if (r.active || r.busy || r.importing || r.removing || r.picking)
-      throw new Error("Wait for synchronization to finish.");
+    if (r.importing || r.removing || r.picking)
+      throw new Error("Wait for the current operation to finish.");
     r.importing = true;
     const rows = [];
     try {
+      r.stop();
       await r.requireActiveReplica();
       if (!r.client.state().catalog?.galleryDeletion)
         throw new Error("Update the hub to delete shared photos.");
@@ -42,6 +43,7 @@ export class GalleryDeletions {
       error.deletedRows = rows;
       throw error;
     } finally {
+      await r.settle().catch(() => {});
       r.importing = false;
       r.changed();
     }

@@ -1,4 +1,4 @@
-import { nativeGallerySources, galleryDisplay } from "./gallery-display";
+import { nativeGallerySources, galleryDisplay, hidePhotos, settleHiddenPhotos, viewerWithout } from "./gallery-display";
 import { HUB_ONLY_REASON } from "../../desktop/src/notice-contract.js";
 import React, {
   memo,
@@ -431,6 +431,7 @@ export function FolderGallery({
   const loadedRef = useRef([]);
   const [viewer, setViewer] = useState(null);
   const [hidden, setHidden] = useState(() => new Map());
+  const deleting = useRef(new Map());
   const [width, setWidth] = useState(0);
   const [range, setRange] = useState({ top: -800, bottom: 2400 });
   const bucket = useRef(null);
@@ -1428,28 +1429,29 @@ export function FolderGallery({
   }, [selection.length, selectionFull]);
   useEffect(() => () => onSelection?.(null), []);
   async function deleteItems(item) {
-    const result = await remove(item);
+    const chosen = Array.isArray(item) ? item : [item];
+    let confirmed = false;
+    const result = await remove(item, () => {
+      confirmed = true;
+      for (const photo of chosen)
+        deleting.current.set(photo.path, (deleting.current.get(photo.path) || 0) + 1);
+      setHidden((value) => hidePhotos(value, chosen));
+      setViewer((value) => viewerWithout(value, chosen));
+    });
+    if (confirmed)
+      for (const photo of chosen) {
+        const left = deleting.current.get(photo.path) - 1;
+        if (left) deleting.current.set(photo.path, left);
+        else deleting.current.delete(photo.path);
+      }
+    const pending = new Set(deleting.current.keys());
+    setHidden((value) => settleHiddenPhotos(value, chosen, result || [], pending));
     if (!result) return;
     setSelection((items) =>
       items.filter((photo) => !result.some((row) => row.path === photo.path)),
     );
-    setHidden(
-      (value) =>
-        new Map([...value, ...result.map((row) => [row.path, row.rev])]),
-    );
     for (const row of result) void hub.forget(row.path).catch(() => {});
-    setViewer((value) => {
-      if (!value) return null;
-      const remaining = value.items.filter(
-        (photo) => !result.some((row) => row.path === photo.path),
-      );
-      return remaining.length
-        ? {
-            items: remaining,
-            index: Math.min(value.index, remaining.length - 1),
-          }
-        : null;
-    });
+    setViewer((value) => viewerWithout(value, result));
   }
   deleteRef.current = deleteItems;
   return (

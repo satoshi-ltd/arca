@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.73 — 2026-11-22
+
+- Deleting shared photos on the phone no longer fails with "Wait for synchronization to finish" while a long download is running: the delete stops that sync, the photos disappear as soon as you confirm, and any the hub did not delete come back.
+- Tapping around while the phone syncs no longer turns the running sync into a full rescan of every folder; only Sync now does, so a busy phone stops spending a minute re-walking large folders after each action.
+
+Needs: native build
+
 ## 0.9.72 — 2026-11-21
 
 - A photo or video upload from the phone's library that is cut off by its turn, interrupted or loses the hub now resumes from the copy it already exported instead of exporting and hashing the original again on every turn, so a large video no longer keeps Photos "Incomplete" for hours while the other folders wait behind it.

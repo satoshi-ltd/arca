@@ -4,7 +4,10 @@ import fs from "node:fs";
 import { Gallery } from "../apps/mobile/src/gallery.js";
 import {
   galleryDisplay,
+  hidePhotos,
   nativeGallerySources,
+  settleHiddenPhotos,
+  viewerWithout,
 } from "../apps/mobile/src/gallery-display.js";
 
 test("replicas show only files on this phone, falling back to a local derivative, never the hub", async () => {
@@ -222,4 +225,25 @@ test("refreshing Photo uploads only reads the photo permission, so Android never
   await gallery.options(false, false);
   await gallery.options(true);
   assert.deepEqual(asked, [false, true]);
+});
+
+test("a confirmed delete hides photos at once, keeps only what the hub deleted and never un-hides a photo another delete still holds", () => {
+  const a = { path: "a.jpg", rev: 3 },
+    b = { path: "b.jpg", rev: 5 },
+    c = { path: "c.jpg", rev: 7 };
+  const hidden = hidePhotos(new Map(), [a, b]);
+  assert.deepEqual([...hidden], [["a.jpg", 3], ["b.jpg", 5]]);
+  const partial = settleHiddenPhotos(hidden, [a, b], [{ path: "a.jpg", rev: 4 }], new Set());
+  assert.deepEqual([...partial], [["a.jpg", 4]], "the hub's tombstone replaces the hide and the refused photo comes back");
+  const paired = settleHiddenPhotos(hidden, [a], [{ path: "a.jpg", rev: 4 }, { path: "a.mov", rev: 2 }], new Set());
+  assert.equal(paired.get("a.mov"), 2, "a paired resource the hub deleted with it is hidden too");
+  const failed = settleHiddenPhotos(hidePhotos(new Map(), [c]), [c], [], new Set());
+  assert.equal(failed.size, 0);
+  const overlapping = settleHiddenPhotos(hidePhotos(new Map(), [c]), [c], [], new Set(["c.jpg"]));
+  assert.deepEqual([...overlapping], [["c.jpg", 7]], "a second delete that was cancelled leaves the first one's hide");
+  const newer = settleHiddenPhotos(new Map([["a.jpg", 9]]), [a], [], new Set());
+  assert.deepEqual([...newer], [["a.jpg", 9]], "a hide from a later version is not touched");
+  assert.deepEqual(viewerWithout({ items: [a, b, c], index: 2 }, [c]), { items: [a, b], index: 1 });
+  assert.equal(viewerWithout({ items: [a], index: 0 }, [a]), null);
+  assert.equal(viewerWithout(null, [a]), null);
 });

@@ -4593,6 +4593,60 @@ test("shared gallery deletion fails offline without queuing, suppresses rescans 
   );
 });
 
+test("a plain request that joins a run's last cycle gets one more cycle, not a full inventory", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  const cycle = r.cycle.bind(r);
+  let forced = [];
+  let join = false;
+  r.cycle = async () => {
+    forced.push(r.force);
+    await cycle();
+    if (join && forced.length === 1) void r.sync();
+  };
+  await r.sync();
+  forced = [];
+  await r.sync();
+  const alone = forced.length;
+  forced = [];
+  join = true;
+  await r.sync();
+  assert.equal(forced.length, alone + 1, "the joined request ran in the same run");
+  assert.equal(forced.at(-1), false);
+});
+
+test("deleting shared photos during a long sync stops that sync instead of refusing, and a join never escalates to a full scan", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  const pull = r.pull.bind(r);
+  let entered;
+  const pulling = new Promise((resolve) => (entered = resolve));
+  r.pull = async (folder) => {
+    entered();
+    const signal = r.syncAbort.signal;
+    await new Promise((resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason));
+    });
+    return pull(folder);
+  };
+  const running = r.sync();
+  await pulling;
+  r.forceNext = false;
+  void r.sync();
+  assert.equal(r.forceNext, false, "a plain request joining a run does not turn it into a full scan");
+  const removed = await r.galleryDeletions.delete(f.volume.id, uploaded).finally(() => r.stop());
+  assert.ok(removed.some((row) => row.path === uploaded.path));
+  await running;
+  assert.equal(r.active, null);
+  assert.equal(f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted, 1);
+  r.pull = pull;
+  await sync(f);
+});
+
 test("another replica can delete a source photo without hub administration and without any download", async (t) => {
   const f = await galleryFixture(t),
     r = f.replica;

@@ -58,3 +58,25 @@ export async function galleryDisplay(
     )
   );
 }
+export const hidePhotos = (hidden, photos) =>
+  new Map([...hidden, ...photos.map((photo) => [photo.path, photo.rev])]);
+export function settleHiddenPhotos(hidden, photos, deleted, pending) {
+  const next = new Map(hidden);
+  for (const photo of photos) {
+    const row = (deleted || []).find((item) => item.path === photo.path);
+    if (row) next.set(photo.path, row.rev);
+    else if (!pending.has(photo.path) && next.get(photo.path) === photo.rev)
+      next.delete(photo.path);
+  }
+  for (const row of deleted || []) next.set(row.path, row.rev);
+  return next;
+}
+export function viewerWithout(viewer, photos) {
+  if (!viewer) return null;
+  const remaining = viewer.items.filter(
+    (photo) => !photos.some((gone) => gone.path === photo.path),
+  );
+  return remaining.length
+    ? { items: remaining, index: Math.min(viewer.index, remaining.length - 1) }
+    : null;
+}

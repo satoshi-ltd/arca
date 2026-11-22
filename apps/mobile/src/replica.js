@@ -1543,10 +1543,9 @@ export class Replica {
     if (this.active) {
       if (this.stopped && !this.paused)
         return this.active.then(() => this.sync(force, { scheduled }));
-      if (force || !scheduled) {
-        this.forceNext = true;
-        this.retryNow?.();
-      }
+      if (force) this.forceNext = true;
+      else if (!scheduled) this.runAgain = true;
+      if (force || !scheduled) this.retryNow?.();
       return this.active;
     }
     this.lastScheduledAt = Date.now();
@@ -1555,6 +1554,7 @@ export class Replica {
     this.force =
       force || this.forceNext || Date.now() - this.lastFullScan > FULL_SCAN_MS;
     this.forceNext = false;
+    this.runAgain = false;
     this.syncAbort = new AbortController();
     this.lastChangeAt = Date.now();
     const watchdog = setInterval(() => {
@@ -1570,6 +1570,8 @@ export class Replica {
           this.continuing = true;
           this.force = this.forceNext;
           this.forceNext = false;
+          const again = this.runAgain;
+          this.runAgain = false;
           if (this.stopped || this.paused) break;
           if (
             this.hubUnavailable &&
@@ -1585,6 +1587,7 @@ export class Replica {
           attempt = 0;
           if (
             !this.force &&
+            !again &&
             !(this.transfer.active && this.moreGalleryWork && !this.error) &&
             !this.moreFolderWork
           )

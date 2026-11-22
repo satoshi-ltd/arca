@@ -2059,12 +2059,13 @@ export default function App() {
       volume: folder.id,
     });
   }
-  function deleteMedia(item) {
+  function deleteMedia(item, onConfirm) {
     return new Promise((resolve) =>
       confirm(
         confirmCopy.deletePhotos(item),
-        () =>
-          run(
+        () => {
+          onConfirm?.();
+          return run(
             async () => {
               try {
                 resolve(
@@ -2079,7 +2080,8 @@ export default function App() {
               }
             },
             { success: "Photos deleted", hubOnly: true },
-          ).then(() => resolve(false)),
+          ).then(() => resolve(false));
+        },
         () => resolve(false),
       ),
     );

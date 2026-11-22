@@ -825,7 +825,7 @@ test("a run that shows no progress for ten minutes gives up and frees the transf
   assert.equal(stopped, 1, "real transfer progress keeps it going");
 });
 
-test("the inventory time survives a cold start and a manual call joining a scheduled run asks for a scan", async (t) => {
+test("the inventory time survives a cold start and only Sync now joining a run asks for a scan", async (t) => {
   const f = await phone(t);
   fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
   await f.select();
@@ -841,7 +841,10 @@ test("the inventory time survives a cold start and a manual call joining a sched
   f.replica.active = new Promise(() => {});
   f.replica.stopped = false;
   void f.replica.sync();
-  assert.equal(f.replica.forceNext, true, "an unscheduled call that finds a run asks the run for one more full inventory");
+  assert.equal(f.replica.forceNext, false, "an unscheduled call that finds a run does not turn it into a full inventory");
+  assert.equal(f.replica.runAgain, true, "but it does get one more cycle");
+  void f.replica.sync(true);
+  assert.equal(f.replica.forceNext, true, "Sync now does");
   f.replica.forceNext = false;
   void f.replica.sync(false, { scheduled: true });
   assert.equal(f.replica.forceNext, false, "a scheduled call does not");
