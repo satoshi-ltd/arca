@@ -356,6 +356,39 @@ async function writeSynced(replica, notify = false) {
   if (notify && changed && replica.files.musicLibrary) await replica.player.reload?.(replica.files.musicLibrary());
 }
 
+async function playlistMarks(replica, id) {
+  const directory = replica.files.work(replica.scope, id, PLAYLIST_DIRECTORY);
+  if (!(await replica.files.exists(directory))) return "";
+  const marks = [];
+  for (const name of (await replica.files.listNames(directory)).sort()) {
+    const stat = await replica.files.stat(replica.files.child(directory, name));
+    marks.push(`${name}:${stat?.size}:${stat?.mtime}`);
+  }
+  return marks.join("/");
+}
+async function localSignature(replica, folders, streamed) {
+  const rows = await replica.store.folderMarks(replica.scope);
+  const parts = [replica.scope];
+  for (const folder of folders) {
+    const journal = await replica.store.get(`journal:${replica.scope}:${folder.id}`, []);
+    parts.push(
+      folder.id,
+      rows.get(folder.id) || "",
+      Array.isArray(journal) ? `${journal.length}:${journal.at(-1)?.seq ?? ""}` : "",
+      await playlistMarks(replica, folder.id).catch(() => "?"),
+    );
+  }
+  if (streamed.length)
+    parts.push(
+      streamed.map((folder) => folder.id).join(),
+      (await replica.store.audioDownloads(replica.scope))
+        .filter((row) => row.state === "done")
+        .map((row) => `${row.volume}:${row.path}:${row.hash}`)
+        .sort()
+        .join("/"),
+    );
+  return parts.join("|");
+}
 export async function refreshMusic(replica, { covers = true } = {}) {
   if (!replica.files.musicLibrary) return;
   if (!covers && Date.now() - (replica.musicRefreshed || 0) < PARTIAL_REFRESH_MS) return;
@@ -368,6 +401,18 @@ export async function refreshMusic(replica, { covers = true } = {}) {
     const all = [...folders, ...streamed.map((folder) => ({ ...folder, streamed: true }))];
     const fetched = all.length ? await fetchLibraries(replica, all) : { changed: false, fresh: [] };
     changed = fetched.changed;
+    const signature = all.length
+      ? await localSignature(replica, folders, streamed).catch(() => null)
+      : null;
+    if (
+      covers &&
+      signature !== null &&
+      !fetched.changed &&
+      signature === replica.musicSignature &&
+      !fetched.fresh.some((id) => replica.journalCut?.has(id))
+    )
+      return;
+    replica.musicSignature = null;
     for (const id of fetched.fresh)
       if (replica.journalCut?.has(id)) {
         await replica.forgetLocal(id, replica.journalCut.get(id));
@@ -382,7 +427,10 @@ export async function refreshMusic(replica, { covers = true } = {}) {
       ? await fetchCovers(replica, library, covers ? COVERS_PER_CYCLE : COVERS_PER_PARTIAL)
       : { complete: true, fetched: 0 };
     if (result.fetched) changed = true;
-    if (covers && result.complete) await pruneCovers(replica, library);
+    if (covers && result.complete) {
+      await pruneCovers(replica, library);
+      replica.musicSignature = signature;
+    }
   } catch (error) {
     if (isHubUnreachable(error)) throw error;
   } finally {

@@ -42,6 +42,7 @@ export { validPath, validRow } from "./validation.js";
 export const VERIFY_MS = 3000;
 export const OFFLINE_HOLD_MS = 5 * 60000;
 export const PROGRESS_MS = 1000;
+const IGNORE_HEAD_MS = 5000;
 const WEEK = 7 * 86400000;
 const missingRoot = () =>
   Object.assign(
@@ -649,10 +650,12 @@ export class Replica {
     this.pulling?.retained.add(hash);
     await this.store.queue(this.scope, { volume, path, base, hash, size });
   }
-  async syncIgnore(folder) {
-    const { versions } = await this.client.api(
-      `/v1/history?volume=${folder.id}&path=.arcaignore&limit=1`,
-    );
+  ignoreHead(volume) {
+    return this.client.api(`/v1/history?volume=${volume}&path=.arcaignore&limit=1`);
+  }
+  async syncIgnore(folder, prefetched = null) {
+    const early = prefetched && (await prefetched);
+    const { versions } = early && !early.error ? early : await this.ignoreHead(folder.id);
     const remote = versions[0],
       file = this.files.work(this.scope, folder.id, ".arcaignore");
     const present = await this.files.exists(file),
@@ -733,14 +736,16 @@ export class Replica {
     this.hashCache.delete(key);
     await this.store.forgetHash(key);
   }
-  async localHash(uri, volume = null, path = null) {
-    const stat = await this.files.stat(uri);
+  async localHash(uri, volume = null, path = null, listed = null, known = null) {
+    const stat = Number.isFinite(listed?.mtime)
+      ? { size: listed.size, mtime: listed.mtime }
+      : await this.files.stat(uri);
     const key = this.hashKey(uri, volume, path);
     const fresh = (record) =>
       stat?.mtime != null &&
       record?.size === stat.size &&
       record.mtime === stat.mtime;
-    const cached = await this.cachedRecord(key);
+    const cached = this.hashCache.get(key) || known?.get(key) || (await this.cachedRecord(key));
     if (fresh(cached)) {
       if (volume && path && (!cached.due || cached.uri !== uri))
         await this.rememberHash(key, uri, stat, cached.hash, volume, path, cached.due);
@@ -842,6 +847,7 @@ export class Replica {
     // A missing root is not a deletion of every file.
     if (!(await this.files.exists(root))) throw missingRoot();
     const sweep = this.force || !this.swept.has(folder.id);
+    const known = new Map(await this.store.cachedHashes(this.scope, folder.id));
     const included = [];
     const tombstoned = [];
     for await (const entry of this.files.walk(root, "", sweep)) {
@@ -871,7 +877,7 @@ export class Replica {
       if (previous?.unapplied) continue;
       const hash = entry.directory
         ? "directory"
-        : await this.localHash(entry.uri, folder.id, entry.path);
+        : await this.localHash(entry.uri, folder.id, entry.path, entry, known);
       if (entry.directory) {
         if (
           previous?.path === entry.path &&
@@ -1687,6 +1693,13 @@ export class Replica {
         this.lastFullScan = Date.now();
         await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
       }
+      const headsAt = Date.now();
+      const heads = new Map(
+        folders.map((folder) => [
+          folder.id,
+          this.ignoreHead(folder.id).catch((error) => ({ error })),
+        ]),
+      );
       for (const folder of folders) {
         this.check();
         if (await this.store.get(`removing:${this.scope}:${folder.id}`, false)) {
@@ -1737,7 +1750,10 @@ export class Replica {
             folder.id,
             !!folder.initialized,
           );
-          await this.syncIgnore(folder);
+          await this.syncIgnore(
+            folder,
+            Date.now() - headsAt < IGNORE_HEAD_MS ? heads.get(folder.id) : null,
+          );
           const journal = (await this.store.get(this.journalKey(folder.id), [])) || [];
           let scanned = false;
           const inventoryDue =

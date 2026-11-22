@@ -108,6 +108,9 @@ export async function remoteView(replica, route, options = {}) {
   }
 }
 const WARM_PARALLEL = 4;
+const FRESH_MS = 60000;
+const VIEW_FILTERS = ["revisions", "deleted", "conflicts"];
+const QUIET_MS = 15 * 60000;
 const priority = (route) =>
   route === "/v1/machines" ? 0 : route.includes("filter=revisions") ? 1 : 2;
 export { key as viewKey };
@@ -120,7 +123,10 @@ export async function warmViews(replica, folders) {
   const cancel = () => abortRequest(controller, new Error("Request cancelled"));
   replica.syncAbort?.signal.addEventListener("abort", cancel, { once: true });
   try {
-    const routes = ["/v1/machines"];
+    const marks = await replica.store.folderMarks(replica.scope);
+    const mark = (id) => marks.get(id) || "empty";
+    replica.warmedMarks ||= new Map();
+    const routes = [{ route: "/v1/machines", window: FRESH_MS }];
     for (const folder of folders) {
       const remote = replica.client
         .state()
@@ -145,10 +151,13 @@ export async function warmViews(replica, folders) {
             );
         await replica.store.set(retentionKey, retention);
       }
-      for (const filter of ["revisions", "deleted", "conflicts"])
-        routes.push(
-          `/v1/activity?${new URLSearchParams({ volume: folder.id, filter, limit: "50" })}`,
-        );
+      const quiet = replica.warmedMarks.get(folder.id) === mark(folder.id);
+      for (const filter of VIEW_FILTERS)
+        routes.push({
+          route: `/v1/activity?${new URLSearchParams({ volume: folder.id, filter, limit: "50" })}`,
+          window: quiet ? QUIET_MS : FRESH_MS,
+          folder: folder.id,
+        });
     }
     const saved = new Map(
       (
@@ -159,8 +168,8 @@ export async function warmViews(replica, folders) {
       ).map((row) => [row.route, row.updated]),
     );
     const due = routes
-      .map((route) => ({ route, updated: saved.get(key(route)) }))
-      .filter(({ updated }) => updated === undefined || Date.now() - updated >= 60000)
+      .map((item) => ({ ...item, updated: saved.get(key(item.route)) }))
+      .filter(({ updated, window }) => updated === undefined || Date.now() - updated >= window)
       .sort(
         (a, b) =>
           priority(a.route) - priority(b.route) ||
@@ -168,21 +177,27 @@ export async function warmViews(replica, folders) {
       );
     let next = 0;
     let offline = false;
+    const fetched = new Map();
     const worker = async () => {
       while (next < due.length && !offline) {
         if (controller.signal.aborted || replica.stopped || replica.paused)
           return;
-        const { route } = due[next++];
+        const { route, folder } = due[next++];
         const value = await remoteView(replica, route, {
           signal: controller.signal,
           silent: true,
         });
         if (value.offline) offline = true;
+        else if (folder) fetched.set(folder, (fetched.get(folder) || 0) + 1);
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(WARM_PARALLEL, due.length) }, worker),
     );
+    // A folder counts as warmed only when all its pages were fetched after its local index reached this mark.
+    for (const folder of folders)
+      if (fetched.get(folder.id) === VIEW_FILTERS.length)
+        replica.warmedMarks.set(folder.id, mark(folder.id));
   } catch {
     /* Optional metadata never fails file synchronization. */
   } finally {

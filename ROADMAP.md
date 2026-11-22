@@ -141,14 +141,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 
 ### Performance — measure first
 
-- **MOB-SCAN-SPEED** — A phone inventory reuses what the folder walk already read
-  `chore · agent · normal` · small
-  Measured on the Fold (dev build): a launch inventories every folder in about 50 s, 26 s of it the photos working copy (3,822 files, 28 GB). Per file, `localHash` stats the file again although the walk already has its size and mtime, and reads its `scan_cache` record with its own query. Accept: the walk's size and mtime are reused and a folder's records are read in one query, with the same change detection, and the measured inventory time drops.
-
-- **MOB-IDLE-CYCLE** — An idle phone cycle costs well under a second
-  `chore · agent · normal` · small
-  Measured on the Fold: a foreground cycle with nothing to do takes about 4 s, every minute: the machine report, a `.arcaignore` history request per folder per cycle and about 0.8 s of photo-library checks on an album folder. Accept: an idle cycle skips requests whose answer cannot have changed (for example the catalog's folder revision is unchanged), measured on a device.
-
 A fix lands only for a cost the measurement shows.
 
 - **PERF-DAEMON-STATEMENTS** — The daemon's hot paths run the statements they need and no more

@@ -229,6 +229,50 @@ test("the cycle reads streamed libraries from the hub and prunes their downloads
   await downloads.stop();
 });
 
+test("an idle cycle reuses the music library and covers when neither the hub nor the phone changed", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const one = crypto.randomBytes(300);
+  const list = tracks(one, crypto.randomBytes(300));
+  let answer = { version: "1", tracks: list };
+  const { client } = hub(new Map(), () => answer);
+  const covers = fs.mkdtempSync(path.join(os.tmpdir(), "arca-covers-"));
+  t.after(() => fs.rmSync(covers, { recursive: true, force: true }));
+  let rebuilt = 0;
+  const replica = {
+    scope: "hub-a",
+    store,
+    client,
+    check() {},
+    files: {
+      ...files,
+      musicLibrary: () => path.join(covers, "library.json"),
+      musicCovers: () => covers,
+      async listNames(uri) {
+        if (uri === covers) rebuilt++;
+        return fs.readdirSync(uri);
+      },
+    },
+  };
+  await store.set(streamedKey("hub-a"), ["v"]);
+  await refreshMusic(replica);
+  assert.equal(rebuilt, 1);
+  answer = { unchanged: true };
+  await refreshMusic(replica);
+  assert.equal(rebuilt, 1, "nothing changed, so the library is not rebuilt");
+  await store.saveAudioDownload("hub-a", { volume: "v", path: list[0].path, hash: list[0].hash, ext: "mp3", size: 300, state: "done" });
+  await refreshMusic(replica);
+  assert.equal(rebuilt, 2, "a finished download rebuilds it");
+  answer = { version: "2", tracks: [list[1]] };
+  await refreshMusic(replica);
+  assert.equal(rebuilt, 3, "and so does a new library from the hub");
+  answer = { unchanged: true };
+  await refreshMusic(replica, { covers: false });
+  replica.musicRefreshed = 0;
+  await refreshMusic(replica);
+  assert.equal(rebuilt, 3, "a partial pass never clears the saved state");
+});
+
 test("Start streaming records the folder without selecting it, and Stop syncing forgets its downloads and the flag", async (t) => {
   const { store, files } = setup(t);
   await store.init();

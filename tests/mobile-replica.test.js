@@ -146,7 +146,7 @@ async function fixture(t, { timeout } = {}) {
           yield { path: prefix + e.name, uri: p, size: 0, directory: true };
           yield* this.walk(p, prefix + e.name + "/");
         } else
-          yield { path: prefix + e.name, uri: p, size: fs.statSync(p).size };
+          yield { path: prefix + e.name, uri: p, size: fs.statSync(p).size, mtime: fs.statSync(p).mtimeMs };
       }
     },
   };
@@ -3419,6 +3419,7 @@ test("warming saved views starts with machines, then missing and stalest revisio
       now - age,
       JSON.stringify({ versions: [], next: null }),
     );
+  replica.warmedMarks?.clear();
   const started = [];
   let inFlight = 0;
   let peak = 0;
@@ -3445,6 +3446,61 @@ test("warming saved views starts with machines, then missing and stalest revisio
     "a page younger than a minute is not requested again",
   );
   assert.equal(peak, 4, "four requests overlap and never more");
+});
+
+test("a folder whose change feed has not moved keeps its saved views for fifteen minutes, and a change refreshes them within a minute", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume } = f;
+  await replica.select(f.client.state().catalog.volumes.find((v) => v.id === volume.id));
+  await sync(f);
+  const folders = (await f.store.folders(replica.scope)).filter((folder) => folder.selected);
+  assert.equal(folders.length, 1);
+  const asked = [];
+  f.stall(async (url, options) => {
+    asked.push(new URL(url).pathname);
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${f.daemon.port}`), options);
+  });
+  const age = async (ms) =>
+    f.store.db.runAsync("UPDATE view_cache SET updated=? WHERE scope=?", Date.now() - ms, replica.scope);
+  await warmViews(replica, folders);
+  await age(5 * 60000);
+  asked.length = 0;
+  await warmViews(replica, folders);
+  assert.deepEqual(asked, ["/v1/machines"], "an unchanged folder is not asked again after five minutes");
+  await age(16 * 60000);
+  asked.length = 0;
+  await warmViews(replica, folders);
+  assert.equal(asked.filter((route) => route === "/v1/activity").length, 3, "after fifteen minutes it is");
+  fs.writeFileSync(path.join(volume.path, "new.txt"), "new");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  await age(61000);
+  asked.length = 0;
+  await warmViews(replica, folders);
+  f.stall(null);
+  assert.equal(asked.filter((route) => route === "/v1/activity").length, 3, "a folder that changed refreshes after a minute");
+});
+
+test("a cycle asks for every folder's .arcaignore at once instead of one round trip per folder", async (t) => {
+  const f = await fixture(t);
+  const { replica, daemon } = f;
+  for (const name of ["Two", "Three", "Four"]) daemon.engine.store.addVolume(name);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  for (const volume of f.client.state().catalog.volumes) await replica.select(volume);
+  await sync(f);
+  let inFlight = 0,
+    peak = 0;
+  f.stall(async (url, options) => {
+    const policy = url.includes("path=.arcaignore");
+    if (policy) peak = Math.max(peak, ++inFlight);
+    if (policy) await new Promise((resolve) => setTimeout(resolve, 50));
+    if (policy) inFlight--;
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
+  });
+  await sync(f);
+  f.stall(null);
+  assert.equal(peak, 4, "the four folders' policy requests overlap");
 });
 
 test("a failing view stops the whole warm-up instead of leaving workers running", async (t) => {
@@ -4591,6 +4647,41 @@ test("shared gallery deletion fails offline without queuing, suppresses rescans 
     f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
     1,
   );
+});
+
+test("an inventory reuses the walk's size and time and reads a folder's hash records in one query", async (t) => {
+  const f = await fixture(t),
+    { replica: r, files, store, volume } = f;
+  for (let i = 0; i < 12; i++) fs.writeFileSync(path.join(volume.path, `file-${i}.txt`), `content ${i}`);
+  await f.daemon.engine.cycle();
+  await r.select(f.client.state().catalog.volumes.find((v) => v.id === volume.id));
+  await sync(f);
+  await r.sync(true);
+  const folder = await store.folder(r.scope, volume.id);
+  r.hashCache.clear();
+  const stat = files.stat,
+    cachedHash = store.cachedHash.bind(store);
+  let stats = 0,
+    lookups = 0;
+  files.stat = async (uri) => {
+    if (String(uri).includes("file-")) stats++;
+    return stat(uri);
+  };
+  store.cachedHash = async (key) => {
+    lookups++;
+    return cachedHash(key);
+  };
+  r.force = true;
+  await r.scan(folder);
+  r.force = false;
+  files.stat = stat;
+  store.cachedHash = cachedHash;
+  assert.equal(stats, 0, "unchanged files are not statted again");
+  assert.equal(lookups, 0, "and their records came from one folder query");
+  assert.equal((await store.pending(r.scope, volume.id)).length, 0, "nothing looks changed");
+  fs.writeFileSync(files.work(r.scope, volume.id, "file-3.txt"), "edited on the phone");
+  await r.scan(folder);
+  assert.deepEqual((await store.pending(r.scope, volume.id)).map((op) => op.path), ["file-3.txt"], "an edit is still found");
 });
 
 test("a plain request that joins a run's last cycle gets one more cycle, not a full inventory", async (t) => {
@@ -6246,6 +6337,47 @@ test("a phone without its hub drops a deleted track and follows a renamed one, d
     ["01 Uno.mp3"],
     "the hub received exactly the rename and the deletions",
   );
+});
+
+test("an idle sync of a phone with a music library does not rebuild the library, and a new file does", async (t) => {
+  const f = await fixture(t),
+    { volume, replica, files, daemon } = f;
+  const local = path.join(f.root, "mobile");
+  const covers = path.join(local, "covers");
+  fs.mkdirSync(covers, { recursive: true });
+  let rebuilt = 0;
+  const listNames = files.listNames;
+  Object.assign(files, {
+    musicLibrary: () => path.join(local, "music-library.json"),
+    musicCovers: () => covers,
+    musicCover: (scope, key, size) => path.join(covers, `${key}-${size}.jpg`),
+    text: async (p) => fs.readFileSync(p, "utf8"),
+    listNames: async (p) => {
+      if (p === covers) rebuilt++;
+      return listNames(p);
+    },
+  });
+  const response = await fetch(`http://127.0.0.1:${daemon.port}/v1/music/mark`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ volume: volume.id }),
+  });
+  assert.equal(response.status, 200);
+  fs.writeFileSync(path.join(volume.path, "notes.txt"), "liner notes");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes.find((v) => v.id === volume.id));
+  await sync(f);
+  await sync(f);
+  const before = rebuilt;
+  assert.ok(before > 0, "the first complete cycles built it");
+  await sync(f);
+  await sync(f);
+  assert.equal(rebuilt, before, "idle cycles reuse it");
+  fs.writeFileSync(path.join(volume.path, "more.txt"), "more");
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.equal(rebuilt, before + 1, "a file that arrived rebuilds it");
 });
 
 test("a phone keeps the hub's audio library, its covers and the car's library file in step with its local copy", async (t) => {

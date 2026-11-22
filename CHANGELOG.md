@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.74 — 2026-11-22
+
+- The phone's folder check at launch reuses what reading each folder already told it and loads a folder's saved checks at once, instead of asking the system and the database again for every file; on the maintainer's Fold that walk took about 50 seconds.
+- A sync with nothing to do is much lighter: the music library, its covers and the car library file are rebuilt only when something changed, the saved History pages of a folder that has not changed are refreshed every fifteen minutes instead of every minute, and every folder's .arcaignore is checked in one round trip.
+
+Needs: native build
+
 ## 0.9.73 — 2026-11-22
 
 - Deleting shared photos on the phone no longer fails with "Wait for synchronization to finish" while a long download is running: the delete stops that sync, the photos disappear as soon as you confirm, and any the hub did not delete come back.

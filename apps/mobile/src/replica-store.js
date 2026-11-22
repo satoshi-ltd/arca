@@ -151,6 +151,25 @@ export class ReplicaStore {
     );
     return row ? JSON.parse(row.row) : null;
   }
+  async folderMarks(scope) {
+    return new Map(
+      (
+        await this.db.getAllAsync(
+          "SELECT volume, COUNT(*) AS n, MAX(CAST(json_extract(row,'$.rev') AS INTEGER)) AS top, SUM(CAST(json_extract(row,'$.rev') AS INTEGER)) AS total FROM files WHERE scope=? GROUP BY volume",
+          scope,
+        )
+      ).map((row) => [row.volume, `${row.n}:${row.top}:${row.total}`]),
+    );
+  }
+  async cachedHashes(scope, volume) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT uri,row FROM scan_cache WHERE json_extract(row,'$.scope')=? AND json_extract(row,'$.volume')=?",
+        scope,
+        volume,
+      )
+    ).map((row) => [row.uri, JSON.parse(row.row)]);
+  }
   async cacheHash(uri, value) {
     await this.db.runAsync(
       "INSERT OR REPLACE INTO scan_cache VALUES (?,?)",
