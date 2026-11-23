@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, cp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const escape = (value) =>
@@ -246,24 +247,31 @@ if (
   );
   if (!process.env.SITE_OUTPUT) await rm(output, { recursive: true, force: true });
   await mkdir(path.join(output, "assets"), { recursive: true });
-  await writeFile(path.join(output, "index.html"), html);
-  await cp(path.join(root, "site/styles.css"), path.join(output, "styles.css"));
+  const sources = Object.fromEntries([
+    ...["platforms.svg", "og-image.png", "apple-touch-icon.png"].map((name) => [name, path.join(root, "site/assets", name)]),
+    ...["arca-icon.svg", "fonts/manrope.woff2", "fonts/geist-mono.woff2"].map((name) => [path.basename(name), path.join(root, "apps/desktop/src/assets", name)]),
+  ]);
+  const stamps = new Map();
+  for (const [name, file] of Object.entries(sources))
+    stamps.set(name, createHash("sha256").update(await readFile(file)).digest("hex").slice(0, 10));
+  const digest = (data) => createHash("sha256").update(data).digest("hex").slice(0, 10);
+  const stamped = (text) =>
+    text.replace(/assets\/([\w.-]+)(?=["')#])/g, (match, name) => {
+      if (!stamps.has(name)) throw new Error(`The site references assets/${name}, which the build does not ship`);
+      return `${match}?v=${stamps.get(name)}`;
+    });
+  const styles = stamped(await readFile(path.join(root, "site/styles.css"), "utf8"));
+  const theme = await readFile(path.join(root, "site/theme.js"));
+  const page = stamped(html)
+    .replace('href="styles.css"', `href="styles.css?v=${digest(styles)}"`)
+    .replace('src="theme.js"', `src="theme.js?v=${digest(theme)}"`);
+  await writeFile(path.join(output, "index.html"), page);
+  await writeFile(path.join(output, "styles.css"), styles);
   await cp(path.join(root, "site/theme.js"), path.join(output, "theme.js"));
-  for (const name of ["platforms.svg", "og-image.png", "apple-touch-icon.png"])
-    await cp(path.join(root, "site/assets", name), path.join(output, "assets", name));
+  for (const [name, file] of Object.entries(sources)) await cp(file, path.join(output, "assets", name));
   const seo = seoFiles(process.env.SITE_URL, release.published_at);
   await writeFile(path.join(output, "robots.txt"), seo.robots);
   if (seo.sitemap) await writeFile(path.join(output, "sitemap.xml"), seo.sitemap);
-  for (const name of [
-    "arca-icon.svg",
-    "fonts/manrope.woff2",
-    "fonts/geist-mono.woff2",
-  ]) {
-    await cp(
-      path.join(root, "apps/desktop/src/assets", name),
-      path.join(output, "assets", path.basename(name)),
-    );
-  }
   await writeFile(
     path.join(output, "_headers"),
     "/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Content-Security-Policy: default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\n/assets/*\n  Cache-Control: public, max-age=604800\n",

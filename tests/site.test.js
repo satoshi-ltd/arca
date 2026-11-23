@@ -522,6 +522,30 @@ test("site build ships theme.js", async (t) => {
   assert.equal(run.status, 0, run.stderr);
   assert.ok(fs.existsSync(path.join(output, "theme.js")));
 });
+test("every asset the built page and stylesheet reference carries the hash of its content, so a week-long cache never serves an old icon", async (t) => {
+  const output = await mkdtemp(path.join(os.tmpdir(), "arca-site-stamp-"));
+  t.after(() => rm(output, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const run = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL("../site/scripts/build.mjs", import.meta.url))],
+    { env: { ...process.env, SITE_OUTPUT: output, SITE_URL: "https://example.test" }, encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stderr);
+  const { createHash } = await import("node:crypto");
+  const built = fs.readFileSync(path.join(output, "index.html"), "utf8") + fs.readFileSync(path.join(output, "styles.css"), "utf8");
+  const references = [...built.matchAll(/assets\/([\w.-]+)(\?v=([0-9a-f]+))?/g)];
+  const names = new Set(references.map((match) => match[1]));
+  for (const name of ["arca-icon.svg", "og-image.png", "apple-touch-icon.png", "platforms.svg", "manrope.woff2", "geist-mono.woff2"]) assert.ok(names.has(name), name);
+  for (const [text, name, , stamp] of references) {
+    const expected = createHash("sha256").update(fs.readFileSync(path.join(output, "assets", name))).digest("hex").slice(0, 10);
+    assert.equal(stamp, expected, `${text} is stamped with its content`);
+  }
+  assert.match(built, /assets\/platforms\.svg\?v=[0-9a-f]{10}#apple/);
+  const hash = (file) => createHash("sha256").update(fs.readFileSync(path.join(output, file))).digest("hex").slice(0, 10);
+  assert.ok(built.includes(`href="styles.css?v=${hash("styles.css")}"`), "the stylesheet's address follows its content");
+  assert.ok(built.includes(`src="theme.js?v=${hash("theme.js")}"`), "and so does the theme script's");
+  assert.match(fs.readFileSync(path.join(output, "_headers"), "utf8"), /\/assets\/\*\n  Cache-Control: public, max-age=604800/);
+});
 test("anchor links scroll smoothly only for readers who allow motion", () => {
   assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*html \{\s*scroll-behavior: smooth;\s*\}\s*\}/);
   assert.equal((css.match(/scroll-behavior/g) || []).length, 1);
