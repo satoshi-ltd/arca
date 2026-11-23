@@ -89,14 +89,15 @@ async fn api(app: tauri::AppHandle, route: String, method: Option<String>, body:
 async fn bootstrap(app: tauri::AppHandle) -> Result<Value, String> {
     sweep_update_watchers();
     let resumed = resume_daemon(&app).await.err();
+    let adopted = adopt_daemon(&app).await.err();
     if !home().join("config.json").exists() {
         let root = home().parent().unwrap_or(&home()).join("arca");
         let name = Command::new("hostname").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
         return Ok(json!({"setup":true,"root":root.to_string_lossy(),"name":name,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH}));
     }
     match request("/v1/status", "GET", None).await {
-        Ok(status) => Ok(json!({"setup":false,"status":status})),
-        Err(_) => Ok(json!({"setup":false,"stopped":true,"error":resumed})),
+        Ok(status) => Ok(json!({"setup":false,"status":status,"warning":adopted})),
+        Err(_) => Ok(json!({"setup":false,"stopped":true,"error":resumed.or(adopted)})),
     }
 }
 fn spawn_daemon(app: &tauri::AppHandle) -> Result<(), String> {
@@ -125,7 +126,7 @@ fn spawn_daemon(app: &tauri::AppHandle) -> Result<(), String> {
 }
 #[tauri::command]
 async fn start_daemon(app: tauri::AppHandle) -> Result<(), String> {
-    if request("/v1/status", "GET", None).await.is_ok() {
+    if ADOPTING.load(std::sync::atomic::Ordering::SeqCst) || request("/v1/status", "GET", None).await.is_ok() {
         return Ok(());
     }
     spawn_daemon(&app)
@@ -164,6 +165,9 @@ fn listed_command(listing: std::process::Output) -> Result<Option<String>, Strin
     Ok(Some(command))
 }
 fn running_daemon(home: &Path) -> Result<Option<u32>, String> {
+    Ok(daemon_process(home)?.map(|(pid, _)| pid))
+}
+fn daemon_process(home: &Path) -> Result<Option<(u32, String)>, String> {
     let lock = match fs::read_to_string(home.join("daemon.lock")) {
         Ok(lock) => lock,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -176,13 +180,18 @@ fn running_daemon(home: &Path) -> Result<Option<u32>, String> {
         .filter(|pid| *pid > 1)
         .ok_or("Invalid daemon lock; refusing to stop an unknown process.")?;
     let listing = if cfg!(windows) {
-        Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!("$ProgressPreference = 'SilentlyContinue'; (Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"),
-            ])
-            .output()
+        let mut inspect = Command::new("powershell.exe");
+        inspect.args([
+            "-NoProfile",
+            "-Command",
+            &format!("$ProgressPreference = 'SilentlyContinue'; (Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"),
+        ]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            inspect.creation_flags(0x08000000);
+        }
+        inspect.output()
     } else {
         Command::new("ps")
             .args(["-p", &pid.to_string(), "-o", "command="])
@@ -191,7 +200,7 @@ fn running_daemon(home: &Path) -> Result<Option<u32>, String> {
     .map_err(|e| e.to_string())?;
     Ok(listed_command(listing)?
         .filter(|command| daemon_command(command, &home.to_string_lossy()))
-        .map(|_| pid))
+        .map(|command| (pid, command)))
 }
 async fn stop_daemon(home: &Path, service: bool) -> Result<(), String> {
     if service && !launchctl(&["bootout", &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)])? {
@@ -247,6 +256,99 @@ async fn resume_daemon(app: &tauri::AppHandle) -> Result<(), String> {
     }
     let _ = fs::remove_file(&marker);
     Ok(())
+}
+fn plain_daemon(command: &str, home: &str) -> bool {
+    ["arca.js", "arca.js\""].iter().any(|cli| {
+        [format!("{cli} daemon --home {home}"), format!("{cli} daemon --home \"{home}\"")]
+            .iter()
+            .any(|tail| command.ends_with(tail.as_str()))
+    })
+}
+fn runs_from(command: &str, cli: &str) -> bool {
+    command.contains(&format!(" {cli} daemon ")) || command.contains(&format!("\"{cli}\" daemon "))
+}
+fn older(running: &str, own: &str) -> bool {
+    let parts = |version: &str| version.split('.').map(|part| part.parse::<u64>().ok()).collect::<Option<Vec<u64>>>();
+    match (parts(running), parts(own)) {
+        (Some(running), Some(own)) => running < own,
+        _ => false,
+    }
+}
+fn stable_install(cli: &str) -> bool {
+    !cli.contains("/AppTranslocation/") && !cli.starts_with("/Volumes/")
+}
+fn foreign_daemon(command: &str, home: &str, cli: &str, running: Option<&str>, own: &str, by_path: bool) -> bool {
+    plain_daemon(command, home)
+        && ((by_path && !runs_from(command, cli)) || running.is_some_and(|version| older(version, own)))
+}
+async fn daemon_version() -> Option<String> {
+    let settings = config().ok()?;
+    let port = settings["port"].as_u64()?;
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(2)).build().ok()?;
+    let answer: Value = client
+        .get(format!("http://127.0.0.1:{port}/.well-known/arca"))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    answer["version"].as_str().map(str::to_string)
+}
+static ADOPTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+struct Adopting;
+impl Drop for Adopting {
+    fn drop(&mut self) {
+        ADOPTING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+const ADOPT_UNCHECKED: &str = "Arca could not check the daemon that was already running. It keeps serving, and the app retries on the next launch.";
+async fn replace_foreign_daemon(app: &tauri::AppHandle) -> Result<(), String> {
+    let unchecked = |_: String| ADOPT_UNCHECKED.to_string();
+    let state = home();
+    let marker = state.join(RESTART_MARKER);
+    if marker.exists() {
+        return Ok(());
+    }
+    let (_, cli) = runtime(app).map_err(unchecked)?;
+    let cli = cli.to_string_lossy().to_string();
+    let macos = cfg!(target_os = "macos");
+    if macos && !stable_install(&cli) {
+        return Ok(());
+    }
+    let own = app.package_info().version.to_string();
+    let running = daemon_version().await;
+    if !macos && !running.as_deref().is_some_and(|version| older(version, &own)) {
+        return Ok(());
+    }
+    let Some((_, command)) = daemon_process(&state).map_err(unchecked)? else {
+        return Ok(());
+    };
+    if !foreign_daemon(&command, &state.to_string_lossy(), &cli, running.as_deref(), &own, macos) {
+        return Ok(());
+    }
+    let service = launch_agent_loaded().map_err(unchecked)?;
+    if macos && launch_agent().exists() {
+        write_launch_agent(app).map_err(unchecked)?;
+    }
+    fs::write(&marker, if service { "service" } else { "process" }).map_err(|e| unchecked(e.to_string()))?;
+    if stop_daemon(&state, service).await.is_err() {
+        if let (true, Ok(domain)) = (service, launchd_domain()) {
+            let _ = launchctl(&["bootstrap", &domain, &launch_agent().to_string_lossy()]);
+        }
+        return Err("Arca could not stop the daemon that was already running; it is still finishing its work. The app retries on the next launch.".into());
+    }
+    resume_daemon(app)
+        .await
+        .map_err(|_| "Arca stopped the daemon that was already running but could not start its own. Use Start service.".to_string())
+}
+async fn adopt_daemon(app: &tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    if cfg!(debug_assertions) || ADOPTING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    let _adopting = Adopting;
+    replace_foreign_daemon(app).await
 }
 #[tauri::command]
 async fn initialize(
@@ -485,17 +587,18 @@ fn set_notifications(app: tauri::AppHandle, enabled: bool) -> Result<(), String>
 #[tauri::command]
 fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     if !cfg!(target_os="macos") { return Err("Launch at login is currently supported on macOS".into()); }
-    if enabled {
-        let (node,cli)=runtime(&app)?;
-        let xml=|value:&str|value.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;").replace('\"',"&quot;");
-        let args=[node.to_string_lossy().to_string(),cli.to_string_lossy().to_string(),"daemon".into(),"--home".into(),home().to_string_lossy().to_string()];
-        let content=format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>Label</key><string>{LAUNCH_AGENT}</string><key>ProgramArguments</key><array>{}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>StandardOutPath</key><string>{}</string><key>StandardErrorPath</key><string>{}</string></dict></plist>",args.iter().map(|a|format!("<string>{}</string>",xml(a))).collect::<String>(),xml(&home().join("service.log").to_string_lossy()),xml(&home().join("service.log").to_string_lossy()));
-        let destination=launch_agent();fs::create_dir_all(destination.parent().unwrap()).map_err(|e|e.to_string())?;
-        fs::write(destination,content).map_err(|e|e.to_string())?;
-    }
+    if enabled { write_launch_agent(&app)?; }
     let result=Command::new("launchctl").args([if enabled {"enable"} else {"disable"}, &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)]).output().map_err(|e|e.to_string())?;
     if !result.status.success(){return Err(String::from_utf8_lossy(&result.stderr).to_string());}
     let mut p=preferences();p["launchAtLogin"]=json!(enabled);save_preferences(&p)
+}
+fn write_launch_agent(app: &tauri::AppHandle) -> Result<(), String> {
+    let (node,cli)=runtime(app)?;
+    let xml=|value:&str|value.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;").replace('\"',"&quot;");
+    let args=[node.to_string_lossy().to_string(),cli.to_string_lossy().to_string(),"daemon".into(),"--home".into(),home().to_string_lossy().to_string()];
+    let content=format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>Label</key><string>{LAUNCH_AGENT}</string><key>ProgramArguments</key><array>{}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>StandardOutPath</key><string>{}</string><key>StandardErrorPath</key><string>{}</string></dict></plist>",args.iter().map(|a|format!("<string>{}</string>",xml(a))).collect::<String>(),xml(&home().join("service.log").to_string_lossy()),xml(&home().join("service.log").to_string_lossy()));
+    let destination=launch_agent();fs::create_dir_all(destination.parent().unwrap()).map_err(|e|e.to_string())?;
+    fs::write(destination,content).map_err(|e|e.to_string())
 }
 fn show_main_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     let w = app.get_webview_window("main")?;
@@ -1219,6 +1322,46 @@ mod archive_tests {
 #[cfg(test)]
 mod daemon_tests {
     use super::*;
+    #[test]
+    fn a_daemon_from_another_install_or_an_older_version_is_foreign() {
+        let home = "/Users/a/.arca";
+        let cli = "/Applications/Arca.app/Contents/Resources/runtime/packages/cli/arca.js";
+        let own = format!("/Applications/Arca.app/Contents/Resources/runtime/node {cli} daemon --home {home}");
+        let other = "/Users/a/git/arca/apps/desktop/src-tauri/runtime/node /Users/a/git/arca/apps/desktop/src-tauri/runtime/packages/cli/arca.js daemon --home /Users/a/.arca";
+        assert!(!foreign_daemon(&own, home, cli, Some("0.10.1"), "0.10.1", true));
+        assert!(!foreign_daemon(&own, home, cli, None, "0.10.1", true), "a daemon that does not answer yet is judged by its path alone");
+        assert!(foreign_daemon(&own, home, cli, Some("0.9.74"), "0.10.1", true), "the same path with an older version is replaced");
+        assert!(!foreign_daemon(&own, home, cli, Some("0.11.0"), "0.10.1", true), "a newer daemon is never downgraded by its version");
+        assert!(!foreign_daemon(&own, home, cli, Some("dev"), "0.10.1", true), "an unreadable version is not older");
+        assert!(foreign_daemon(other, home, cli, Some("0.10.1"), "0.10.1", true), "another install is replaced where its path is comparable");
+        assert!(!foreign_daemon(other, home, cli, Some("0.10.1"), "0.10.1", false), "and left alone where the path changes on every launch");
+        assert!(foreign_daemon(other, home, cli, Some("0.9.74"), "0.10.1", false));
+        let volume = format!("/Volumes/x/Applications/Arca.app/Contents/Resources/runtime/node /Volumes/x{cli} daemon --home {home}");
+        assert!(foreign_daemon(&volume, home, cli, Some("0.10.1"), "0.10.1", true), "a path that merely contains this one is another install");
+        let flagged = format!("/usr/bin/node {cli} daemon --host 0.0.0.0 --home {home}");
+        assert!(!foreign_daemon(&flagged, home, "/elsewhere/arca.js", Some("0.9.74"), "0.10.1", true), "a daemon started with its own flags is never replaced");
+        let windows = r#""C:\App\node.exe" "C:\App\arca.js" daemon --home "/Users/a/.arca""#;
+        assert!(foreign_daemon(windows, home, r"C:\App\arca.js", Some("0.9.74"), "0.10.1", false));
+        assert!(!foreign_daemon(windows, home, r"C:\App\arca.js", Some("0.10.1"), "0.10.1", false));
+        for mixed in [
+            r#""C:\Program Files\Arca\node.exe" "C:\Program Files\Arca\arca.js" daemon --home C:\Users\a\.arca"#,
+            r#"C:\App\node.exe C:\App\arca.js daemon --home "C:\Users\a b\.arca""#,
+        ] {
+            let home = if mixed.ends_with('"') { r"C:\Users\a b\.arca" } else { r"C:\Users\a\.arca" };
+            assert!(plain_daemon(mixed, home), "{mixed}");
+        }
+    }
+    #[test]
+    fn versions_compare_by_number_and_an_install_outside_applications_is_not_stable() {
+        assert!(older("0.9.74", "0.10.0"));
+        assert!(older("0.10.0", "0.10.1"));
+        assert!(!older("0.10.1", "0.10.1"));
+        assert!(!older("1.0.0", "0.10.1"));
+        assert!(!older("", "0.10.1"));
+        assert!(stable_install("/Applications/Arca.app/Contents/Resources/runtime/packages/cli/arca.js"));
+        assert!(!stable_install("/private/var/folders/ab/T/AppTranslocation/1234/d/Arca.app/Contents/Resources/runtime/packages/cli/arca.js"));
+        assert!(!stable_install("/Volumes/Arca/Arca.app/Contents/Resources/runtime/packages/cli/arca.js"));
+    }
     #[test]
     fn only_a_daemon_for_this_state_directory_matches() {
         let home = "/Users/a b/.arca";

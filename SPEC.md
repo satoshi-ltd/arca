@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.10.0 · Phase 1 release.**
+**v0.10.1 · Phase 1 release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -351,7 +351,7 @@ Desktop and web share `apps/desktop/src`. Tauri (`apps/desktop/src-tauri/src/mai
 
 ### App lifecycle
 
-- Closing the window hides it; Quit exits the UI and leaves the separately spawned daemon running. The daemon owns watchers, hub event listening, bounded requests and retries independently of UI focus. System sleep suspends work until wake; there is no keep-awake override.
+- Closing the window hides it; Quit exits the UI and leaves the separately spawned daemon running. At launch the installed app owns that daemon: when the one running for its state directory was started plainly (`arca.js daemon --home <home>`, no other flags) and either comes from another install (macOS only: its command line does not run this app's `arca.js`) or reports an older version at `/.well-known/arca`, the app points the macOS login service at its own runtime when a service file exists, records the restart like an update does, stops that daemon, starts its own (through the service when it was loaded, as a process otherwise) and waits for it to answer before asking for status. A newer daemon is never replaced for its version; a daemon it cannot identify by `daemon.lock` or one started with its own flags is left alone; an app run from a disk image or a quarantine path, a development run (`npm --prefix apps/desktop start` restarts the daemon itself) and an update in flight never adopt. When the old daemon will not stop, its service is loaded again, it keeps serving and a notice says so; when the app's own daemon then fails to start, the Service stopped page gives the reason and the next launch retries. The daemon owns watchers, hub event listening, bounded requests and retries independently of UI focus. System sleep suspends work until wake; there is no keep-awake override.
 - The main window opens 1200 × 740 (at least 960 × 620), wide enough at 100% zoom for the Devices list to show its columns beside the sidebar.
 - On macOS the tray icon opens the popover from the left and the right button and attaches no native menu, because newer macOS draws a native menu in its own style; Windows and Linux keep the native menu beside the popover. A Dock click (`RunEvent::Reopen`) shows the main window again when it is hidden or minimized, and leaves a visible one alone.
 - The main window zooms with Command +/−/0 on macOS and Control +/−/0 elsewhere, 70–150% in 10% steps, persisted locally; tray sizing and browser zoom are separate.

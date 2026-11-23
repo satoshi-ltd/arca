@@ -142,3 +142,27 @@ test("a closing daemon keeps its process alive until the index is closed and the
     db.close();
   }
 });
+
+test("the desktop app replaces a daemon another install or an older version left running, and says so when it cannot", () => {
+  const main = fs.readFileSync(path.join(repository, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /fn foreign_daemon\(command: &str, home: &str, cli: &str, running: Option<&str>, own: &str, by_path: bool\) -> bool \{\s+plain_daemon\(command, home\)\s+&& \(\(by_path && !runs_from\(command, cli\)\) \|\| running\.is_some_and\(\|version\| older\(version, own\)\)\)\s+\}/);
+  assert.match(main, /fn stable_install\(cli: &str\) -> bool \{\s+!cli\.contains\("\/AppTranslocation\/"\) && !cli\.starts_with\("\/Volumes\/"\)\s+\}/);
+  assert.match(main, /let resumed = resume_daemon\(&app\)\.await\.err\(\);\s+let adopted = adopt_daemon\(&app\)\.await\.err\(\);/, "launch adopts after an update has resumed");
+  assert.match(main, /Ok\(status\) => Ok\(json!\(\{"setup":false,"status":status,"warning":adopted\}\)\),\s+Err\(_\) => Ok\(json!\(\{"setup":false,"stopped":true,"error":resumed\.or\(adopted\)\}\)\),/, "a failed adoption reaches the window either way");
+  const replace = main.slice(main.indexOf("async fn replace_foreign_daemon("), main.indexOf("async fn adopt_daemon("));
+  assert.match(replace, /if marker\.exists\(\) \{\s+return Ok\(\(\)\);/, "an update in flight keeps its own restart");
+  assert.match(replace, /let Some\(\(_, command\)\) = daemon_process\(&state\)\.map_err\(unchecked\)\? else \{\s+return Ok\(\(\)\);/, "a daemon this app cannot identify is left alone");
+  assert.match(replace, /if !macos && !running\.as_deref\(\)\.is_some_and\(\|version\| older\(version, &own\)\) \{\s+return Ok\(\(\)\);\s+\}\s+let Some/, "off macOS the process is inspected only when the daemon is older");
+  assert.match(main, /inspect\.creation_flags\(0x08000000\);/, "inspecting the process on Windows opens no console");
+  assert.match(replace, /let macos = cfg!\(target_os = "macos"\);\s+if macos && !stable_install\(&cli\) \{\s+return Ok\(\(\)\);/, "an app run from a disk image or a quarantine path never takes the service");
+  assert.match(replace, /foreign_daemon\(&command, &state\.to_string_lossy\(\), &cli, running\.as_deref\(\), &own, macos\)/, "only macOS compares the install path");
+  assert.match(replace, /if macos && launch_agent\(\)\.exists\(\) \{\s+write_launch_agent\(app\)\.map_err\(unchecked\)\?;\s+\}\s+fs::write\(&marker, if service \{ "service" \} else \{ "process" \}\)/, "the service is pointed here and the restart is recorded before anything stops");
+  assert.match(replace, /if stop_daemon\(&state, service\)\.await\.is_err\(\) \{\s+if let \(true, Ok\(domain\)\) = \(service, launchd_domain\(\)\) \{\s+let _ = launchctl\(&\["bootstrap"/, "a daemon that will not stop gets its service back");
+  assert.match(replace, /resume_daemon\(app\)\s+\.await/);
+  assert.match(main, /if cfg!\(debug_assertions\) \|\| ADOPTING\.swap\(true, Ordering::SeqCst\) \{\s+return Ok\(\(\)\);\s+\}\s+let _adopting = Adopting;/, "a development run leaves the daemon to its own script, and two windows never adopt at once");
+  assert.match(main, /if ADOPTING\.load\(std::sync::atomic::Ordering::SeqCst\) \|\| request\("\/v1\/status", "GET", None\)\.await\.is_ok\(\) \{\s+return Ok\(\(\)\);/, "Start service never races an adoption");
+  assert.match(main, /http:\/\/127\.0\.0\.1:\{port\}\/\.well-known\/arca/);
+  assert.match(main, /if enabled \{ write_launch_agent\(&app\)\?; \}/, "Launch at login writes the same service definition");
+  const app = fs.readFileSync(path.join(repository, "apps", "desktop", "src", "app.js"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(app, /await refresh\(\);\s+if \(state\.warning\) notice\(state\.warning, true, \{ id: "daemon", action: null \}\);/, "the warning offers no Retry that would start a sync");
+});

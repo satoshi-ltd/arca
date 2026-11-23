@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1 — 2026-11-23
+
+- The desktop app now takes over a daemon left running by another install or an older version: at launch it points the login service at itself and restarts the daemon, instead of quietly talking to old code. A Mac that had also run a development copy kept the old daemon after updating, so fixes such as the one for videos stopping never took effect.
+
+Needs: desktop build
+
 ## 0.10.0 — 2026-11-23
 
 - Arca has a new look on desktop, phone and the website: one brand green with white labels on every filled control, near-neutral greys, Manrope with Geist Mono for paths and numbers, capsule buttons, sentence-case labels and softer cards, in light and dark.
