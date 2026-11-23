@@ -25,7 +25,7 @@ test("a Movies & TV library waits under On hub · not selected until it is start
   assert.match(home, /\.\.\.streamedVolumes\.map\(\(v\) => \(\{ \.\.\.v, streamed: true \}\)\),/);
   assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !streamedVolumes\.some\(\(item\) => item\.id === v\.id\)/, "a library not started sits under On hub · not selected");
   assert.match(home, /onPress=\{\(\) => choose\(v\)\}/, "and its row opens Start syncing");
-  assert.match(read("home-data.js"), /\{ kind: "video", label: "MOVIES & TV" \}/);
+  assert.match(read("home-data.js"), /\{ kind: "video", label: "Movies & TV" \}/);
   assert.match(app, /\{\(!videoFolder \|\| videoStarted \|\| !!currentFolder\?\.selected\) && \(\s+<Button\s+iconOnly\s+size="small"\s+label="Folder actions"/, "a started library and an old copy have the ⋯");
   assert.match(app, /\{!audioStreaming && !videoStarted && \(\s+<View style=\{s\.actionGroup\}>/, "a started library's ⋯ holds only Stop syncing…");
   assert.match(app, /if \(videoStarted\) \{\s+const saved = \[\.\.\.videoDownloads\.values\(\)\]\.filter\(\(row\) => row\.volume === target\.id\);\s+confirm\(\s+confirmCopy\.stopVideo\(\{[\s\S]{0,200}size: saved\.reduce\(\(total, row\) => total \+ \(row\.state === "done" \? row\.size \|\| 0 : row\.done \|\| 0\), 0\),\s+kept: videoModeOf\[target\.id\] === "keep",[\s\S]{0,200}if \(videoSession\?\.volume === target\.id\) closeVideo\(\);\s+await engine\.current\.stopVideo\(target\.id\);/, "queued and partial downloads count, and a title playing from the library closes first");
@@ -307,8 +307,8 @@ test("titles this phone cannot play from a file offer Download disabled with the
   assert.match(library, /disabled=\{locked \|\| \(name === "download" && blocked\)\}\s+note=\{name === "download" && blocked \? downloadNote\(row, false, sheet\.item, Platform\.OS\) : undefined\}/, "an episode that cannot be downloaded shows Download disabled with the reason in its sheet");
 });
 
-test("Watch next marks a next episode NEXT and a recent arrival NEW over its still", () => {
-  assert.match(library, /\{\(card\.next \|\| card\.fresh\) && \(\s+<View style=\{s\.videoNext\} pointerEvents="none">\s+<Text style=\{s\.videoNextText\}>\{card\.next \? "NEXT" : "NEW"\}<\/Text>/);
+test("Watch next marks a next episode Next and a recent arrival New over its still", () => {
+  assert.match(library, /\{\(card\.next \|\| card\.fresh\) && \(\s+<View style=\{s\.videoNext\} pointerEvents="none">\s+<Text style=\{s\.videoNextText\}>\{card\.next \? "Next" : "New"\}<\/Text>/);
   assert.match(theme, /videoNext: \{\s+position: "absolute",\s+left: 6,\s+top: 6,/);
 });
 

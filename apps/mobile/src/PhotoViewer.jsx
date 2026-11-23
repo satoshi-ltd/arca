@@ -50,7 +50,7 @@ const begin = (touches, state, gesture) =>
 
 function ZoomableImage({ uri, preview, width, height, onZoomed, onError, onTap, onDrag, onDragEnd, onAction }) {
   const { s } = useDesign();
-  const { duration, easing } = useMotion();
+  const { duration, enterEasing } = useMotion();
   const [loaded, setLoaded] = useState(false);
   useEffect(() => setLoaded(false), [uri]);
   const state = useRef(rest);
@@ -71,13 +71,13 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError, onTap, 
       Animated.timing(scale, {
         toValue: next.scale,
         duration: duration(motion.enter),
-        easing,
+        easing: enterEasing,
         useNativeDriver: true,
       }),
       Animated.timing(offset, {
         toValue: { x: next.x, y: next.y },
         duration: duration(motion.enter),
-        easing,
+        easing: enterEasing,
         useNativeDriver: true,
       }),
     ]).start();
@@ -482,7 +482,7 @@ export function PhotoViewer({
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { duration, easing } = useMotion();
+  const { duration, easing, enterEasing } = useMotion();
   const [zoomed, setZoomed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [chromeOn, setChromeOn] = useState(false);
@@ -500,7 +500,7 @@ export function PhotoViewer({
       Animated.timing(appear, {
         toValue: 1,
         duration: duration(motion.enter),
-        easing,
+        easing: enterEasing,
         useNativeDriver: true,
       }).start();
       return;
@@ -560,7 +560,7 @@ export function PhotoViewer({
     const { height: h, wide: fold, onClose: close, duration: ms, easing: ease } = live.current;
     const action = decideRelease({ dy, vy, height: h, wide: fold });
     const back = () =>
-      Animated.timing(drag, { toValue: 0, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
+      Animated.timing(drag, { toValue: 0, duration: ms(motion.enter), easing: enterEasing, useNativeDriver: true }).start();
     if (action === "close")
       Animated.timing(drag, { toValue: h, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(
         () => {

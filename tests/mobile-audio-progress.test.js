@@ -312,10 +312,10 @@ test("Folders splits selected folders into Folders, Photos, Audio and Movies & T
   const kinds = { a: "folders", b: "audio", c: "photos", d: "audio", e: "video" };
   const sections = folderSections(["a", "b", "c", "d", "e"].map((id) => ({ id })), (f) => kinds[f.id]);
   assert.deepEqual(sections.map((section) => [section.label, section.folders.map((f) => f.id)]), [
-    ["FOLDERS", ["a"]],
-    ["PHOTOS", ["c"]],
-    ["AUDIO", ["b", "d"]],
-    ["MOVIES & TV", ["e"]],
+    ["Folders", ["a"]],
+    ["Photos", ["c"]],
+    ["Audio", ["b", "d"]],
+    ["Movies & TV", ["e"]],
   ]);
   assert.deepEqual(folderSections([{ id: "b" }], (f) => kinds[f.id]).map((section) => section.kind), ["audio"]);
 });
@@ -362,7 +362,7 @@ test("every show in progress carries its own play, time left and resume sheet; t
   assert.match(grid, /accessibilityLabel=\{tile\.caption \? `\$\{show\.name\}, \$\{tile\.caption\}` : show\.name\}/, "TalkBack still hears New");
   assert.doesNotMatch(grid, /newWord/);
   assert.match(theme, /newPill: \{\s+position: "absolute",\s+top: 6,\s+left: 6,\s+paddingVertical: g\.pillY,\s+paddingHorizontal: g\.pillLeft,\s+borderRadius: g\.pillRadius,\s+backgroundColor: c\.surface,\s+\}/, "the pill sits at the play button's 6 dp inset with surface fill");
-  assert.match(theme, /newPillText: \{\s+fontFamily: "InstrumentSans_600SemiBold",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.accent,/, "and accent ink at the pill size");
+  assert.match(theme, /newPillText: \{\s+fontFamily: "Manrope_600SemiBold",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.accent,/, "and accent ink at the pill size");
   assert.match(grid, /tile\.progress != null && <ProgressLine value=\{tile\.progress\} edge \/>/, "a show in progress draws the edge");
   assert.match(grid, /accessibilityLabel=\{`\$\{show\.name\}, \$\{tile\.left\}`\}/, "the tile reads its time left");
   assert.match(grid, /\{ name: "continue", label: "Continue" \},\s+\{ name: "startover", label: "Start over" \},[\s\S]*?\{ name: "favorite", label: favorite\.label \}/, "TalkBack offers Continue, Start over and the favorite toggle");

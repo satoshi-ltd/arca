@@ -91,7 +91,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   const [failure, setFailure] = useState("");
   const [moreFailure, setMoreFailure] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const { duration, easing } = useMotion();
+  const { duration, easing, enterEasing } = useMotion();
   const fade = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(visible);
   useEffect(() => {
@@ -99,7 +99,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
     Animated.timing(fade, {
       toValue: visible ? 1 : 0,
       duration: duration(visible ? motion.enter : motion.exit),
-      easing,
+      easing: visible ? enterEasing : easing,
       useNativeDriver: true,
     }).start(({ finished }) => finished && !visible && setMounted(false));
   }, [visible]);

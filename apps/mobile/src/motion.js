@@ -49,6 +49,7 @@ export function useMotion() {
       ...motionDurations(reduce),
       duration: (ms) => (reduce ? 0 : ms),
       easing: Easing.bezier(...motion.ease),
+      enterEasing: Easing.bezier(...motion.spring),
     }),
     [reduce],
   );
@@ -63,13 +64,13 @@ export function useRetained(value) {
   return [value || kept, release];
 }
 export function ScreenEnter({ kind = "fade", style, children }) {
-  const { duration, easing } = useMotion();
+  const { duration, enterEasing } = useMotion();
   const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(progress, {
       toValue: 1,
       duration: duration(motion.enter),
-      easing,
+      easing: enterEasing,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -111,7 +112,7 @@ export function useLeaving(items, keyOf) {
 export function Rise({ mode: entering, index: slot = 0, tint: tintColor, leaving = false, onLeft, children }) {
   const first = useRef({ mode: entering, index: slot }).current;
   const { mode, index } = first;
-  const { duration, easing, reduce } = useMotion();
+  const { duration, easing, reduce, enterEasing } = useMotion();
   const progress = useRef(new Animated.Value(mode && !reduce ? 0 : 1)).current;
   const tint = useRef(new Animated.Value(mode === "arrival" && !reduce ? 0.7 : 0)).current;
   const fade = useRef(new Animated.Value(1)).current;
@@ -126,7 +127,7 @@ export function Rise({ mode: entering, index: slot = 0, tint: tintColor, leaving
       toValue: 1,
       delay: index * motion.stagger,
       duration: duration(motion.enter),
-      easing,
+      easing: enterEasing,
       useNativeDriver: true,
     }).start();
     if (mode === "arrival")
@@ -262,13 +263,13 @@ export function useFlight(key, active = true) {
   };
 }
 export function Pop({ children, style }) {
-  const { duration, easing } = useMotion();
+  const { duration, enterEasing } = useMotion();
   const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(progress, {
       toValue: 1,
       duration: duration(motion.fast),
-      easing,
+      easing: enterEasing,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -338,7 +339,7 @@ export function ChangeFade({ token, children, style, ms = motion.enter }) {
   return <Animated.View style={[style, { opacity: progress }]}>{children}</Animated.View>;
 }
 export function RiseOnce({ seen, children, style, leaving = false, onLeft }) {
-  const { duration, easing, reduce } = useMotion();
+  const { duration, easing, reduce, enterEasing } = useMotion();
   const first = useRef(!seen.current && !reduce).current;
   const progress = useRef(new Animated.Value(first ? 0 : 1)).current;
   useEffect(() => {
@@ -347,7 +348,7 @@ export function RiseOnce({ seen, children, style, leaving = false, onLeft }) {
     Animated.timing(progress, {
       toValue: 1,
       duration: duration(motion.enter),
-      easing,
+      easing: enterEasing,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -359,7 +360,7 @@ export function RiseOnce({ seen, children, style, leaving = false, onLeft }) {
       Animated.timing(progress, {
         toValue: 1,
         duration: duration(motion.enter),
-        easing,
+        easing: enterEasing,
         useNativeDriver: true,
       }).start();
       return;

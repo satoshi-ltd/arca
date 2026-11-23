@@ -103,7 +103,7 @@ function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
 export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, positions }) {
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
-  const { duration: ms, easing } = useMotion();
+  const { duration: ms, easing, enterEasing } = useMotion();
   const twoPane = wide;
   const [state] = useMusicPlayer(visible);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -128,7 +128,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
     if (visible) {
       setMounted(true);
       slide.setValue(0);
-      Animated.timing(slide, { toValue: 1, duration: ms(motion.enter), easing, useNativeDriver: true }).start();
+      Animated.timing(slide, { toValue: 1, duration: ms(motion.enter), easing: enterEasing, useNativeDriver: true }).start();
     } else
       Animated.timing(slide, { toValue: 0, duration: ms(motion.exit), easing, useNativeDriver: true }).start(({ finished }) => {
         if (finished) setMounted(false);

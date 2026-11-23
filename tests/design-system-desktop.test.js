@@ -20,7 +20,7 @@ test("buttons come in four kinds and two sizes, with no text button and no outli
   assert.doesNotMatch(rule(".ghost:hover,\n.back:hover"), /underline/);
   assert.match(rule(".icon-button"), /width: var\(--control-height\);\s+height: var\(--control-height\);/);
   assert.match(rule(".icon-button.small-button"), /width: var\(--button-small-height\);\s+height: var\(--button-small-height\);/);
-  assert.match(rule(".small-button"), /min-height: var\(--button-small-height\);[^}]*padding: var\(--space-1\) var\(--space-2\);/);
+  assert.match(rule(".small-button"), /min-height: var\(--button-small-height\);[^}]*padding: var\(--space-1\) var\(--space-3\);/);
   assert.doesNotMatch(css, /#sync-controls \.ghost\.icon-button \{/);
 });
 

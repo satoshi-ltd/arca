@@ -1,10 +1,10 @@
 import { count } from "./format.js";
 
 export const FOLDER_SECTIONS = [
-  { kind: "folders", label: "FOLDERS" },
-  { kind: "photos", label: "PHOTOS" },
-  { kind: "audio", label: "AUDIO" },
-  { kind: "video", label: "MOVIES & TV" },
+  { kind: "folders", label: "Folders" },
+  { kind: "photos", label: "Photos" },
+  { kind: "audio", label: "Audio" },
+  { kind: "video", label: "Movies & TV" },
 ];
 
 const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });

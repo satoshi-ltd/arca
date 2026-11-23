@@ -393,3 +393,82 @@ test("a client that pauses reading longer than the idle limit still gets the who
   await new Promise((resolve) => setTimeout(resolve, 700));
   assert.equal((await response.arrayBuffer()).byteLength, size);
 });
+
+test("a replica searches the movies of a streamed Movies & TV library through the hub and nothing of a library it never added", async (t) => {
+  const f = await hub(t);
+  await library(f);
+  const r = await replicaOf(t, f);
+  const videos = async (q) => (await r.call(`/v1/search?${new URLSearchParams({ q, limit: "10" })}`)).groups.find((group) => group.type === "videos");
+  assert.equal(await videos("heat"), undefined, "a library the device never added is not searched");
+  await r.call("/v1/select", { id: f.v.id, mode: "stream" });
+  assert.deepEqual((await videos("hea")).rows.map((row) => [row.kind, row.title, row.volume]), [["movie", "Heat", f.v.id]]);
+  assert.equal(await videos("zzz"), undefined);
+});
+
+test("a replica that keeps a Movies & TV library searches its movies as videos, not as files", async (t) => {
+  const f = await hub(t);
+  await library(f);
+  const r = await replicaOf(t, f);
+  await r.call("/v1/select", { id: f.v.id, mode: "keep", path: outside(t) });
+  await r.replica.engine.cycle();
+  const groups = async (q) => (await r.call(`/v1/search?${new URLSearchParams({ q, limit: "10" })}`)).groups;
+  const found = await groups("heat");
+  assert.deepEqual(found.find((group) => group.type === "videos").rows.map((row) => [row.kind, row.title]), [["movie", "Heat"]]);
+  assert.deepEqual(found.find((group) => group.type === "files").rows.map((row) => row.name), ["Heat (1995).es.srt"], "the video file is not listed again");
+});
+
+test("a hub that stops answering never delays a search of a streamed library already read, which uses the last library read", async (t) => {
+  const f = await hub(t);
+  await library(f);
+  const r = await replicaOf(t, f);
+  await r.call("/v1/select", { id: f.v.id, mode: "stream" });
+  const videos = async (q) => (await r.call(`/v1/search?${new URLSearchParams({ q, limit: "10" })}`)).groups.find((group) => group.type === "videos");
+  assert.deepEqual((await videos("hea")).rows.map((row) => row.title), ["Heat"]);
+  const http = await import("node:http");
+  let asked = 0;
+  const silent = http.createServer(() => asked++);
+  await new Promise((resolve) => silent.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    silent.closeAllConnections();
+    silent.close();
+  });
+  r.replica.engine.config.hub.url = `http://127.0.0.1:${silent.address().port}`;
+  r.replica.engine.searchRemote.get(f.v.id).at = 0;
+  const started = Date.now();
+  assert.deepEqual((await videos("hea")).rows.map((row) => row.title), ["Heat"], "the last library read still answers");
+  assert.ok(Date.now() - started < 2000, `search waited ${Date.now() - started} ms for a silent hub`);
+  for (let tries = 0; tries < 100 && !asked; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(asked > 0, "the library is refreshed behind the answer");
+});
+
+test("searches that overlap the first read of a streamed library all wait for it", async (t) => {
+  const f = await hub(t);
+  await library(f);
+  const r = await replicaOf(t, f);
+  await r.call("/v1/select", { id: f.v.id, mode: "stream" });
+  const http = await import("node:http");
+  const target = r.replica.engine.config.hub.url;
+  const slow = http.createServer((req, res) =>
+    setTimeout(() => {
+      const upstream = http.request(`${target}${req.url}`, { method: req.method, headers: { ...req.headers, host: new URL(target).host } }, (answer) => {
+        res.writeHead(answer.statusCode, answer.headers);
+        answer.pipe(res);
+      });
+      upstream.on("error", () => res.destroy());
+      req.pipe(upstream);
+    }, 300),
+  );
+  await new Promise((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    slow.closeAllConnections();
+    slow.close();
+  });
+  r.replica.engine.config.hub.url = `http://127.0.0.1:${slow.address().port}`;
+  r.replica.engine.searchRemote?.clear();
+  const titles = async (q) => ((await r.call(`/v1/search?${new URLSearchParams({ q, limit: "10" })}`)).groups.find((group) => group.type === "videos")?.rows || []).map((row) => row.title);
+  const first = titles("h");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const second = titles("hea");
+  assert.deepEqual(await second, ["Heat"], "the search typed while the library loads finds it too");
+  assert.deepEqual(await first, ["Heat"]);
+});

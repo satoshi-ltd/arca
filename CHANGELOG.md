@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 — 2026-11-23
+
+- Arca has a new look on desktop, phone and the website: one brand green with white labels on every filled control, near-neutral greys, Manrope with Geist Mono for paths and numbers, capsule buttons, sentence-case labels and softer cards, in light and dark.
+- The mark keeps its arch and door in the new green, on every app icon, splash and favicon. Entrances settle on one calm curve on desktop and phone, and a dialog blurs what is behind it.
+- A syncing folder keeps its square tile and draws its progress around the tile's outline instead of turning into a circle.
+- A downloaded video no longer stops after a few minutes or shows a loading mark while it plays, and it starts without asking the hub first. Its conversion used to end after a minute without requests, which a paused or well-buffered player reached easily.
+- Search on a computer also finds the music and movies of the libraries it streams, and of a Movies & TV library it keeps. A favorite's tooltip appears only when its name is cut, and a dialog opened with the mouse no longer rings its first button.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.9.74 — 2026-11-22
 
 - The phone's folder check at launch reuses what reading each folder already told it and loads a folder's saved checks at once, instead of asking the system and the database again for every file; on the maintainer's Fold that walk took about 50 seconds.

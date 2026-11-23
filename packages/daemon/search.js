@@ -91,7 +91,7 @@ function galleryFolder(store, id) {
     : !!store.config.catalog?.find((row) => row.id === id)?.gallery;
 }
 
-export function searchLocal(store, params, music = null, video = null) {
+export function searchLocal(store, params, music = null, video = null, remote = null) {
   const raw = (params.get("q") || "").trim();
   const type = params.get("type") || "";
   const limit = Number(params.get("limit") || 3);
@@ -107,7 +107,10 @@ export function searchLocal(store, params, music = null, video = null) {
   if (!tokens.length) return result;
   store.db.function("arca_fold", fold);
   store.db.function("arca_search_media", (name) => (mediaKind(name) ? 1 : 0));
-  const volumes = store.volumes().filter((v) => store.config.role === "hub" || v.selected);
+  const known = store.volumes();
+  const volumes = known.filter((v) => store.config.role === "hub" || v.selected || remote?.has(v.id));
+  for (const id of remote?.keys() || [])
+    if (!known.some((v) => v.id === id)) volumes.push({ id, name: store.config.catalog?.find((row) => row.id === id)?.name || id });
   const source = store.fileSource();
   const date = dateQuery(query);
   const matches = (text) => tokens.every((token) => text.includes(token));
@@ -115,24 +118,28 @@ export function searchLocal(store, params, music = null, video = null) {
     for (const v of volumes)
       if (matches(fold(v.name))) found.folders.push({ score: rank(v.name, query), name: v.name, row: { id: v.id, name: v.name } });
   for (const volume of volumes) {
+    const held = remote?.get(volume.id);
     let hidden;
     try {
       hidden = store.visibleRules(volume.id);
     } catch {
-      continue;
+      if (!held) continue;
+      hidden = () => false;
     }
     const gallery = galleryFolder(store, volume.id);
+    const musicSource = held ? (held.kind === "music" ? held.source : null) : music;
+    const videoSource = held ? (held.kind === "video" ? held.source : null) : video;
     let index = null;
-    if (music && !gallery && music.isMusic(volume.id))
+    if (musicSource && !gallery && (held || musicSource.isMusic(volume.id)))
       try {
-        index = libraryIndex(music, volume.id);
+        index = libraryIndex(musicSource, volume.id);
       } catch {
         index = null;
       }
     let videos = null;
-    if (video && !gallery && !index && store.config.role === "hub" && video.isVideo(volume.id))
+    if (videoSource && !gallery && !index && (held || (store.config.role === "hub" && videoSource.isVideo(volume.id))))
       try {
-        videos = videoIndex(video, volume.id);
+        videos = videoIndex(videoSource, volume.id);
       } catch {
         videos = null;
       }

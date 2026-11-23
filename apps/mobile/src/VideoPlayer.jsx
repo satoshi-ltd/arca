@@ -73,7 +73,7 @@ function Round({ icon, label, onPress, size = 24, big = false }) {
 
 function Playback({ session, source, next, art, onClose, onNext, save, watchNetwork, loadCues, reopen, initialAudio = null, leaving = false }) {
   const { s, c } = useDesign();
-  const { duration: ms, easing: ease } = useMotion();
+  const { duration: ms, easing: ease, enterEasing } = useMotion();
   const player = useVideoPlayer(null);
   const [current, setCurrent] = useState(() => ({ ...source, at: source.compatible ? 0 : session.at }));
   const currentRef = useRef(current);
@@ -121,7 +121,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   useEffect(() => {
     if (panel) {
       panelIn.setValue(0);
-      Animated.timing(panelIn, { toValue: 1, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
+      Animated.timing(panelIn, { toValue: 1, duration: ms(motion.enter), easing: enterEasing, useNativeDriver: true }).start();
     } else if (shownPanel)
       Animated.timing(panelIn, { toValue: 0, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(({ finished }) => finished && releasePanel());
   }, [panel]);
@@ -516,12 +516,12 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
 
 export function VideoPlayer({ session: current, resolve, save, nextOf, art, onClose, onNext, watchNetwork, loadCues }) {
   const [session, release] = useRetained(current);
-  const { duration: ms, easing: ease } = useMotion();
+  const { duration: ms, easing: ease, enterEasing } = useMotion();
   const appear = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (current) {
       appear.setValue(0);
-      Animated.timing(appear, { toValue: 1, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
+      Animated.timing(appear, { toValue: 1, duration: ms(motion.enter), easing: enterEasing, useNativeDriver: true }).start();
     } else if (session)
       Animated.timing(appear, { toValue: 0, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(({ finished }) => finished && release());
   }, [!!current]);

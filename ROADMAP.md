@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-11-18 · Phase 1 release.
+Updated 2026-11-23 · Phase 1 release.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -34,6 +34,10 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 - **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
   `bug · agent · high`
   Requested by the maintainer after the switch's off-centre knob. The arithmetic defects shipped in 0.9.70. Left: about 25 places where the app and the kit (`design/mobile.css`) draw the same element differently (gaps of 8 against 6, 10 or 14; the sheet header 72 against 64; the setup display title 26 against 36; the Fold's compact rail; field insets 12 against 16; the mini player's controls and Now playing's header), which wait for the maintainer to say which side wins; and the Android text centring checks only a device can confirm. Accept: each remaining difference resolved on the side the maintainer chooses, with a test, and the device checks listed for the maintainer.
+
+- **VIDEO-LIBRARY-CACHE-FIRST** — A replica's video library paints from its saved copy and refreshes from the hub behind it
+  `feature · agent · normal`
+  Approved by the maintainer. Opening the library waits up to ten seconds for the hub before falling back to the saved copy. accept: with a held hub the desktop library and a title page render from the saved copy at once and update when the hub answers; with no saved copy the downloads list as today; tests hold the hub and assert the first paint, and check what the phone does with the same route.
 
 ## In progress
 

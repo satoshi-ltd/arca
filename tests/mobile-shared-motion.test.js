@@ -58,7 +58,7 @@ test("the shared moments are wired into the screens", () => {
   assert.match(components, /putFlight\("folder"/);
   assert.match(components, /useFlight\(detail && wide && contentIcon \? "folder" : null\)/);
   assert.match(components, /<Animated\.View\s+pointerEvents="none"\s+style=\{\[\s+s\.navIndicator/);
-  assert.match(components, /<ProgressRing size=\{g\.touchHeight\} fraction=\{Math\.min\(1, progress\)\} \/>/);
+  assert.match(components, /<ProgressRing size=\{g\.touchHeight\} fraction=\{Math\.min\(1, progress\)\} radius=\{g\.tileRadius \+ \(g\.touchHeight - g\.touchTile\) \/ 2\} \/>/);
   assert.match(components, /<PressScale\s+scale=\{!disabled && !busy && !ghost\}/);
   assert.match(components, /s\.segmentSelected,\s+s\.segmentThumb/);
   const app = read("../apps/mobile/src/App.jsx");
@@ -83,9 +83,13 @@ test("the edge strip only claims a horizontal drag, the gallery viewport is meas
   assert.match(app, /pull\.setValue\(0\);\s+\}, \[screen, folder\]\);/);
 });
 
-test("a tile inside a progress ring turns round so a square never sits in a circle", () => {
+test("a syncing tile keeps its square shape and its progress runs around it as one outline", () => {
   const css = read("../apps/desktop/src/style.css");
-  assert.match(css, /\.home-lead:has\(\.home-ring\) > \.tile \{\s*border-radius: var\(--r-pill\);/);
+  assert.doesNotMatch(css, /\.home-lead:has\(\.home-ring\) > \.tile/, "the desktop tile keeps its shape under a ring");
   const components = read("../apps/mobile/src/components.jsx");
-  assert.match(components, /syncing && progress > 0 && s\.tileRound/);
+  assert.doesNotMatch(components, /tileRound/, "a syncing tile keeps its square shape");
+  assert.match(components, /if \(radius != null\) \{[\s\S]{0,400}const length = 4 \* straight \+ 2 \* Math\.PI \* corner;[\s\S]{0,1400}<AnimatedPath[\s\S]{0,260}strokeDasharray=\{\[length, length\]\}\s+strokeDashoffset=\{value\.interpolate\(\{ inputRange: \[0, 1\], outputRange: \[length, 0\], extrapolate: "clamp" \}\)\}/, "the outline is one stroke around the tile that fills with the fraction");
+  assert.match(components, /useNativeDriver: radius == null,/);
+  for (const file of ["Favorites.jsx", "GlobalSearch.jsx"]) assert.match(read(`../apps/mobile/src/${file}`), /easing: visible \? enterEasing : easing,/, file);
+  assert.match(read("../apps/mobile/src/Notice.jsx"), /easing: leaving \? easing : enterEasing,/);
 });

@@ -216,7 +216,7 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     tagHeight: "tag-height",
     tagFont: "tag-font",
     tagLine: "tag-line",
-    tagRadius: "r-small",
+    tagRadius: "r-pill",
     tagX: "tag-x",
     tagY: "tag-y",
     pillFont: "pill-font",
@@ -1088,7 +1088,7 @@ test("a wide History row keeps its revision cell on one line up to seven digits 
   assert.ok(rule, "the revision cell never shrinks below its width");
   const widthAt = new Function("fontScale", "textScale", `return ${rule[1]};`);
   const { geometry } = await import("../apps/mobile/src/design-tokens.js");
-  assert.match(theme, /mono: \{\s*fontFamily: "FragmentMono_400Regular",\s*fontSize: g\.touchCaptionFont,/);
+  assert.match(theme, /mono: \{\s*fontFamily: "GeistMono_400Regular",\s*fontSize: g\.touchCaptionFont,/);
   const font = geometry.touchCaptionFont;
   const advance = 0.618;
   const { textSizes } = await import("../apps/mobile/src/text-size.js");
@@ -1096,7 +1096,7 @@ test("a wide History row keeps its revision cell on one line up to seven digits 
     for (const { value: textScale, label } of textSizes) {
       const width = widthAt(fontScale, textScale);
       const needed = "rev 1234567".length * advance * font * fontScale * textScale;
-      assert.ok(width >= needed, `${width} px fits "rev" and seven digits in Fragment Mono at ${label} text and ${fontScale}× system size`);
+      assert.ok(width >= needed, `${width} px fits "rev" and seven digits in Geist Mono at ${label} text and ${fontScale}× system size`);
     }
 });
 

@@ -118,9 +118,10 @@ import { Text, FontCap } from "./Text";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
-import { InstrumentSans_400Regular } from "@expo-google-fonts/instrument-sans/400Regular";
-import { InstrumentSans_600SemiBold } from "@expo-google-fonts/instrument-sans/600SemiBold";
-import { FragmentMono_400Regular } from "@expo-google-fonts/fragment-mono/400Regular";
+import { Manrope_400Regular } from "@expo-google-fonts/manrope/400Regular";
+import { Manrope_600SemiBold } from "@expo-google-fonts/manrope/600SemiBold";
+import { Manrope_700Bold } from "@expo-google-fonts/manrope/700Bold";
+import { GeistMono_400Regular } from "@expo-google-fonts/geist-mono/400Regular";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
@@ -301,9 +302,10 @@ export default function App() {
   );
   const motionReady = useReduceMotionReady();
   const [fonts, fontError] = useFonts({
-    InstrumentSans_400Regular,
-    InstrumentSans_600SemiBold,
-    FragmentMono_400Regular,
+    Manrope_400Regular,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    GeistMono_400Regular,
   });
   const engine = useRef(null),
     action = useRef(false),
@@ -695,15 +697,15 @@ export default function App() {
   const folderLeaving = new Set(folderRows.filter((row) => row.leaving).map((row) => row.key));
   const [pulling, setPulling] = useState(false);
   const [launchShown, setLaunchShown] = useState(true);
-  const { duration: motionMs, easing: motionEase } = useMotion();
+  const { duration: motionMs, easing: motionEase, enterEasing } = useMotion();
   const edge = useRef(new Animated.Value(0)).current;
   const pull = useRef(new Animated.Value(0)).current;
   const backRef = useRef(null);
   useEffect(() => {
     pull.setValue(0);
   }, [screen, folder]);
-  const edgeState = useRef({ ready: false, width: 0, ms: motionMs, easing: motionEase });
-  edgeState.current = { ready: !!folder && view === "Folders" && !sheet && !fileActionsOpen, width, ms: motionMs, easing: motionEase };
+  const edgeState = useRef({ ready: false, width: 0, ms: motionMs, easing: motionEase, enterEasing });
+  edgeState.current = { ready: !!folder && view === "Folders" && !sheet && !fileActionsOpen, width, ms: motionMs, easing: motionEase, enterEasing };
   const edgeSwipe = useMemo(
     () =>
       PanResponder.create({
@@ -712,20 +714,20 @@ export default function App() {
           edgeState.current.ready && g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy),
         onPanResponderMove: (_, g) => edge.setValue(Math.max(0, g.dx)),
         onPanResponderRelease: (_, g) => {
-          const { width: span, ms, easing } = edgeState.current;
+          const { width: span, ms, easing, enterEasing: settle } = edgeState.current;
           if (g.dx > span / 3 || g.vx > 0.6)
             Animated.timing(edge, { toValue: span, duration: ms(motion.exit), easing, useNativeDriver: true }).start(({ finished }) => {
               if (!finished) return;
               backRef.current?.();
               setTimeout(() => edge.setValue(0), motion.fast);
             });
-          else Animated.timing(edge, { toValue: 0, duration: ms(motion.enter), easing, useNativeDriver: true }).start();
+          else Animated.timing(edge, { toValue: 0, duration: ms(motion.enter), easing: settle, useNativeDriver: true }).start();
         },
         onPanResponderTerminate: () =>
           Animated.timing(edge, {
             toValue: 0,
             duration: edgeState.current.ms(motion.enter),
-            easing: edgeState.current.easing,
+            easing: edgeState.current.enterEasing,
             useNativeDriver: true,
           }).start(),
       }),
@@ -738,7 +740,7 @@ export default function App() {
     if (fileActionsOpen) {
       fileMenuRise.setValue(0);
       Animated.parallel([fileMenuFade, fileMenuRise].map((value) =>
-        Animated.timing(value, { toValue: 1, duration: motionMs(motion.fast), easing: motionEase, useNativeDriver: true }),
+        Animated.timing(value, { toValue: 1, duration: motionMs(motion.fast), easing: enterEasing, useNativeDriver: true }),
       )).start();
     } else if (fileMenuShown)
       Animated.timing(fileMenuFade, { toValue: 0, duration: motionMs(motion.exitFast), easing: motionEase, useNativeDriver: true }).start(

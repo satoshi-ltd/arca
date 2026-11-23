@@ -1716,7 +1716,7 @@ test("podcast shows resume from their own tile: in progress first, then New, the
   assert.match(css, /\n\.music-card strong\.music-two \{[^}]*-webkit-line-clamp: 2;/);
   assert.match(css, /\n\.music-cover > \.pill\.music-cover-new \{\s+position: absolute;\s+top: var\(--space-2\);\s+left: var\(--space-2\);\s+z-index: 1;\s+padding-right: var\(--pill-left\);\s+background: var\(--surface\);\s+color: var\(--green\);\s+\}/, "the pill sits at the play button's inset with surface fill and accent ink");
   assert.doesNotMatch(css, /\.music-new\b/);
-  assert.match(css, /\n\.music-continue-play \{[^}]*top: calc\(var\(--music-tile\) - var\(--control-height\) - var\(--space-2\) - var\(--space-3\)\);[^}]*width: calc\(var\(--control-height\) \+ var\(--space-2\)\);[^}]*background: var\(--green\);/);
+  assert.match(css, /\n\.music-continue-play \{[^}]*top: calc\(var\(--music-tile\) - var\(--control-height\) - var\(--space-2\) - var\(--space-3\)\);[^}]*width: calc\(var\(--control-height\) \+ var\(--space-2\)\);[^}]*background: var\(--fill\);/);
   assert.match(css, /\n\.music-continue:hover > \.music-continue-menu,\n\.music-continue:focus-within > \.music-continue-menu,/);
 });
 

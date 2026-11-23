@@ -352,7 +352,9 @@ test("the player shows a busy mark, labelled skips and M, F and arrow keys; the 
   assert.match(app, /<div class="video-loading" role="status" aria-label="Loading video">\$\{busyIcon\(\)\}<\/div>/);
   assert.match(app, /videoButton\("back10", "Back 10 seconds", "rotate-ccw", "", "10"\)/);
   assert.match(app, /videoButton\("forward30", "Forward 30 seconds", "rotate-cw", "", "30"\)/);
-  for (const event of ["waiting", "stalled", "playing"]) assert.match(app, new RegExp(`video\\.addEventListener\\("${event}"`));
+  assert.match(app, /video\.addEventListener\("waiting", \(\) => videoBusy\(!video\.paused\)\)/);
+  for (const event of ["playing", "canplay"]) assert.match(app, new RegExp(`video\\.addEventListener\\("${event}", \\(\\) => videoBusy\\(false\\)\\)`));
+  assert.doesNotMatch(app, /video\.addEventListener\("stalled"/, "a finished download that stops fetching is not a wait");
   assert.match(app, /event\.key === "ArrowUp" \|\| event\.key === "ArrowDown"/);
   assert.match(app, /event\.key\.toLowerCase\(\) === "m"/);
   assert.match(app, /event\.key\.toLowerCase\(\) === "f"/);
@@ -588,4 +590,18 @@ test("deletions a device sent are reviewed on the hub as kept files, with Keep f
   ui.q("#dialog-recheck").click();
   await until(() => ui.calls.some(([route]) => route === "/v1/review-deletions"));
   assert.equal(JSON.stringify(ui.calls.find(([route]) => route === "/v1/review-deletions")[1]), JSON.stringify({ id: "photos", confirm: false }));
+});
+
+test("a dialog opened with the pointer rings no button unless it is the safe default, a favourite's tooltip appears only when its name is cut, and the segmented thumb settles on the enter curve", () => {
+  const app = source("app.js");
+  assert.match(app, /document\.addEventListener\("pointerdown", \(\) => \(menuByKeyboard = false\), true\);\s+document\.addEventListener\("keydown", \(\) => \(menuByKeyboard = true\), true\);/);
+  assert.match(app, /function roleTag\(role\) \{\s+return !role \|\| role === "replica" \? "" : `<span class="tag">\$\{escape\(role\[0\]\.toUpperCase\(\) \+ role\.slice\(1\)\)\}<\/span>`;/, "a role tag reads in sentence case");
+  assert.match(app, /\$\("#dialog"\)\.showModal\(\);\s+if \(!menuByKeyboard && document\.activeElement\?\.matches\?\.\("#dialog button:not\(\[autofocus\]\)"\)\) \{\s+\$\("#dialog"\)\.tabIndex = -1;\s+\$\("#dialog"\)\.focus\(\);/, "the autofocused Cancel of a confirmation keeps its focus");
+  assert.match(source("style.css"), /\ndialog:focus-visible \{\s+outline: none;/);
+  assert.match(app, /const name = target\.querySelector\?\.\(":scope > \.favorite-name"\);\s+if \(name && name\.clientWidth > 0 && name\.scrollWidth <= name\.clientWidth\) return;/);
+  assert.match(app, /\{ duration: motionDuration\("--motion-enter"\), easing: motionSpring\(\) \}/);
+  const css = source("style.css");
+  assert.match(css, /\n\.launch-mark \.brand-draw-door \{\s+fill: var\(--mark-tile\);\s+\}\s+\[data-theme="dark"\] \.launch-mark \.brand-draw-door \{\s+fill: var\(--mark-door\);/, "on light the tile-less arch is one green, door included");
+  assert.match(css, /\n\.tray-body #tray-error \{[^}]*color: var\(--erFg\);/);
+  assert.match(css, /dialog:has\(:where\(#submit-dialog\.danger\)\) \.modal-title \.tile \{\s+background: var\(--erBg\);\s+color: var\(--erFg\);/);
 });

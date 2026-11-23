@@ -253,7 +253,7 @@ export function BrandActivity() {
   );
 }
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-function DrawnArch({ size, progress, door, band }) {
+function DrawnArch({ size, progress, door, band, inner }) {
   const offset = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [brandDrawLength, 0],
@@ -276,7 +276,7 @@ function DrawnArch({ size, progress, door, band }) {
       </Svg>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: door }]}>
         <Svg width={size} height={size} viewBox={brandGlyphBox}>
-          <Path d={glyph.door} fill={brandMark.door} />
+          <Path d={glyph.door} fill={inner} />
         </Svg>
       </Animated.View>
     </View>
@@ -298,6 +298,7 @@ export function PullArch({ pull, refreshing }) {
       progress={refreshing ? full : pull}
       door={refreshing ? breathing : lit}
       band={dark ? brandMark.arch : brandMark.tile}
+      inner={dark ? brandMark.door : brandMark.tile}
     />
   );
 }
@@ -326,7 +327,7 @@ export function LaunchHold({ leaving = false, onLeft }) {
         </Svg>
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduce ? 1 : door }]}>
           <Svg width={160} height={160} viewBox={brandSplashBox}>
-            <Path d={glyph.door} fill={brandMark.door} />
+            <Path d={glyph.door} fill={dark ? brandMark.door : brandMark.tile} />
           </Svg>
         </Animated.View>
       </View>
@@ -981,7 +982,7 @@ export function Sheet({
   onBack,
 }) {
   const { s, c, wide } = useDesign();
-  const { duration, easing } = useMotion();
+  const { duration, easing, enterEasing } = useMotion();
   const progress = useRef(new Animated.Value(0)).current;
   const leaving = useRef(false);
   const dialog = wide || centered;
@@ -991,7 +992,7 @@ export function Sheet({
     Animated.timing(progress, {
       toValue: to,
       duration: duration(ms),
-      easing,
+      easing: to ? enterEasing : easing,
       useNativeDriver: true,
     }).start(({ finished }) => finished && then?.());
   // A bottom sheet travels its own height, so it starts once measured; dialogs start at once.
@@ -1288,18 +1289,46 @@ export function DownloadGlyph({ glyph }) {
   );
 }
 
-export function ProgressRing({ fraction, size = 46, thickness = 2 }) {
+export function ProgressRing({ fraction, size = 46, thickness = 2, radius = null }) {
   const { c } = useDesign();
-  const { duration, easing } = useMotion();
+  const { duration, enterEasing } = useMotion();
   const value = useRef(new Animated.Value(fraction)).current;
   useEffect(() => {
     Animated.timing(value, {
       toValue: fraction,
       duration: duration(motion.enter),
-      easing,
-      useNativeDriver: true,
+      easing: enterEasing,
+      useNativeDriver: radius == null,
     }).start();
   }, [fraction]);
+  if (radius != null) {
+    const side = size - thickness;
+    const corner = Math.min(radius - thickness / 2, side / 2);
+    const straight = side - 2 * corner;
+    const length = 4 * straight + 2 * Math.PI * corner;
+    const outline = `M${size / 2} ${thickness / 2}h${straight / 2}a${corner} ${corner} 0 0 1 ${corner} ${corner}v${straight}a${corner} ${corner} 0 0 1 ${-corner} ${corner}h${-straight}a${corner} ${corner} 0 0 1 ${-corner} ${-corner}v${-straight}a${corner} ${corner} 0 0 1 ${corner} ${-corner}z`;
+    return (
+      <View
+        pointerEvents="none"
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: 100, now: Math.round(fraction * 100) }}
+        style={{ position: "absolute", width: size, height: size }}
+      >
+        <Svg width={size} height={size}>
+          <Path d={outline} fill="none" stroke={c.line} strokeWidth={thickness} />
+          <AnimatedPath
+            d={outline}
+            fill="none"
+            stroke={c.accent}
+            strokeWidth={thickness}
+            strokeLinecap="round"
+            strokeDasharray={[length, length]}
+            strokeDashoffset={value.interpolate({ inputRange: [0, 1], outputRange: [length, 0], extrapolate: "clamp" })}
+          />
+        </Svg>
+      </View>
+    );
+  }
   const half = size / 2;
   const arc = {
     position: "absolute",
@@ -1375,7 +1404,6 @@ export function FolderRow({
       style={[
         s.tile,
         available && s.tileAvailable,
-        syncing && progress > 0 && s.tileRound,
         state.tone === "warning" && s.tileWarning,
         state.tone === "danger" && s.tileDanger,
         state.tone === "neutral" && s.tileNeutral,
@@ -1394,7 +1422,7 @@ export function FolderRow({
   const contents = (
     <>
       <View ref={lead} style={s.homeLead}>
-        {syncing && progress > 0 && <ProgressRing size={g.touchHeight} fraction={Math.min(1, progress)} />}
+        {syncing && progress > 0 && <ProgressRing size={g.touchHeight} fraction={Math.min(1, progress)} radius={g.tileRadius + (g.touchHeight - g.touchTile) / 2} />}
         {tile}
       </View>
       <View style={[s.flex, s.stack]}>
@@ -1427,7 +1455,7 @@ export function FolderRow({
         )
       ) : (
         <>
-          {!!tag && <Tag>{tag.toUpperCase()}</Tag>}
+          {!!tag && <Tag>{tag}</Tag>}
           <View style={s.rowAction}>
             <Icon name="chevron" color={c.mute} />
           </View>
@@ -1698,7 +1726,7 @@ export function RoleChip({ role = "Replica", hub, backup }) {
     <View style={s.roleSet}>
       {named && (
         <View style={[s.machineTag, hub && s.hubTag, backup && s.roleTagJoined]}>
-          <Text style={[s.machineTagText, hub && s.hubTagText]}>{role.toUpperCase()}</Text>
+          <Text style={[s.machineTagText, hub && s.hubTagText]}>{role[0].toUpperCase() + role.slice(1).toLowerCase()}</Text>
         </View>
       )}
       {backup && (
@@ -1764,7 +1792,7 @@ export function MachineRow({
       <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
         {name}
       </Text>
-      {self && <Tag variant="self">THIS DEVICE</Tag>}
+      {self && <Tag variant="self">This device</Tag>}
     </View>
   );
   const tile = (

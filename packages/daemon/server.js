@@ -39,6 +39,7 @@ import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
+import { remoteLibraries } from "./search-remote.js";
 import { acceptReport, assertReportedFolder, machines, playerRoute, refusePhoneBackup } from "./machines.js";
 import { clearPosition, listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { listFavorites, saveFavorites } from "./favorites.js";
@@ -1274,7 +1275,7 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/search") {
         requireAdmin();
-        return send(200, searchLocal(s, url.searchParams, music(), video()));
+        return send(200, searchLocal(s, url.searchParams, music(), video(), await remoteLibraries(engine, s)));
       }
       if (req.method === "GET" && route === "/v1/file-preview") {
         requireAdmin();

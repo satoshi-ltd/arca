@@ -508,7 +508,7 @@ test("theme follows the system until the reader picks one, then remembers the pi
   page.click();
   assert.equal(page.root.dataset.theme, "dark");
   assert.equal(page.store["arca-theme"], "dark");
-  assert.equal(page.meta.content, "#0f1512");
+  assert.equal(page.meta.content, "#0c100e");
   assert.equal(page.button.label, "Switch to light theme");
 });
 test("site build ships theme.js", async (t) => {
@@ -554,5 +554,5 @@ test("the site's light palette is the app's palette", async () => {
     ["muted", "mute"],
   ])
     assert.equal(value(styles, site), value(tokens, app), `--${site}`);
-  assert.match(await read("../site/index.html"), /name="theme-color" content="#f4f6f1"/);
+  assert.match(await read("../site/index.html"), /name="theme-color" content="#f6f8f7"/);
 });

@@ -35,7 +35,7 @@ const sheet = (c) =>
       borderColor: c.line,
       backgroundColor: c.surface,
     },
-    primary: { backgroundColor: c.accent, borderColor: c.accent },
+    primary: { backgroundColor: c.fill, borderColor: c.fill },
     label: { color: c.ink, fontSize: g.touchControlFont, fontWeight: "600" },
     primaryLabel: { color: c.onAccent },
   });

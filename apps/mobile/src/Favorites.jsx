@@ -164,7 +164,7 @@ export function FavoritesDrawer({
   device,
 }) {
   const { s, c } = useDesign();
-  const { duration, easing } = useMotion();
+  const { duration, easing, enterEasing } = useMotion();
   const [rows, left] = useLeaving(items, favoriteKey);
   const progress = useRef(new Animated.Value(0)).current;
   const [shown, setShown] = useState(visible);
@@ -174,7 +174,7 @@ export function FavoritesDrawer({
     Animated.timing(progress, {
       toValue: visible ? 1 : 0,
       duration: duration(visible ? motion.enter : motion.exit),
-      easing,
+      easing: visible ? enterEasing : easing,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished && !visible) {

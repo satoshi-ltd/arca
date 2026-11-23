@@ -28,6 +28,13 @@ test("Change address on the phone saves through the client with the replica's ch
 test("a folder row can carry a role tag before its chevron, read aloud after its caption", () => {
   const components = read("components.jsx");
   const row = components.slice(components.indexOf("export function FolderRow("), components.indexOf("const TABS = "));
-  assert.match(row, /\{!!tag && <Tag>\{tag\.toUpperCase\(\)\}<\/Tag>\}\s*<View style=\{s\.rowAction\}>/);
+  assert.match(row, /\{!!tag && <Tag>\{tag\}<\/Tag>\}\s*<View style=\{s\.rowAction\}>/);
   assert.match(row, /\$\{tag \? `, \$\{tag\}` : ""\}/);
+});
+
+test("role chips and row tags read in sentence case like the desktop's", () => {
+  const components = read("components.jsx");
+  assert.match(components, /<Text style=\{\[s\.machineTagText, hub && s\.hubTagText\]\}>\{role\[0\]\.toUpperCase\(\) \+ role\.slice\(1\)\.toLowerCase\(\)\}<\/Text>/);
+  assert.doesNotMatch(components, /<Tag>\{tag\.toUpperCase\(\)\}<\/Tag>|\{role\.toUpperCase\(\)\}/);
+  assert.match(components, /easing: to \? enterEasing : easing,/, "a sheet enters on the settle curve and leaves on the ease");
 });

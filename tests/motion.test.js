@@ -49,6 +49,10 @@ test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("touch-dialog-scale"), String(motion.dialogScale));
   assert.equal(token("exit-fast"), `${motion.exitFast}ms`);
   assert.equal(token("ease"), `cubic-bezier(${motion.ease.join(", ")})`);
+  assert.equal(token("spring"), `cubic-bezier(${motion.spring.join(", ")})`, "entrances settle on one curve on desktop and phone");
+  const phoneMotion = fs.readFileSync(new URL("../apps/mobile/src/motion.js", import.meta.url), "utf8");
+  assert.match(phoneMotion, /enterEasing: Easing\.bezier\(\.\.\.motion\.spring\)/);
+  assert.match(phoneMotion, /export function ScreenEnter[\s\S]{0,400}duration: duration\(motion\.enter\),\s+easing: enterEasing,/);
   const reduced = tokens.slice(
     tokens.indexOf("@media (prefers-reduced-motion: reduce)"),
   );

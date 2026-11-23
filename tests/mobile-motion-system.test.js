@@ -47,7 +47,7 @@ test("a pressed row, button or tile goes down at once and eases back over 120 ms
 test("the file history ⋯ menu is a popover that leaves in 80 ms and returns focus to its trigger", () => {
   const app = read("App.jsx");
   assert.match(app, /const \[fileMenuShown, releaseFileMenu\] = useRetained\(fileActionsOpen \? "open" : null\);/);
-  assert.match(app, /Animated\.timing\(value, \{ toValue: 1, duration: motionMs\(motion\.fast\), easing: motionEase, useNativeDriver: true \}\)/, "in 120 ms");
+  assert.match(app, /Animated\.timing\(value, \{ toValue: 1, duration: motionMs\(motion\.fast\), easing: enterEasing, useNativeDriver: true \}\)/, "in 120 ms");
   assert.match(app, /Animated\.timing\(fileMenuFade, \{ toValue: 0, duration: motionMs\(motion\.exitFast\), easing: motionEase, useNativeDriver: true \}\)\.start\(\s+\(\{ finished \}\) => finished && releaseFileMenu\(\),/, "out in 80 ms, opacity only");
   assert.match(app, /outputRange: \[-motion\.distance \/ 2, 0\]/, "4 dp down from the ⋯ corner");
   assert.match(app, /<View style=\{s\.fileMenuOverlay\} pointerEvents=\{fileActionsOpen \? "box-none" : "none"\}>/, "no taps from the first exit frame");
@@ -56,10 +56,10 @@ test("the file history ⋯ menu is a popover that leaves in 80 ms and returns fo
   assert.equal(motion.exitFast, 80);
 });
 
-test("notices enter on the shared ease and fall and fade 140 ms when dismissed or swiped", () => {
+test("notices enter on the settle curve and fall and fade 140 ms on the shared ease when dismissed or swiped", () => {
   const notice = read("Notice.jsx");
   assert.doesNotMatch(notice, /AccessibilityInfo|noticeMetrics\.duration/, "no own timing and no own reduced-motion read");
-  assert.match(notice, /toValue: leaving \? 0 : 1,\s+duration: duration\(leaving \? motion\.exit : motion\.enter\),\s+easing,/);
+  assert.match(notice, /toValue: leaving \? 0 : 1,\s+duration: duration\(leaving \? motion\.exit : motion\.enter\),\s+easing: leaving \? easing : enterEasing,/);
   assert.match(notice, /onPanResponderMove: \(_, g\) => drag\.setValue\(Math\.max\(0, g\.dy\)\)/, "a swipe moves it with the finger");
   assert.match(notice, /if \(noticeReleaseDismisses\(g\)\) dismiss\.current\(\);\s+else settle\.current\(\);/);
   assert.match(notice, /const \[rows, left\] = useLeaving\(items, noticeKey\);/, "the stack keeps a dismissed notice until its fall ends");
@@ -72,7 +72,7 @@ test("notices enter on the shared ease and fall and fade 140 ms when dismissed o
 
 test("Now Playing, Search Arca and the photo viewer run on the tokens and honour reduced motion", () => {
   const playing = read("NowPlayingPage.jsx");
-  assert.match(playing, /duration: ms\(motion\.enter\), easing, useNativeDriver: true/);
+  assert.match(playing, /duration: ms\(motion\.enter\), easing: enterEasing, useNativeDriver: true/);
   assert.match(playing, /duration: ms\(motion\.exit\), easing, useNativeDriver: true/, "leaves in 140 ms");
   assert.match(playing, /pointerEvents=\{visible \? "auto" : "none"\}/);
   const search = read("GlobalSearch.jsx");

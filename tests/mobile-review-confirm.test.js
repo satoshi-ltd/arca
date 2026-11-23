@@ -170,9 +170,9 @@ test("the search filter chip and its remove button meet the touch height", () =>
   assert.match(theme, /searchChipRemove: \{ width: g\.touchControlHeight, height: g\.touchControlHeight,/);
 });
 
-test("section labels are one component that uppercases through style and carries the header role", () => {
+test("section labels are one component in sentence case that carries the header role", () => {
   const theme = read("theme.js");
-  assert.match(theme, /eyebrow: \{[^}]*textTransform: "uppercase"/s);
+  assert.doesNotMatch(theme, /eyebrow: \{[^}]*textTransform/s, "labels keep the case they are written in");
   assert.match(read("components.jsx"), /export function Eyebrow\(\{ children, style \}\) \{[\s\S]*?accessibilityRole="header" style=\{\[s\.eyebrow, style\]\}/);
   const sources = fs.readdirSync(new URL("../apps/mobile/src/", import.meta.url)).filter((name) => name.endsWith(".jsx"));
   for (const name of sources) {

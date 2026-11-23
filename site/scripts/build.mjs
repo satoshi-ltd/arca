@@ -256,8 +256,8 @@ if (
   if (seo.sitemap) await writeFile(path.join(output, "sitemap.xml"), seo.sitemap);
   for (const name of [
     "arca-icon.svg",
-    "fonts/instrument-sans.woff2",
-    "fonts/fragment-mono.woff2",
+    "fonts/manrope.woff2",
+    "fonts/geist-mono.woff2",
   ]) {
     await cp(
       path.join(root, "apps/desktop/src/assets", name),

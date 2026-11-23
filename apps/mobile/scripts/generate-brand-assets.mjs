@@ -26,10 +26,10 @@ render("icon-dark", launcher({}));
 render("icon-tinted", launcher({ arch: "#ffffff", doorFill: "#bfbfbf" }));
 render("adaptive-icon", launcher({ visible: androidVisible }));
 render("monochrome-icon", launcher({ visible: androidVisible, arch: "#ffffff", doorFill: "#ffffff" }));
-const splash = (arch) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="${brandSplashBox}">${glyph(display, arch, brandColors.door)}</svg>`;
-render("splash-icon-light", splash(brandColors.tile));
-render("splash-icon-dark", splash(brandColors.arch));
+const splash = (arch, inner) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="${brandSplashBox}">${glyph(display, arch, inner)}</svg>`;
+render("splash-icon-light", splash(brandColors.tile, brandColors.tile));
+render("splash-icon-dark", splash(brandColors.arch, brandColors.door));
 render(
   "notification-icon",
   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="${pixel.viewBox}">${glyph(pixel, "#ffffff", "#ffffff")}</svg>`,

@@ -350,9 +350,8 @@ export class Web {
       "/vendor/lucide.js": "vendor/lucide.js",
       "/assets/arca-icon.svg": "assets/arca-icon.svg",
       "/assets/arca-icon-small.svg": "assets/arca-icon-small.svg",
-      "/assets/fonts/instrument-sans.woff2":
-        "assets/fonts/instrument-sans.woff2",
-      "/assets/fonts/fragment-mono.woff2": "assets/fonts/fragment-mono.woff2",
+      "/assets/fonts/manrope.woff2": "assets/fonts/manrope.woff2",
+      "/assets/fonts/geist-mono.woff2": "assets/fonts/geist-mono.woff2",
     };
     if (req.method === "GET" && assets[url.pathname]) {
       const file = fileURLToPath(

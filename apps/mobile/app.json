@@ -2,7 +2,7 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.9.74",
+    "version": "0.10.0",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -34,7 +34,7 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#244d3e",
+        "backgroundColor": "#0d853f",
         "monochromeImage": "./assets/monochrome-icon.png"
       }
     },
@@ -47,7 +47,7 @@
       [
         "expo-notifications",
         {
-          "color": "#244d3e",
+          "color": "#0d853f",
           "icon": "./assets/notification-icon.png"
         }
       ],
@@ -99,10 +99,10 @@
           "image": "./assets/splash-icon-light.png",
           "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#f4f6f1",
+          "backgroundColor": "#f6f8f7",
           "dark": {
             "image": "./assets/splash-icon-dark.png",
-            "backgroundColor": "#0f1512"
+            "backgroundColor": "#0c100e"
           }
         }
       ],

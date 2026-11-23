@@ -178,6 +178,31 @@ test("a desktop replica downloads a title with its subtitles into its own storag
   assert.deepEqual((await r.call(`/v1/video/downloads?volume=${f.v.id}`)).downloads, []);
 });
 
+test("a downloaded title plays without waiting for the hub", async (t) => {
+  const f = await hub(t);
+  const { film, movie, name } = await movieLibrary(f);
+  const r = await replicaOf(t, f);
+  await r.call("/v1/video/download", { volume: f.v.id, paths: [name] });
+  await idle(r);
+  const proxy = await relay(t, r.replica.engine.config.hub.url);
+  r.replica.engine.config.hub.url = proxy.url;
+  let asked = 0;
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  t.after(release);
+  proxy.control.hold = () => (asked++, held);
+  const query = new URLSearchParams({ volume: f.v.id, path: name, hash: movie.hash });
+  let limit;
+  const playback = await Promise.race([
+    r.call(`/v1/video/playback?${query}`),
+    new Promise((resolve, reject) => (limit = setTimeout(() => reject(new Error("playback waited for the hub")), 3000))),
+  ]).finally(() => clearTimeout(limit));
+  assert.equal(asked, 0, "the hub is not asked for a copy this computer holds");
+  const response = await fetch(playback.url, { headers: { Range: "bytes=0-9" } });
+  assert.equal(response.status, 206);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), film.subarray(0, 10));
+});
+
 test("progress saved while the hub is away shows in the offline library until the hub hears it", async (t) => {
   const f = await hub(t);
   const { movie, name } = await movieLibrary(f);

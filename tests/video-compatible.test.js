@@ -238,6 +238,25 @@ test("a request waiting for a segment keeps its session alive, and init.mp4 wait
   assert.equal((await waiting).file, path.join(directory, "init.mp4"));
 });
 
+test("a player that buffered ahead and reads nothing for minutes keeps its session", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-compatible-quiet-"));
+  const sessions = new VideoSessions(home, { sweepMs: 3600000 });
+  t.after(() => {
+    sessions.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const directory = path.join(home, "transcodes", "b".repeat(32));
+  fs.mkdirSync(directory);
+  const session = { id: "b".repeat(32), owner: "x", directory, created: Date.now(), touched: Date.now() - 30 * 60000 };
+  sessions.sessions.set(session.id, session);
+  sessions.sweep();
+  assert.ok(sessions.sessions.has(session.id), "thirty quiet minutes do not end a session");
+  session.touched = Date.now() - 5 * 3600000;
+  sessions.sweep();
+  assert.equal(sessions.sessions.has(session.id), false, "an abandoned session still ends");
+  assert.equal(fs.existsSync(directory), false);
+});
+
 function firstTimes(file) {
   const out = execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-copyts", "-i", file, "-map", "0", "-c", "copy", "-f", "framecrc", "-"], { encoding: "utf8" });
   const bases = Object.fromEntries([...out.matchAll(/#tb (\d+): (\d+)\/(\d+)/g)].map((m) => [m[1], Number(m[2]) / Number(m[3])]));

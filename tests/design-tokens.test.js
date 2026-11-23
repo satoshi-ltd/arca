@@ -16,19 +16,19 @@ test("desktop and phone tokens come from one generated source", () => {
 
 test("one spacing, radius and type scale shared by both platforms", () => {
   assert.deepEqual(Object.values(space), [4, 8, 12, 16, 20, 24, 32]);
-  assert.deepEqual({ ...radius }, { small: 6, control: 8, surface: 12, pill: 999 });
+  assert.deepEqual({ ...radius }, { small: 8, control: 12, surface: 18, pill: 999 });
   assert.deepEqual(
     Object.fromEntries(Object.entries(type).map(([role, sizes]) => [role, [sizes.desktop, sizes.touch]])),
-    { caption: [11, 13], body: [12, 15], control: [13, 15], row: [14, 16], heading: [16, 18], title: [20, 26], display: [28, 28] },
+    { caption: [11, 13], body: [12, 15], control: [13, 15], row: [14, 16], heading: [16, 18], title: [22, 26], display: [32, 28] },
   );
   const css = read("apps/desktop/src/tokens.css");
-  assert.match(css, /--text-display: 28px;\s*--text-display-line: 34px;/);
+  assert.match(css, /--text-display: 32px;\s*--text-display-line: 38px;/);
   for (const selector of [".code-display", ".request-number"])
     assert.match(read("apps/desktop/src/style.css"), new RegExp(`\\n\\${selector} \\{[^}]*font: var\\(--text-display\\) \\/ var\\(--text-display-line\\) var\\(--font-mono\\);`), selector);
   for (const selector of [".access-card .request-number"])
     assert.match(read("apps/desktop/src/style.css"), new RegExp(`\\n\\${selector.replaceAll(" ", " \\")} \\{\\s*font-size: var\\(--text-display\\);`), selector);
   const theme = read("apps/mobile/src/theme.js");
-  for (const rule of ["codeDigit"]) assert.match(theme, new RegExp(`${rule}: \\{\\s*fontFamily: "FragmentMono_400Regular",\\s*fontSize: g\\.touchDisplayFont,`), rule);
+  for (const rule of ["codeDigit"]) assert.match(theme, new RegExp(`${rule}: \\{\\s*fontFamily: "GeistMono_400Regular",\\s*fontSize: g\\.touchDisplayFont,`), rule);
   assert.match(theme, /codeSeparator: \{ fontSize: g\.touchDisplayFont,/);
   for (const [step, value] of Object.entries(space)) assert.match(css, new RegExp(`--space-${step}: ${value}px;`));
   for (const name of ["r-tag", "r-segment", "r-card", "r-window", "r-dialog", "notice-radius", "notice-title", "notice-body", "dialog-title", "onboarding-title", "onboarding-welcome-title", "access-reference-font", "approval-reference-font"])
@@ -64,7 +64,7 @@ test("a notice's close button takes exactly one text line, so the card's inner s
   assert.match(css, /\n\.notice-content p \{[^}]*font-size: var\(--text-body\);[^}]*line-height: var\(--notice-line\);/, "and its reason at the body size on the same line height");
   const theme = read("apps/mobile/src/theme.js");
   assert.match(theme, /noticeClose: \{\s+width: g\.touchHeight,\s+height: g\.touchHeight,\s+marginHorizontal: -sp\[3\],\s+marginVertical: \(g\.touchControlLine - g\.touchHeight\) \/ 2,/);
-  assert.match(theme, /noticeTitle: \{\s+fontFamily: "InstrumentSans_600SemiBold",\s+fontSize: g\.touchControlFont,\s+lineHeight: g\.touchControlLine,/);
+  assert.match(theme, /noticeTitle: \{\s+fontFamily: "Manrope_600SemiBold",\s+fontSize: g\.touchControlFont,\s+lineHeight: g\.touchControlLine,/);
 });
 
 test("a dialog's title line centres on its tile with or without a description, on desktop and phone alike", () => {
@@ -75,7 +75,7 @@ test("a dialog's title line centres on its tile with or without a description, o
   const theme = read("apps/mobile/src/theme.js");
   assert.match(theme, /confirmHeader: \{ flexDirection: "row", alignItems: "flex-start", gap: sp\[3\] \},\s*confirmCopy: \{ paddingTop: \(g\.touchTile - g\.touchRowLine\) \/ 2 \},/);
   assert.match(theme, /\n    tile: \{\s*width: g\.touchTile,\s*height: g\.touchTile,/);
-  assert.match(theme, /\n    heading: \{\s*fontFamily: "InstrumentSans_600SemiBold",\s*fontSize: g\.touchRowFont,\s*lineHeight: g\.touchRowLine,/);
+  assert.match(theme, /\n    heading: \{\s*fontFamily: "Manrope_600SemiBold",\s*fontSize: g\.touchRowFont,\s*lineHeight: g\.touchRowLine,/);
   assert.match(read("apps/mobile/src/components.jsx"), /<View style=\{s\.confirmHeader\}>\s*<View style=\{s\.tile\}>[\s\S]{0,80}<View style=\{\[s\.flex, s\.stack, s\.confirmCopy\]\}>/);
 });
 

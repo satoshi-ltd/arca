@@ -83,6 +83,7 @@ const colorNames = [
   ["soft", "soft"],
   ["mute", "mute"],
   ["green", "accent"],
+  ["fill", "fill"],
   ["tint", "tint"],
   ["onGreen", "onAccent"],
   ["okFg", "okFg"],
@@ -111,14 +112,16 @@ ${lines(light)}
   --mark-tile: ${brandMark.tile};
   --mark-arch: ${brandMark.arch};
   --mark-door: ${brandMark.door};
-  --font-ui: "Instrument Sans", system-ui, sans-serif;
-  --font-mono: "Fragment Mono", ui-monospace, monospace;
+  --font-ui: "Manrope", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
   --shadow-menu:
-    0 8px 24px rgba(18, 26, 22, 0.12), 0 0 0 1px rgba(18, 26, 22, 0.08);
+    0 8px 24px rgba(13, 21, 18, 0.12), 0 0 0 1px rgba(13, 21, 18, 0.08);
   --shadow-dialog:
-    0 24px 64px rgba(18, 26, 22, 0.28), 0 0 0 1px rgba(18, 26, 22, 0.1);
+    0 24px 64px rgba(13, 21, 18, 0.28), 0 0 0 1px rgba(13, 21, 18, 0.1);
   --shadow-window:
-    0 24px 64px rgba(18, 26, 22, 0.24), 0 0 0 1px rgba(18, 26, 22, 0.1);
+    0 24px 64px rgba(13, 21, 18, 0.24), 0 0 0 1px rgba(13, 21, 18, 0.1);
+  --shadow-card:
+    0 0 0 1px rgba(13, 21, 18, 0.05), 0 1px 1px rgba(13, 21, 18, 0.04), 0 3px 8px -2px rgba(13, 21, 18, 0.05);
   --shadow-control: 0 1px 2px #00000014;
   --shadow-thumb: 0 1px 2px #00000022;
   --focus-ring: 0 0 0 3px var(--tint);
@@ -129,6 +132,7 @@ ${lines(changed(themeColors("dark"), light))}
     0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line);
   --shadow-dialog:
     0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line);
+  --shadow-card: 0 0 0 1px var(--div), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 @keyframes brand-draw {
   from {

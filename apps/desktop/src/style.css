@@ -1,13 +1,13 @@
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("assets/fonts/instrument-sans.woff2") format("woff2");
-  font-weight: 400 700;
+  font-family: "Manrope";
+  src: url("assets/fonts/manrope.woff2") format("woff2");
+  font-weight: 200 800;
   font-display: swap;
 }
 @font-face {
-  font-family: "Fragment Mono";
-  src: url("assets/fonts/fragment-mono.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "Geist Mono";
+  src: url("assets/fonts/geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 * {
@@ -20,6 +20,20 @@ body {
   font: var(--text-row) var(--font-ui);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+  caret-color: var(--green);
+  scrollbar-color: var(--line) transparent;
+}
+::selection {
+  background: var(--tint);
+  color: var(--ink);
+}
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
 }
 button,
 input,
@@ -61,8 +75,8 @@ p {
 h1 {
   font-size: var(--text-title);
   line-height: normal;
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 h2 {
   font-size: var(--text-row);
@@ -325,15 +339,14 @@ svg.lucide {
   display: inline-grid;
   place-items: center;
   height: var(--tag-height);
-  padding: var(--tag-y) var(--tag-x);
+  padding: var(--tag-y) var(--space-2);
   border: 1px solid transparent;
-  border-radius: var(--r-small);
+  border-radius: var(--r-pill);
   background: var(--tint);
   color: var(--deep);
-  font-family: var(--font-mono);
-  font-size: var(--tag-font);
+  font-size: var(--text-caption);
+  font-weight: 600;
   line-height: var(--tag-line);
-  text-transform: uppercase;
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -343,7 +356,8 @@ svg.lucide {
 }
 .update-card {
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-control);
   padding: var(--row-padding-y) var(--row-padding-x);
   display: grid;
@@ -378,7 +392,8 @@ svg.lucide {
 }
 .status-card {
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-surface);
   padding: var(--space-3);
   display: grid;
@@ -454,10 +469,10 @@ main {
   gap: var(--section-gap);
 }
 .section-label {
-  font: var(--text-caption) var(--font-mono);
+  font-size: var(--text-body);
+  line-height: var(--text-caption-line);
+  font-weight: 600;
   color: var(--mute);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   margin-bottom: var(--section-label-gap);
   display: flex;
   justify-content: space-between;
@@ -475,8 +490,8 @@ main {
   gap: var(--space-2);
   white-space: nowrap;
   flex: none;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--r-control);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--r-pill);
   border: 1px solid var(--control);
   background: var(--surface);
   color: var(--ink);
@@ -485,7 +500,7 @@ main {
   line-height: normal;
 }
 .primary {
-  background: var(--green);
+  background: var(--fill);
   border-color: transparent;
   color: var(--onGreen);
 }
@@ -495,7 +510,7 @@ main {
 .small-button {
   min-height: var(--button-small-height);
   font-size: var(--text-body);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
 }
 .small-button svg {
   width: var(--button-small-icon);
@@ -542,8 +557,9 @@ main {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
   border-radius: var(--r-surface);
+  box-shadow: var(--shadow-card);
 }
 .folder-list {
   overflow: hidden;
@@ -599,9 +615,10 @@ main {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--r-control);
+  border-radius: 22.5%;
   background: var(--tint);
   color: var(--green);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
   flex: none;
 }
 .unselected .tile {
@@ -611,14 +628,14 @@ main {
 .tile.large {
   width: var(--detail-tile);
   height: var(--detail-tile);
-  border-radius: var(--r-surface);
+  border-radius: 22.5%;
 }
 .tile.large svg {
   width: 20px;
   height: 20px;
 }
 .tile.hub {
-  background: var(--green);
+  background: var(--fill);
   color: var(--onGreen);
 }
 .tile.wa,
@@ -725,20 +742,20 @@ main {
   place-items: center;
   flex-shrink: 0;
   height: var(--tag-height);
-  font-family: var(--font-mono);
-  font-size: var(--tag-font);
-  font-weight: 400;
+  font-size: var(--text-caption);
+  font-weight: 600;
   line-height: var(--tag-line);
-  text-transform: uppercase;
-  border: 1px solid var(--div);
-  border-radius: var(--r-small);
-  padding: var(--tag-y) var(--tag-x);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--hover);
+  color: var(--soft);
+  padding: var(--tag-y) var(--space-2);
   white-space: nowrap;
 }
 .tag.hub {
-  background: var(--green);
+  background: var(--fill);
   color: var(--onGreen);
-  border-color: var(--green);
+  border-color: var(--fill);
 }
 .tag.self {
   background: var(--tint);
@@ -778,7 +795,8 @@ main {
 }
 .panel {
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-surface);
   padding: var(--space-4);
 }
@@ -1134,7 +1152,8 @@ main {
   gap: var(--row-gap);
   align-items: center;
   padding: var(--row-padding-y) var(--row-padding-x);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-control);
   background: var(--surface);
 }
@@ -1218,7 +1237,8 @@ main {
 }
 .history-group {
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-surface);
   overflow: hidden;
 }
@@ -1336,7 +1356,8 @@ main {
   width: 100%;
 }
 .settings-card {
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-surface);
   background: var(--surface);
   overflow: hidden;
@@ -1416,7 +1437,7 @@ main {
   box-shadow: var(--shadow-thumb);
 }
 .toggle input:checked + span {
-  background: var(--green);
+  background: var(--fill);
 }
 .toggle input:checked + span:after {
   left: 16px;
@@ -1521,8 +1542,13 @@ dialog {
   color: var(--ink);
   box-shadow: var(--shadow-dialog);
 }
+dialog:focus-visible {
+  outline: none;
+}
 dialog::backdrop {
   background: var(--backdrop);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .modal-title {
   display: flex;
@@ -1539,7 +1565,7 @@ dialog::backdrop {
 }
 dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
   background: var(--erBg);
-  color: var(--er);
+  color: var(--erFg);
 }
 .modal-title h2 {
   font-size: var(--text-heading);
@@ -1653,7 +1679,8 @@ input + .message {
 }
 .access-card {
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   padding: var(--space-6);
   border-radius: var(--r-surface);
 }
@@ -1768,8 +1795,8 @@ h1:focus {
   color: var(--paper);
 }
 .step.done span {
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--fill);
+  border-color: var(--fill);
   color: var(--onGreen);
 }
 .step svg {
@@ -1926,7 +1953,8 @@ h1:focus {
   display: flex;
   gap: var(--row-gap);
   padding: var(--row-padding-y) var(--row-padding-x);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-control);
   background: var(--surface);
   margin: var(--space-3) 0;
@@ -2239,8 +2267,8 @@ html:has(.tray-body) {
   margin: 1px 0 0;
 }
 .tray-role {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--fill);
+  background: var(--fill);
   color: var(--onGreen);
 }
 .tray-folders {
@@ -2323,7 +2351,7 @@ html:has(.tray-body) {
 .tray-body #tray-error {
   margin: 0;
   font-size: var(--text-caption);
-  color: var(--er);
+  color: var(--erFg);
   padding: var(--space-1) var(--space-3);
 }
 .tray-body #tray-error:empty {
@@ -2345,7 +2373,7 @@ html:has(.tray-body) {
   color: var(--wa);
 }
 [data-theme="dark"] .tray-heading.tray-error strong {
-  color: var(--er);
+  color: var(--erFg);
 }
 .tray-progress {
   display: block;
@@ -2625,8 +2653,8 @@ html:has(.tray-body) {
   background: var(--surface);
 }
 .role-card input[type="radio"]:checked {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--fill);
+  background: var(--fill);
   box-shadow: inset 0 0 0 3px var(--surface);
 }
 .role-card input[type="radio"]:focus-visible {
@@ -2892,7 +2920,8 @@ label {
   border-radius: 0;
 }
 .copies-card {
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-surface);
   background: var(--surface);
   overflow: hidden;
@@ -2982,6 +3011,12 @@ label {
 [data-theme="dark"] .launch-mark .brand-draw-band {
   stroke: var(--mark-arch);
 }
+.launch-mark .brand-draw-door {
+  fill: var(--mark-tile);
+}
+[data-theme="dark"] .launch-mark .brand-draw-door {
+  fill: var(--mark-door);
+}
 .brand-arch {
   overflow: visible;
 }
@@ -3021,25 +3056,28 @@ label {
   from {
     opacity: 0;
     transform: translateY(var(--motion-distance));
+    scale: var(--motion-pop);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+    scale: 1;
   }
 }
 @keyframes dialog-enter {
   from {
     opacity: 0;
     transform: translateY(var(--motion-distance)) scale(var(--motion-dialog-scale));
+    scale: var(--motion-pop);
   }
-  to { opacity: 1; transform: none; }
+  to { opacity: 1; transform: none; scale: 1; }
 }
 @keyframes overlay-enter {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 dialog[open] {
-  animation: dialog-enter var(--motion-enter) var(--motion-ease);
+  animation: dialog-enter var(--motion-enter) var(--motion-spring);
 }
 dialog[open]::backdrop {
   animation: overlay-enter var(--motion-enter) var(--motion-ease);
@@ -3065,7 +3103,11 @@ button,
   transition:
     background-color var(--motion-fast) var(--motion-ease),
     border-color var(--motion-fast) var(--motion-ease),
-    color var(--motion-fast) var(--motion-ease);
+    color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-enter) var(--motion-spring);
+}
+:where(.primary, .secondary, .danger):active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--motion-press-scale));
 }
 
 /* Shared interaction polish: visible focus, stable geometry, contained scrolling. */
@@ -3096,38 +3138,44 @@ summary {
 .toggle span:after {
   transition:
     background-color var(--motion-fast) var(--motion-ease),
-    transform var(--motion-fast) var(--motion-ease);
+    transform var(--motion-enter) var(--motion-spring);
 }
 .toggle input:checked + span:after {
   left: 2px;
   transform: translateX(14px);
 }
 .menu-items {
-  animation: menu-enter var(--motion-fast) var(--motion-ease);
+  animation: menu-enter var(--motion-fast) var(--motion-spring);
+  transform-origin: top right;
 }
 .details-menu.menu-up > .menu-items {
   animation-name: menu-enter-up;
   top: auto;
   bottom: calc(100% + var(--space-1));
+  transform-origin: bottom right;
 }
 @keyframes menu-enter {
   from {
     opacity: 0;
     transform: translateY(calc(var(--motion-distance) / -2));
+    scale: var(--motion-pop);
   }
   to {
     opacity: 1;
     transform: none;
+    scale: 1;
   }
 }
 @keyframes menu-enter-up {
   from {
     opacity: 0;
     transform: translateY(calc(var(--motion-distance) / 2));
+    scale: var(--motion-pop);
   }
   to {
     opacity: 1;
     transform: none;
+    scale: 1;
   }
 }
 @keyframes tick-in {
@@ -3146,7 +3194,7 @@ summary {
 }
 .photo-select[aria-pressed="true"] svg,
 .copy-confirmed > .icon {
-  animation: tick-in var(--motion-fast) var(--motion-ease);
+  animation: tick-in var(--motion-fast) var(--motion-spring);
 }
 .copy-label {
   animation: label-in var(--motion-fast) var(--motion-ease);
@@ -3267,7 +3315,7 @@ summary {
   background: var(--notice-surface);
   border-radius: var(--r-surface);
   box-shadow: var(--shadow-menu);
-  animation: menu-enter var(--motion-fast) var(--motion-ease);
+  animation: menu-enter var(--motion-fast) var(--motion-spring);
 }
 .dropdown-menu[hidden] {
   display: none;
@@ -3569,7 +3617,7 @@ section:has(> .replica-danger) > .section-label {
   box-shadow: var(--shadow-menu);
 }
 .notice-card.notice-enter {
-  animation: notice-enter var(--motion-enter) var(--motion-ease);
+  animation: notice-enter var(--motion-enter) var(--motion-spring);
 }
 .notice-main {
   display: flex;
@@ -3865,8 +3913,8 @@ section:has(> .replica-danger) > .section-label {
   color: var(--onGreen);
 }
 .photo-select[aria-pressed="true"]::before {
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--fill);
+  border-color: var(--fill);
 }
 .photo-open:focus-visible,
 .photo-select:focus-visible {
@@ -3898,7 +3946,7 @@ section:has(> .replica-danger) > .section-label {
   display: none;
 }
 .photo-selection-bar:not([hidden]) {
-  animation: notice-enter var(--motion-enter) var(--motion-ease);
+  animation: notice-enter var(--motion-enter) var(--motion-spring);
 }
 .photo-selection-bar {
   justify-content: flex-end;
@@ -4014,7 +4062,7 @@ section:has(> .replica-danger) > .section-label {
   white-space: nowrap;
   padding: var(--pill-y) var(--pill-right) var(--pill-y) var(--pill-left);
   border-radius: var(--r-pill);
-  background: var(--green);
+  background: var(--fill);
   color: var(--onGreen);
   font-size: var(--pill-font);
   font-weight: 600;
@@ -4538,8 +4586,8 @@ dialog.photo-viewer {
   font-size: var(--text-caption);
 }
 .request-reference .eyebrow {
-  font: var(--text-row) var(--font-mono);
-  letter-spacing: 1px;
+  font-size: var(--text-body);
+  font-weight: 600;
   color: var(--mute);
 }
 .request-reference {
@@ -4894,11 +4942,11 @@ dialog.photo-viewer {
   position: fixed;
   z-index: 200;
   max-width: min(240px, calc(100vw - 16px));
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--r-control);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-small);
   background: var(--ink);
   color: var(--surface);
-  font-family: var(--font-mono);
+  font-weight: 600;
   font-size: var(--text-caption);
   line-height: var(--text-caption-line);
   box-shadow: var(--shadow-menu);
@@ -4914,7 +4962,7 @@ dialog.photo-viewer {
   width: var(--detail-tile);
   height: var(--detail-tile);
   flex: 0 0 var(--detail-tile);
-  border-radius: var(--r-control);
+  border-radius: 22.5%;
   overflow: hidden;
   background: var(--surface);
 }
@@ -4942,7 +4990,7 @@ dialog.photo-viewer {
     background: var(--hover);
   }
   .primary.icon-button:hover:not(:disabled) {
-    background: var(--green);
+    background: var(--fill);
   }
 }
 @media (hover: hover) {
@@ -5134,7 +5182,7 @@ dialog.photo-viewer {
   width: 100%;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: var(--r-control);
+  border-radius: min(22.5%, var(--r-control));
   background: var(--placeholder);
   color: var(--line);
 }
@@ -5293,9 +5341,8 @@ dialog.photo-viewer {
 }
 .music-track-head {
   min-height: var(--row-height-compact);
-  font: var(--text-caption) var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--text-body);
+  font-weight: 600;
   color: var(--mute);
 }
 .music-track-head svg {
@@ -5666,7 +5713,6 @@ body:has(#music-player:not([hidden]):not(.music-elsewhere)) #notice {
   width: calc(100% + var(--space-2));
   height: calc(100% + var(--space-2));
   overflow: visible;
-  transform: rotate(-90deg);
   fill: none;
   stroke-width: 2;
 }
@@ -5676,9 +5722,7 @@ body:has(#music-player:not([hidden]):not(.music-elsewhere)) #notice {
 .home-ring-fill {
   stroke: var(--green);
   stroke-linecap: round;
-}
-.home-lead:has(.home-ring) > .tile {
-  border-radius: var(--r-pill);
+  transition: stroke-dasharray var(--motion-enter) var(--motion-ease);
 }
 
 dialog.quicklook {
@@ -5856,9 +5900,8 @@ dialog.palette:not([open]) {
   justify-content: space-between;
   align-items: baseline;
   padding: var(--space-3) var(--space-2) var(--space-1);
-  font: var(--text-caption) var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--text-body);
+  font-weight: 600;
   color: var(--mute);
 }
 .pal-row {
@@ -5913,7 +5956,7 @@ dialog.palette:not([open]) {
   place-items: center;
   width: var(--control-height);
   height: var(--control-height);
-  border-radius: var(--r-control);
+  border-radius: 22.5%;
   background: var(--tint);
   color: var(--deep);
 }
@@ -5928,6 +5971,12 @@ dialog.palette:not([open]) {
 }
 .pal-icon.pal-round {
   border-radius: 50%;
+}
+dialog.palette .tag {
+  border-radius: var(--r-small);
+  background: var(--press);
+  font-family: var(--font-mono);
+  font-weight: 400;
 }
 .pal-icon.pal-plain {
   background: var(--surface);
@@ -6016,6 +6065,8 @@ dialog.palette:not([open]) {
   border-color: transparent;
   background: none;
   color: var(--mute);
+  font-family: var(--font-mono);
+  font-weight: 400;
 }
 @media (max-width: 480px) {
   .palette-open {
@@ -6269,7 +6320,7 @@ label.toggle {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--fill);
   color: var(--onGreen);
 }
 .music-continue-play > svg {
@@ -6370,7 +6421,8 @@ label.toggle {
   padding: var(--row-padding-y) var(--row-padding-x);
   margin-bottom: calc(var(--section-gap) - var(--space-4));
   background: var(--surface);
-  border: 1px solid var(--div);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-card);
   border-radius: var(--r-control);
 }
 .resume-card > .music-cover {
@@ -6435,7 +6487,7 @@ label.toggle {
   min-height: calc(var(--detail-tile) * 10);
   padding: var(--space-6);
   border-radius: var(--r-surface);
-  background: linear-gradient(135deg, var(--green), var(--ink));
+  background: linear-gradient(135deg, var(--fill), var(--media));
   color: var(--onMedia);
   isolation: isolate;
   z-index: 1;
@@ -6866,7 +6918,7 @@ label.toggle {
   width: var(--space-5);
   height: var(--space-5);
   border-radius: 50%;
-  background: var(--green);
+  background: var(--fill);
   color: var(--onGreen);
 }
 .music-cover > .video-watched > svg {
@@ -6943,8 +6995,8 @@ label.toggle {
   transition: opacity var(--motion-fast) var(--motion-ease);
 }
 .video-quick-watched.is-watched {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--fill);
+  background: var(--fill);
   color: var(--onGreen);
 }
 .video-quick-watched > svg {
@@ -6962,8 +7014,6 @@ label.toggle {
 .video-rating.video-next {
   top: var(--space-2);
   bottom: auto;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 @media (hover: none) {
   .video-card .video-quick-watched {

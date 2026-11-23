@@ -449,3 +449,14 @@ test("a library kept the old way keeps its downloads through library reads, and 
   assert.deepEqual(await r.call("/v1/unselect", { id: f.v.id, deleteFiles: true }), { deleted: 1, deletedBytes: size, kept: 0 });
   assert.deepEqual(r.downloads.rows(f.v.id), []);
 });
+
+test("a replica searches the songs of a streamed audio library through the hub and nothing of a library it never added", async (t) => {
+  const f = await musicHub(t);
+  const r = await replicaOf(t, f);
+  const search = async (q, type = "songs") => (await r.call(`/v1/search?${new URLSearchParams({ q, limit: "10" })}`)).groups.find((group) => group.type === type);
+  assert.equal(await search("blue"), undefined, "a library the device never added is not searched");
+  await r.call("/v1/select", { id: f.music.id, mode: "stream" });
+  assert.deepEqual((await search("blue")).rows.map((row) => row.title), ["Blue in Green", "So What"], "the album name matches its songs");
+  assert.deepEqual((await search("miles", "artists")).rows.map((row) => row.name), ["Miles Davis"]);
+  assert.equal(await search("demo"), undefined, "an ignored folder stays out");
+});

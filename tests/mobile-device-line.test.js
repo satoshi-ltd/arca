@@ -159,7 +159,7 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.match(theme, /machineCellSeen: \{ flexGrow: 1, flexShrink: 1, minWidth: 0 \}/, "last seen absorbs the slack, so the other columns align and the right edge never overflows");
   assert.match(theme, /machineCellVersion: \{ width: Math\.ceil\(76 \* fontScale \* textScale\) \}/, "fixed: the 13 dp arrow, a 4 dp gap and v10.10.10 measure 73 dp at the pill font");
   assert.match(theme, /machineCellFolders: \{ width: Math\.ceil\(66 \* fontScale \* textScale\) \}/, "fixed: 100 and 999 folders measure 62 dp and 1023.9 GB 59 dp at the pill font, with room for Android metrics");
-  assert.match(theme, /machineCellText: \{\s+fontFamily: "InstrumentSans_400Regular",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.soft,\s+\}/);
+  assert.match(theme, /machineCellText: \{\s+fontFamily: "Manrope_400Regular",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.soft,\s+\}/);
   const hub = read("HubConnection.jsx");
   assert.match(hub, /iconOnly=\{!wide\}\s+size="small"/, "a 32 square on the phone, a small labelled button on the Fold");
   assert.match(hub, /presence=\{presence\}/);

@@ -107,7 +107,7 @@ export class VideoSessions {
     this.directory = path.join(home, "transcodes");
     this.binary = options.ffmpeg || (bundledFfmpeg && fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : "ffmpeg");
     this.limit = options.limit ?? 2;
-    this.idleMs = options.idleMs ?? 60000;
+    this.idleMs = options.idleMs ?? 4 * 3600000;
     this.busyMs = options.busyMs ?? 30000;
     this.waitMs = options.waitMs ?? 30000;
     this.capBytes = options.capBytes ?? 4 * 1024 ** 3;

@@ -35,7 +35,7 @@ const iconNames = {
 };
 export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled, leaving = false, onLeft }) {
   const { s, c } = useDesign();
-  const { duration, easing } = useMotion();
+  const { duration, easing, enterEasing } = useMotion();
   const [expanded, setExpanded] = useState(false),
     [copied, setCopied] = useState("");
   const seen = useRef(shown.has(shownKey(item))).current;
@@ -51,7 +51,7 @@ export function Notice({ item, onDismiss, onAction, onHold, onRelease, disabled,
     Animated.timing(progress, {
       toValue: leaving ? 0 : 1,
       duration: duration(leaving ? motion.exit : motion.enter),
-      easing,
+      easing: leaving ? easing : enterEasing,
       useNativeDriver: true,
     }).start(({ finished }) => finished && leaving && onLeft?.());
   }, [leaving]);

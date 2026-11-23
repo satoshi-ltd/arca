@@ -35,7 +35,7 @@
   font-weight: 600;
 }
 .a-tab.a-active {
-  background: var(--m-accent);
+  background: var(--m-fill);
   color: var(--m-on-accent);
 }
 .a-body {
@@ -62,7 +62,7 @@
   color: var(--m-mute);
 }
 .a-cover.a-art {
-  background: linear-gradient(135deg, var(--m-accent), var(--m-ink));
+  background: linear-gradient(135deg, var(--m-fill), var(--m-ink));
   color: var(--m-on-accent);
 }
 .a-stack {
@@ -99,7 +99,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--m-accent);
+  background: var(--m-fill);
   color: var(--m-on-accent);
   display: grid;
   place-items: center;

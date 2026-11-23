@@ -1,4 +1,4 @@
-export const brandColors = { tile: "#244d3e", arch: "#eff5df", door: "#b5d38a" };
+export const brandColors = { tile: "#0d853f", arch: "#ffffff", door: "#c4f08f" };
 export const brandModule = 60;
 export const brandTile = { x: 8, y: 8, width: 496, height: 496, rx: 128 };
 export const brandDoor = "M228 380V294a28 28 0 0 1 56 0v86z";

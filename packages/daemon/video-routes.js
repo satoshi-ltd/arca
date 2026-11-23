@@ -424,14 +424,16 @@ export async function videoRoute(context) {
         video.media(volume, name, hash);
         item = video.entry(volume, name);
       } else {
-        const listed = await replicaLibrary(context, volume, null);
-        const local = engine.videoDownloads?.local(volume, name, hash) || keptMedia(context, volume, name, hash);
-        item = fileOf(listed, name) || local?.item;
-        if (listed.offline && item && !local) fail(VIDEO_OFFLINE, 503);
+        item = engine.videoDownloads?.local(volume, name, hash)?.item;
+        if (!item) {
+          const listed = await replicaLibrary(context, volume, null);
+          item = fileOf(listed, name);
+          if (listed.offline && item && !keptMedia(context, volume, name, hash)) fail(VIDEO_OFFLINE, 503);
+        }
       }
       if (!item || item.hash !== hash) fail("This video is no longer available", 404);
       const mediaQuery = new URLSearchParams({ volume, path: name, hash });
-      const subtitles = item.subtitles.map((sub) => ({ path: sub.path, label: sub.label, language: sub.language }));
+      const subtitles = (item.subtitles || []).map((sub) => ({ path: sub.path, label: sub.label, language: sub.language }));
       if (browserSession)
         return send(200, {
           url: `/v1/video/media?${mediaQuery}`,

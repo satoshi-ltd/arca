@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.9.74";
+const APP_VERSION = "0.10.0";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1005,7 +1005,7 @@ function button(label, action, id = "", cls = "secondary", symbol = "") {
   return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}"${waiting ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""}>${symbol ? icon(symbol) : ""}${label}</button>`;
 }
 function roleTag(role) {
-  return !role || role === "replica" ? "" : `<span class="tag">${escape(role)}</span>`;
+  return !role || role === "replica" ? "" : `<span class="tag">${escape(role[0].toUpperCase() + role.slice(1))}</span>`;
 }
 function copyTag(m, v) {
   const label =
@@ -2230,7 +2230,7 @@ async function refresh(renderView = true) {
       if (!ring) {
         lead.insertAdjacentHTML(
           "afterbegin",
-          '<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" /></svg>',
+          '<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><path class="home-ring-track" d="M24 2H35A11 11 0 0 1 46 13V35A11 11 0 0 1 35 46H13A11 11 0 0 1 2 35V13A11 11 0 0 1 13 2Z" /><path class="home-ring-fill" d="M24 2H35A11 11 0 0 1 46 13V35A11 11 0 0 1 35 46H13A11 11 0 0 1 2 35V13A11 11 0 0 1 13 2Z" pathLength="100" /></svg>',
         );
         ring = lead.querySelector(".home-ring");
       }
@@ -2456,7 +2456,7 @@ function homeLead(v, state, p) {
   const tile = `<div class="tile large${tone ? ` ${tone}` : ""}"${busy ? ` role="status" aria-label="${escape(state[0])}"` : ""}>${busy ? busyIcon() : icon(glyph)}</div>`;
   const svg =
     ring !== null
-      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" stroke-dasharray="${ring} 100" /></svg>`
+      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><path class="home-ring-track" d="M24 2H35A11 11 0 0 1 46 13V35A11 11 0 0 1 35 46H13A11 11 0 0 1 2 35V13A11 11 0 0 1 13 2Z" /><path class="home-ring-fill" d="M24 2H35A11 11 0 0 1 46 13V35A11 11 0 0 1 35 46H13A11 11 0 0 1 2 35V13A11 11 0 0 1 13 2Z" pathLength="100" stroke-dasharray="${ring} 100" /></svg>`
       : "";
   return `<div class="home-lead"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${tile}</div>`;
 }
@@ -2602,6 +2602,10 @@ const reducedMotion = () =>
   Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 const motionEase = () =>
   getComputedStyle(document.documentElement).getPropertyValue("--motion-ease").trim() || "ease-out";
+const motionSpring = () => {
+  const spring = getComputedStyle(document.documentElement).getPropertyValue("--motion-spring").trim();
+  return spring && window.CSS?.supports?.("animation-timing-function", spring) ? spring : motionEase();
+};
 const EXIT_ROLES = {
   popover: () => ({ duration: motionDuration("--motion-exit-fast"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
   tooltip: () => ({ duration: motionDuration("--motion-exit-fast"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
@@ -2769,7 +2773,7 @@ function syncSegmented(settle = false) {
           },
           { transformOrigin: "top left", transform: "none" },
         ],
-        { duration: motionDuration("--motion-fast"), easing: motionEase() },
+        { duration: motionDuration("--motion-enter"), easing: motionSpring() },
       );
   }
 }
@@ -8319,8 +8323,8 @@ async function videoPlay(v, item, at = 0) {
     videoControls();
   });
   video.addEventListener("playing", () => videoBusy(false));
-  video.addEventListener("waiting", () => videoBusy(true));
-  video.addEventListener("stalled", () => videoBusy(true));
+  video.addEventListener("canplay", () => videoBusy(false));
+  video.addEventListener("waiting", () => videoBusy(!video.paused));
   video.addEventListener("volumechange", videoControls);
   video.addEventListener("ended", videoEnded);
   video.addEventListener("error", videoFailed);
@@ -10144,6 +10148,10 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
     if (opener) dialogOpeners.set($("#dialog"), opener);
     menuReturn = null;
     $("#dialog").showModal();
+    if (!menuByKeyboard && document.activeElement?.matches?.("#dialog button:not([autofocus])")) {
+      $("#dialog").tabIndex = -1;
+      $("#dialog").focus();
+    }
   }
   icons();
 }
@@ -12100,7 +12108,7 @@ document.addEventListener("click", (e) => {
   switches[0].click();
 });
 
-function requestReference(reference, label = "REQUEST", hint = "") {
+function requestReference(reference, label = "Request", hint = "") {
   const digits = String(reference || "");
   return `<div class="request-reference"><div class="eyebrow">${escape(label)}</div><div class="request-number" aria-label="${escape(digits)}"><span>${escape(digits.slice(0, 3))}</span><span class="request-separator" aria-hidden="true">–</span><span>${escape(digits.slice(3))}</span></div>${hint ? `<p>${escape(hint)}</p>` : ""}</div>`;
 }
@@ -12317,7 +12325,7 @@ async function showLogin(message = "") {
       wait.innerHTML =
         requestReference(
           request.reference,
-          "REQUEST",
+          "Request",
           "Type this number on the device to approve.",
         ) +
         `<p class="approval-instructions">Open Arca on an authorized device or your phone.</p><p class="approval-countdown">${busyIcon()}<span id="request-countdown"></span></p><button type="button" class="secondary">Cancel request</button>`;
@@ -13268,6 +13276,8 @@ function installTooltips() {
     if (target === trigger) return;
     close();
     if (!target || target.disabled) return;
+    const name = target.querySelector?.(":scope > .favorite-name");
+    if (name && name.clientWidth > 0 && name.scrollWidth <= name.clientWidth) return;
     trigger = target;
     const hold = motionDuration("--motion-hint-delay");
     timer = setTimeout(() => {

@@ -76,6 +76,8 @@ test("no list item class sets a literal min-height or height", () => {
 test("a folder ring is drawn outside the 40 px lead so cards keep the row height", () => {
   assert.match(style, /\.home-lead \{[^}]*width: var\(--detail-tile\);[^}]*height: var\(--detail-tile\);/);
   assert.match(style, /\.home-ring \{[^}]*overflow: visible;[^}]*\}/);
+  assert.match(style, /\.home-ring-fill \{[^}]*transition: stroke-dasharray var\(--motion-enter\) var\(--motion-ease\);/, "progress glides to each new value");
+  assert.doesNotMatch(style, /\.home-ring \{[^}]*rotate/, "the outline starts at the top centre by its own path");
   assert.match(style, /\.home-ring \{[^}]*top: calc\(var\(--space-1\) \* -1\);/);
   assert.match(style, /\.row-preview \{[^}]*width: var\(--detail-tile\);/);
 });

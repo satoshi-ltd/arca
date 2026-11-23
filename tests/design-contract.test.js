@@ -150,8 +150,8 @@ test("design APIs: bounded filtered history, permissions, session revocation and
     ["/vendor/lucide.js", "text/javascript"],
     ["/assets/arca-icon.svg", "image/svg+xml"],
     ["/assets/arca-icon-small.svg", "image/svg+xml"],
-    ["/assets/fonts/instrument-sans.woff2", "font/woff2"],
-    ["/assets/fonts/fragment-mono.woff2", "font/woff2"],
+    ["/assets/fonts/manrope.woff2", "font/woff2"],
+    ["/assets/fonts/geist-mono.woff2", "font/woff2"],
   ]) {
     const response = await fetch(url + asset);
     assert.equal(response.status, 200);
@@ -509,9 +509,9 @@ test("every dialog shares one type scale, with body text as large as its buttons
 test("the timeline date chip uses the accent like primary buttons", () => {
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
   const chip = css.match(/\n\.photo-timeline-hover \{([^}]*)\}/)[1];
-  assert.match(chip, /background: var\(--green\);/);
+  assert.match(chip, /background: var\(--fill\);/);
   assert.match(chip, /color: var\(--onGreen\);/);
-  assert.match(css.match(/\n\.primary \{([^}]*)\}/)[1], /background: var\(--green\);/);
+  assert.match(css.match(/\n\.primary \{([^}]*)\}/)[1], /background: var\(--fill\);/);
 });
 
 test("control borders, destructive buttons, toggles and busy dots meet the accessibility contract", () => {
@@ -632,7 +632,7 @@ test("a primary icon button keeps its accent fill on hover, so its icon stays vi
   const hover = css.slice(css.indexOf("@media (hover: hover) {\n  .secondary:hover:not(:disabled),"));
   const block = hover.slice(0, hover.indexOf("\n}\n"));
   assert.ok(block.indexOf(".icon-button:hover:not(:disabled)") < block.indexOf(".primary.icon-button:hover:not(:disabled)"), "the primary rule follows the generic one");
-  assert.match(block, /\.primary\.icon-button:hover:not\(:disabled\) \{\s+background: var\(--green\);\s+\}/);
+  assert.match(block, /\.primary\.icon-button:hover:not\(:disabled\) \{\s+background: var\(--fill\);\s+\}/);
 });
 
 test("the onboarding rail drops its brand below the macOS window controls only in the native Mac app", () => {

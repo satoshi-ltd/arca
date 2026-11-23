@@ -1,93 +1,96 @@
 @font-face {
-  font-family: Instrument;
-  src: url("assets/instrument-sans.woff2") format("woff2");
-  font-weight: 400 700;
+  font-family: Manrope;
+  src: url("assets/manrope.woff2") format("woff2");
+  font-weight: 200 800;
   font-display: swap;
 }
 @font-face {
-  font-family: Fragment;
-  src: url("assets/fragment-mono.woff2") format("woff2");
+  font-family: "Geist Mono";
+  src: url("assets/geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 :root {
-  --paper: #f4f6f1;
-  --ink: #121a16;
-  --green: #2e6350;
-  --green-hover: #244d3e;
+  --paper: #f6f8f7;
+  --ink: #0d1512;
+  --green: #0a7533;
+  --green-hover: #075a27;
   --on-green: #ffffff;
-  --muted: #627168;
-  --line: #dce2d7;
-  --rule: #ccd8bf;
-  --lime: #dcebbe;
+  --fill: #0d853f;
+  --fill-hover: #0a7533;
+  --muted: #57635e;
+  --line: #e6eae8;
+  --rule: #cfd6d2;
+  --lime: #dcf8e6;
   --surface: #ffffff;
-  --screen: #fafcf7;
-  --band: #e8edde;
-  --panel: #edf0e7;
-  --panel-code: #e2e8d8;
-  --tint: #e5ecd9;
-  --hover: #e9eee2;
-  --bar: #ebefe6;
-  --focus: #6c913d;
-  --dot: #77a255;
+  --screen: #f6f8f7;
+  --band: #eff2f0;
+  --panel: #f1f4f2;
+  --panel-code: #e6eae8;
+  --tint: #dcf8e6;
+  --hover: #f1f4f2;
+  --bar: #eef1ef;
+  --focus: #0a7533;
+  --dot: #0d853f;
   --device-a: #ffffff;
-  --device-b: #e3e9dc;
-  --folder-line: #88a46c;
-  --nav-bg: #f4f6f1b8;
+  --device-b: #e3e8e5;
+  --folder-line: #0d853f;
+  --nav-bg: #f6f8f7b8;
   --radius: 22px;
   --space: clamp(24px, 5vw, 80px);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0f1512;
-    --ink: #e8ede7;
-    --green: #7fb893;
-    --green-hover: #accb80;
-    --on-green: #0f1512;
-    --muted: #a3afa8;
-    --line: #2e3b34;
-    --rule: #2e3b34;
-    --lime: #1e3328;
-    --surface: #161e19;
-    --screen: #0f1512;
-    --band: #131a16;
-    --panel: #161e19;
-    --panel-code: #0f1512;
-    --tint: #1e3328;
-    --hover: #1c2620;
-    --bar: #1c2620;
-    --focus: #accb80;
-    --dot: #accb80;
-    --device-a: #1f2a24;
-    --device-b: #161e19;
-    --folder-line: #7fb893;
-    --nav-bg: #0f1512b8;
+    --paper: #0c100e;
+    --ink: #e9eeeb;
+    --green: #1ed760;
+    --green-hover: #7df0a4;
+    --on-green: #ffffff;
+    --muted: #9ba6a0;
+    --line: #2a322e;
+    --rule: #2a322e;
+    --lime: #0f2e1c;
+    --surface: #141917;
+    --screen: #0c100e;
+    --band: #101412;
+    --panel: #141917;
+    --panel-code: #0c100e;
+    --tint: #0f2e1c;
+    --hover: #1b211e;
+    --bar: #1b211e;
+    --focus: #1ed760;
+    --dot: #1ed760;
+    --device-a: #1a201d;
+    --device-b: #141917;
+    --folder-line: #1ed760;
+    --nav-bg: #0c100eb8;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0f1512;
-  --ink: #e8ede7;
-  --green: #7fb893;
-  --green-hover: #accb80;
-  --on-green: #0f1512;
-  --muted: #a3afa8;
-  --line: #2e3b34;
-  --rule: #2e3b34;
-  --lime: #1e3328;
-  --surface: #161e19;
-  --screen: #0f1512;
-  --band: #131a16;
-  --panel: #161e19;
-  --panel-code: #0f1512;
-  --tint: #1e3328;
-  --hover: #1c2620;
-  --bar: #1c2620;
-  --focus: #accb80;
-  --dot: #accb80;
-  --device-a: #1f2a24;
-  --device-b: #161e19;
-  --folder-line: #7fb893;
-  --nav-bg: #0f1512b8;
+  --paper: #0c100e;
+  --ink: #e9eeeb;
+  --green: #1ed760;
+  --green-hover: #7df0a4;
+  --on-green: #ffffff;
+  --muted: #9ba6a0;
+  --line: #2a322e;
+  --rule: #2a322e;
+  --lime: #0f2e1c;
+  --surface: #141917;
+  --screen: #0c100e;
+  --band: #101412;
+  --panel: #141917;
+  --panel-code: #0c100e;
+  --tint: #0f2e1c;
+  --hover: #1b211e;
+  --bar: #1b211e;
+  --focus: #1ed760;
+  --dot: #1ed760;
+  --device-a: #1a201d;
+  --device-b: #141917;
+  --folder-line: #1ed760;
+  --nav-bg: #0c100eb8;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -101,7 +104,7 @@ body {
   background: var(--paper);
   color: var(--ink);
   font:
-    17px/1.6 Instrument,
+    17px/1.6 Manrope,
     system-ui,
     sans-serif;
 }
@@ -175,7 +178,7 @@ section[id] {
 }
 .eyebrow {
   font:
-    11px/1.5 Fragment,
+    11px/1.5 "Geist Mono",
     monospace;
   letter-spacing: 1.6px;
   text-transform: uppercase;
@@ -242,13 +245,13 @@ h1 em {
   transform: translateY(-2px);
 }
 .primary {
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--fill);
+  border-color: var(--fill);
   color: var(--on-green);
   padding: 17px 24px;
 }
 .primary:hover {
-  background: var(--green-hover);
+  background: var(--fill-hover);
 }
 .fine {
   font-size: 12px;
@@ -285,7 +288,7 @@ h1 em {
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: 0 10px 40px #243c2610;
+  box-shadow: 0 10px 40px #0d151210;
   border-radius: 14px;
   padding: 16px 20px;
   font-weight: 600;
@@ -315,7 +318,7 @@ small {
   border: 1px solid var(--rule);
   background: var(--surface);
   border-radius: 16px;
-  box-shadow: 0 24px 65px #35472d19;
+  box-shadow: 0 24px 65px #0d151219;
   transform: rotate(-2deg);
   overflow: hidden;
 }
@@ -466,7 +469,7 @@ small {
   width: 100%;
   text-align: center;
   font:
-    10px Fragment,
+    10px "Geist Mono",
     monospace;
   color: var(--muted);
 }
@@ -559,7 +562,7 @@ h3 {
 }
 .steps li > span {
   font:
-    12px Fragment,
+    12px "Geist Mono",
     monospace;
   color: var(--green);
   padding-top: 4px;
@@ -666,7 +669,7 @@ h3 {
 code {
   display: block;
   font:
-    13px Fragment,
+    13px "Geist Mono",
     monospace;
   background: var(--band);
   padding: 18px;
@@ -930,7 +933,7 @@ footer .eyebrow {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font:
-    13px/1.7 Instrument,
+    13px/1.7 Manrope,
     sans-serif;
   color: var(--muted);
 }
@@ -1188,7 +1191,7 @@ footer .eyebrow {
 }
 .network-links {
   fill: none;
-  stroke: #8ca977;
+  stroke: #8fc3a4;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-dasharray: 2 12;
@@ -1196,7 +1199,7 @@ footer .eyebrow {
 }
 .network-device,
 .network-hub {
-  filter: drop-shadow(0 10px 10px #253d2414);
+  filter: drop-shadow(0 10px 10px #0d151214);
 }
 .device-shell {
   fill: url(#device-shell);
@@ -1216,12 +1219,12 @@ footer .eyebrow {
   fill: var(--dot);
 }
 .phone-speaker {
-  stroke: #294e3e;
+  stroke: #37423d;
   stroke-width: 4;
   stroke-linecap: round;
 }
 .photo-mini {
-  fill: #b4c9a2;
+  fill: #bfe6cc;
 }
 .photo-mini.second {
   fill: #e4d8af;
@@ -1242,13 +1245,13 @@ footer .eyebrow {
   font-size: 10px;
 }
 .hub-depth {
-  fill: #163f31;
+  fill: #075a27;
 }
 .hub-face {
   fill: url(#hub-shell);
 }
 .hub-light {
-  fill: var(--dot);
+  fill: #c4f08f;
 }
 .network-hub-title {
   fill: #fff;
@@ -1256,13 +1259,13 @@ footer .eyebrow {
   font-weight: 600;
 }
 .network-hub-caption {
-  fill: #d8e5d0;
+  fill: #dcf8e6;
   font-size: 12px;
 }
 .network figcaption {
   text-align: center;
   font:
-    11px/1.6 Fragment,
+    11px/1.6 "Geist Mono",
     monospace;
   color: var(--muted);
   margin-top: 12px;
@@ -1330,6 +1333,6 @@ footer .eyebrow {
   stop-color: var(--device-b);
 }
 .folder-body {
-  fill: var(--lime);
+  fill: #c4f08f;
   stroke: var(--folder-line);
 }
