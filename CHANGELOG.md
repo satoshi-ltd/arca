@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3 — 2026-11-24
+
+- Arca is now open source under the GNU AGPL-3.0, replacing the PolyForm Strict License and its personal and non-commercial use only: anyone may use it for any purpose, including at work, read the code, change it and share it. Whoever shares a changed version, or runs one as a service for other people, offers them its source under the same license.
+
 ## 0.10.2 — 2026-11-24
 
 - A server that runs the Docker image now appears as Server with the server icon in every device list, on desktop, web and phone, instead of looking like a Linux computer. It shows once that server runs the new image.

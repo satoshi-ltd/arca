@@ -1,7 +1,7 @@
 {
   "name": "arca-desktop",
   "private": true,
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "start": "node ../../scripts/desktop-dev.js",

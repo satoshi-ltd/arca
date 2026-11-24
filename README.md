@@ -1,8 +1,8 @@
 # arca
 
-A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
+A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free and open source under the [GNU AGPL-3.0](LICENSE).
 
-**v0.10.2 · Phase 1 release.**
+**v0.10.3 · Phase 1 release.**
 
 ## How it works
 
@@ -91,6 +91,6 @@ python3 -m http.server --directory site/dist 4178
 
 ## License and contributions
 
-Arca is free for personal and non-commercial use under the [PolyForm Strict License 1.0.0](LICENSE): you may use it, but not modify or redistribute it. That is deliberate: the project wants help, not forks.
+Copyright © Satoshi Ltd. (https://www.satoshi-ltd.com). Arca is free and open source software under the [GNU Affero General Public License, version 3](LICENSE) only: you may use it for any purpose, study it, change it and share it, and anyone who shares a changed version, or runs one as a service for other people, must offer them its source under the same license. It comes with no warranty.
 
-To contribute, open an issue or a pull request on GitHub. Satoshi Ltd., the licensor, gives you permission to modify and copy the software only as far as needed to prepare and submit a contribution to this repository. By submitting one you confirm it is your own work and grant Satoshi Ltd. a perpetual, worldwide, royalty-free, irrevocable license to use, modify, sublicense and relicense it as part of Arca, with no obligation to accept it. Third-party dependencies keep their own licenses.
+To contribute, open an issue or a pull request on GitHub. By submitting one you confirm it is your own work and grant Satoshi Ltd. a perpetual, worldwide, royalty-free, irrevocable license to use, modify, sublicense and relicense it as part of Arca, with no obligation to accept it. Third-party dependencies keep their own licenses.

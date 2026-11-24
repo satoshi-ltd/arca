@@ -1,8 +1,8 @@
 [package]
 name = "arca-desktop"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
-license = "LicenseRef-PolyForm-Strict-1.0.0"
+license = "AGPL-3.0-only"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

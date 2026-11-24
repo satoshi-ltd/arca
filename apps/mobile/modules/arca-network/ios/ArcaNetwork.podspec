@@ -1,9 +1,9 @@
 Pod::Spec.new do |s|
   s.name = 'ArcaNetwork'
-  s.version = '0.10.2'
+  s.version = '0.10.3'
   s.summary = 'Arca private network checks'
   s.description = s.summary
-  s.license = 'LicenseRef-PolyForm-Strict-1.0.0'
+  s.license = 'AGPL-3.0-only'
   s.author = 'Arca'
   s.homepage = 'https://github.com/satoshi-ltd/arca'
   s.platforms = { :ios => '16.4' }

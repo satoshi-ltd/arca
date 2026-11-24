@@ -222,20 +222,18 @@ test("missing assets never get guessed download links, and stores and the APK ap
   assert.match(apk, /<span class="eyebrow">Android<\/span>/);
   assert.match(render(template, { ...release, assets: [...release.assets, asset("android.apk")] }, { playStore: "https://play.google.com/store/apps" }), /Outside the store/);
 });
-test("the page says it is free and names its license without claiming to be open source", async () => {
+test("the page says it is free and open source and names its license", async () => {
   const html = render(template, release);
   assert.match(html, /Free, on purpose/);
-  assert.match(html, /href="https:\/\/github\.com\/satoshi-ltd\/arca\/blob\/main\/LICENSE"[^>]*>PolyForm Strict License</);
-  for (const mention of html.match(/[^<>]{0,20}open[- ]source/gi) || [])
-    assert.match(mention, /not open source/, `unexpected open source claim: ${mention}`);
-  const page = html.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "");
+  assert.match(html, /href="https:\/\/github\.com\/satoshi-ltd\/arca\/blob\/main\/LICENSE"[^>]*>GNU AGPL-3\.0 license</);
+  assert.match(html, /href="https:\/\/github\.com\/satoshi-ltd\/arca\/blob\/main\/LICENSE"\s*>GNU AGPL-3\.0</);
+  assert.match(html, /Arca is free and open source software under the/);
   assert.match(html, /Is Arca really free\?/);
-  assert.equal((page.match(/using it for a business or at work is not covered/g) || []).length, 2);
+  assert.match(html, /It is open source under the GNU AGPL-3\.0 license/);
+  assert.doesNotMatch(html, /PolyForm|non-commercial|not open source|not covered|Not free to copy/i);
   assert.doesNotMatch(html, /You want to (use it for a business|share folders with other people)/);
   const license = await readFile(new URL("../LICENSE", import.meta.url), "utf8");
-  assert.match(license, /^Required Notice: Copyright /);
-  assert.match(license, /# PolyForm Strict License 1\.0\.0/);
-  assert.match(license, /other than distributing the software or making changes or new works based on the software/);
+  assert.match(license, /GNU AFFERO GENERAL PUBLIC LICENSE/);
 });
 test("the installation note comes before the downloads and the page states what it really needs", () => {
   const html = render(template, release);
@@ -729,8 +727,14 @@ test("the built site has a page for every library, comparison and guide, each re
     assert.match(page(slug), /Why choose Arca .* What Arca leaves out, on purpose/, `${slug} leads with Arca's case and still states its limits`);
     assert.doesNotMatch(page(slug) + document.querySelector('meta[name="description"]').content + document.title, /better choice|does better|You need open-source/i, `${slug} never argues for the other product, in its search snippet either`);
     assert.match(page(slug), /stays? (yours|on your own (hardware|devices))/, `${slug} leads with who owns the data`);
-    for (const mention of page(slug).match(/[^.]{0,40}open[- ]source/gi) || []) assert.doesNotMatch(mention, /Arca (is|as) open/i);
   }
+  for (const slug of slugs) {
+    const built = fs.readFileSync(path.join(output, slug, "index.html"), "utf8");
+    if (slug !== "changelog") assert.doesNotMatch(built, /PolyForm|non-commercial|free for personal use|not open source/i, `${slug} states the current license`);
+    assert.match(built, /free and\s+open source ·\s+<a href="https:\/\/github\.com\/satoshi-ltd\/arca\/blob\/main\/LICENSE"\s*>GNU AGPL-3\.0</, `${slug} names the license in its footer`);
+  }
+  assert.match(page("dropbox-alternative"), /Cost ?Free and open source/);
+  assert.match(page("plex-alternative"), /Cost ?Free and open source/);
   assert.match(page("docker"), /image: satoshiltd\/arca:latest/);
   assert.doesNotMatch(page("docker"), /satoshiltd\/arca:\d/, "the guide never pins a version the registry may not have yet");
   assert.match(page("docker"), /"127\.0\.0\.1:17831:17831"/, "the guide publishes the port on the server alone until the reader chooses a route");
