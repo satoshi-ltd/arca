@@ -44,9 +44,7 @@ test("site build uses package.json version without metadata, release.json when p
     "pages",
     "styles.css",
     "theme.js",
-    "assets/platforms.svg",
-    "assets/og-image.png",
-    "assets/apple-touch-icon.png",
+    "assets",
   ]) {
     await cp(
       new URL(`../site/${file}`, import.meta.url),
@@ -143,6 +141,10 @@ test("site build uses package.json version without metadata, release.json when p
   assert.match(await readFile(path.join(root, "site/dist/sitemap.xml"), "utf8"), /<loc>https:\/\/arca\.example\.com\/<\/loc>/);
   for (const name of ["og-image.png", "apple-touch-icon.png"]) assert.ok(fs.existsSync(path.join(root, "site/dist/assets", name)), name);
   assert.match(await readFile(path.join(root, "site/dist/_headers"), "utf8"), /\/assets\/\*\n  Cache-Control: public, max-age=604800/);
+  fs.rmSync(path.join(root, "site/assets/card-photos.png"));
+  const cardless = build();
+  assert.notEqual(cardless.status, 0, "a page without its social card stops the build");
+  assert.match(cardless.stderr, /Missing card-photos\.png: draw the social cards with npm run site:cards/);
 });
 test("search engines and link previews get a title, description, social card and structured data that match the page", () => {
   const html = render(template, release, { siteUrl: "https://arca.example.com" });
@@ -164,7 +166,7 @@ test("search engines and link previews get a title, description, social card and
   const summaries = [...template.matchAll(/<summary>([^<]+)<\/summary>/g)].map((match) => match[1].replace(/&amp;/g, "&")).filter((question) => !question.startsWith("Release notes"));
   assert.deepEqual(faq.mainEntity.map((entry) => entry.name), summaries, "the structured FAQ is the page's own questions, in order");
   assert.ok(faq.mainEntity.every((entry) => entry.acceptedAnswer.text.length > 40 && !/[<>]/.test(entry.acceptedAnswer.text)));
-  assert.doesNotMatch(render(template, release), /og:url|<link rel="canonical"/, "a local build without SITE_URL claims no address");
+  assert.doesNotMatch(render(template, release), /og:url|og:image:secure_url|<link rel="canonical"/, "a local build without SITE_URL claims no address");
 });
 test("downloads use actual GitHub release assets and Linux appears once", () => {
   const html = render(template, {
@@ -503,14 +505,19 @@ test("site offers a theme switch in the same form as the sibling sites", () => {
   assert.match(template, /<script src="theme\.js"><\/script>/);
   assert.equal((template.match(/<script\b/g) || []).length, 1);
   assert.match(template, /class="theme-btn"[\s\S]*class="sun"[\s\S]*class="moon"/);
-  assert.ok(css.includes(':root:not([data-theme="light"])'));
   assert.ok(css.includes(':root[data-theme="dark"]'));
   assert.ok(css.includes(':root[data-theme="light"] .theme-btn .sun'));
   assert.doesNotMatch(template, /\sstyle="/);
 });
-test("theme follows the system until the reader picks one, then remembers the pick", () => {
+test("the site is dark until the reader picks a theme, then remembers the pick", () => {
   assert.equal(runTheme({ systemDark: true }).root.dataset.theme, "dark");
-  assert.equal(runTheme({ systemDark: false }).root.dataset.theme, "light");
+  assert.equal(runTheme({ systemDark: false }).root.dataset.theme, "dark", "a light system still opens the site dark");
+  for (const file of ["../site/index.html", "../site/page.html"]) {
+    const page = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.match(page, /<html lang="en" data-theme="dark">/, "dark without waiting for the script");
+    assert.match(page, /<meta name="theme-color" content="#0c100e" \/>\s*<meta name="color-scheme" content="dark light" \/>/);
+  }
+  assert.doesNotMatch(themeSource + css, /prefers-color-scheme/, "nothing follows the system");
   assert.equal(
     runTheme({ systemDark: true, stored: "light" }).root.dataset.theme,
     "light",
@@ -520,11 +527,15 @@ test("theme follows the system until the reader picks one, then remembers the pi
     "dark",
   );
   const page = runTheme({ systemDark: false });
-  page.click();
-  assert.equal(page.root.dataset.theme, "dark");
-  assert.equal(page.store["arca-theme"], "dark");
   assert.equal(page.meta.content, "#0c100e");
   assert.equal(page.button.label, "Switch to light theme");
+  page.click();
+  assert.equal(page.root.dataset.theme, "light");
+  assert.equal(page.store["arca-theme"], "light");
+  assert.equal(page.meta.content, "#f6f8f7");
+  assert.equal(page.button.label, "Switch to dark theme");
+  page.click();
+  assert.equal(page.store["arca-theme"], "dark");
 });
 test("site build ships theme.js", async (t) => {
   const output = await mkdtemp(path.join(os.tmpdir(), "arca-site-theme-"));
@@ -548,9 +559,11 @@ test("every asset the built page and stylesheet reference carries the hash of it
   assert.equal(run.status, 0, run.stderr);
   const { createHash } = await import("node:crypto");
   const built = fs.readFileSync(path.join(output, "index.html"), "utf8") + fs.readFileSync(path.join(output, "styles.css"), "utf8");
-  const references = [...built.matchAll(/assets\/([\w.-]+)(\?v=([0-9a-f]+))?/g)];
+  const cards = [...built.matchAll(/https:\/\/example\.test\/assets\/([\w.-]+)(\?v=)?/g)];
+  assert.ok(cards.length >= 3 && cards.every((match) => match[1] === "og-image.png" && !match[2]), "the social card keeps one plain address, as link scrapers expect");
+  const references = [...built.replace(/https:\/\/example\.test\/assets\/[\w.-]+/g, "").matchAll(/assets\/([\w.-]+)(\?v=([0-9a-f]+))?/g)];
   const names = new Set(references.map((match) => match[1]));
-  for (const name of ["arca-icon.svg", "og-image.png", "apple-touch-icon.png", "platforms.svg", "manrope.woff2", "geist-mono.woff2"]) assert.ok(names.has(name), name);
+  for (const name of ["arca-icon.svg", "apple-touch-icon.png", "platforms.svg", "manrope.woff2", "geist-mono.woff2"]) assert.ok(names.has(name), name);
   for (const [text, name, , stamp] of references) {
     const expected = createHash("sha256").update(fs.readFileSync(path.join(output, "assets", name))).digest("hex").slice(0, 10);
     assert.equal(stamp, expected, `${text} is stamped with its content`);
@@ -593,7 +606,7 @@ test("the site's light palette is the app's palette", async () => {
     ["muted", "mute"],
   ])
     assert.equal(value(styles, site), value(tokens, app), `--${site}`);
-  assert.match(await read("../site/index.html"), /name="theme-color" content="#f6f8f7"/);
+  assert.match(await read("../site/index.html"), /name="theme-color" content="#0c100e"/);
 });
 
 const source = (extra = "") =>
@@ -624,7 +637,10 @@ test("a content page gets its own address, social card, breadcrumb and the links
   assert.equal(document.querySelector('meta[name="description"]').content, "What it is.");
   assert.equal(document.querySelector('link[rel="canonical"]').href, "https://example.test/a-page/");
   assert.equal(document.querySelector('meta[property="og:url"]').content, "https://example.test/a-page/");
-  assert.equal(document.querySelector('meta[property="og:image"]').content, "https://example.test/assets/og-image.png");
+  assert.equal(document.querySelector('meta[property="og:image"]').content, "https://example.test/assets/card-a-page.png", "a page shares its own card");
+  for (const [selector, value] of [['meta[property="og:image:secure_url"]', "https://example.test/assets/card-a-page.png"], ['meta[name="twitter:image"]', "https://example.test/assets/card-a-page.png"], ['meta[property="og:image:type"]', "image/png"], ['meta[property="og:locale"]', "en_US"], ['meta[name="twitter:card"]', "summary_large_image"]])
+    assert.equal(document.querySelector(selector).content, value, selector);
+  assert.match(document.querySelector('meta[name="twitter:image:alt"]').content, /^Arca: your files, your devices/);
   assert.equal(document.querySelectorAll("h1").length, 1);
   assert.deepEqual(JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent).itemListElement.map((item) => item.item), ["https://example.test/", "https://example.test/a-page/"]);
   assert.deepEqual(Array.from(document.querySelectorAll(".site-links a"), (link) => [link.getAttribute("href"), link.textContent, link.getAttribute("aria-current")]), [["../other/", "Other & more", null], ["../a-page/", "A page", "page"]]);
@@ -633,7 +649,7 @@ test("a content page gets its own address, social card, breadcrumb and the links
   assert.equal(document.querySelector(".release").textContent.trim(), "0.3.1");
   assert.doesNotMatch(html, /\{\{/);
   const local = renderPage(layout, pages[0], pages, { version: "0.3.1" });
-  assert.doesNotMatch(local, /rel="canonical"|ld\+json|og:url/, "without a public address the page claims none");
+  assert.doesNotMatch(local, /rel="canonical"|ld\+json|og:url|og:image:secure_url/, "without a public address the page claims none");
   assert.throws(() => renderPage(layout, parsePage("a-page", source('<a href="../missing/">x</a>')), pages, { version: "0.3.1" }), /links to a page that does not exist: missing/);
   for (const address of ["other/", "/other/", "../other/deeper/", "http://example.test/", "../other"])
     for (const link of [`<a href='${address}'>x</a>`, `<a HREF = "${address}">x</a>`, `<a href=${address}>x</a>`])
@@ -690,6 +706,8 @@ test("the built site has a page for every library, comparison and guide, each re
     assert.match(html, /href="\.\.\/styles\.css\?v=[0-9a-f]{10}"/);
     assert.match(html, /src="\.\.\/theme\.js\?v=[0-9a-f]{10}"/);
     assert.match(html, /href="\.\.\/assets\/arca-icon\.svg\?v=[0-9a-f]{10}"/);
+    assert.ok(html.includes(`<meta name="twitter:image" content="https://example.test/assets/card-${slug}.png" />`), `${slug}: its own card, at a plain address`);
+    assert.ok(fs.existsSync(path.join(output, "assets", `card-${slug}.png`)), `${slug}: the card ships`);
     assert.doesNotMatch(html, /\sstyle="/);
     if (slug === "changelog") continue;
     assert.doesNotMatch(html, /\{\{/);
@@ -743,4 +761,23 @@ test("the built site has a page for every library, comparison and guide, each re
   assert.match(page("remote-access"), /every device arrives over plain HTTP from the proxy\. If pairing is refused, turn on Settings → Network → Allow HTTP connections/);
   assert.deepEqual(Array.from(home.querySelectorAll(".site-links div:first-child a"), (link) => link.textContent), ["File sync", "Photos", "Music", "Movies & TV"]);
   assert.match(home.querySelector(".answers").textContent, /Movies, and music on Android, stream from the hub instead/);
+});
+
+test("every page has a drawn social card that matches its current heading", async () => {
+  const { cards, sitePages } = await import("../site/scripts/cards.mjs");
+  const drawn = JSON.parse(fs.readFileSync(new URL("../site/cards.json", import.meta.url), "utf8"));
+  const expected = cards(await sitePages());
+  assert.deepEqual(Object.keys(drawn).sort(), expected.map((card) => card.file).sort());
+  for (const card of expected) {
+    assert.equal(drawn[card.file], card.key, `${card.file} is stale: run CHROME=… npm run site:cards`);
+    const png = fs.readFileSync(new URL(`../site/assets/${card.file}`, import.meta.url));
+    assert.equal(png.subarray(1, 4).toString(), "PNG");
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1200, 630], `${card.file} is 1200×630`);
+    assert.ok(png.length < 200000, `${card.file} stays light`);
+    assert.doesNotMatch(card.html, /#f6f8f7/, "cards are drawn on the dark palette");
+  }
+  assert.match(expected[0].html, /<h1>Your files\.<b>Your devices\.<\/b><\/h1>/);
+  assert.match(expected.find((card) => card.file === "card-movies.png").html, /<div class="eye">Arca \/ Libraries<\/div>\n<h1>Your own movies and shows, on every screen<\/h1>/);
+  assert.match(cards([{ slug: "a", group: "Guides", body: "<h1>Films &amp;\n  shows</h1>" }])[1].html, /<h1>Films &amp; shows<\/h1>/, "a heading is drawn as it reads, not with its entity spelled out");
+  assert.notEqual(cards([{ slug: "a", group: "Guides", body: "<h1>One</h1>" }])[1].key, cards([{ slug: "a", group: "Guides", body: "<h1>Two</h1>" }])[1].key, "a new heading asks for a new card");
 });

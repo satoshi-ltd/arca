@@ -72,7 +72,7 @@ The **publish** workflow tests on macOS, Windows and Linux; a new version on `ma
 
 ## Public website
 
-The site in `site/` is static HTML and CSS with no framework, telemetry or runtime API: a home page (`index.html`) and one content page per file in `site/pages/`, wrapped by `page.html`.
+The site in `site/` is static HTML and CSS with no framework, telemetry or runtime API: a home page (`index.html`) and one content page per file in `site/pages/`, wrapped by `page.html`. After adding a page or changing a heading, redraw the social cards with `CHROME=<path to Chrome> npm run site:cards`.
 
 ```sh
 npm run site:build

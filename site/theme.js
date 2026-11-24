@@ -1,6 +1,5 @@
 (function () {
   const root = document.documentElement;
-  const system = matchMedia('(prefers-color-scheme: dark)');
   let choice = null;
   try {
     choice = localStorage.getItem('arca-theme');
@@ -8,7 +7,7 @@
   if (choice !== 'light' && choice !== 'dark') choice = null;
 
   function paint() {
-    const theme = choice || (system.matches ? 'dark' : 'light');
+    const theme = choice || 'dark';
     root.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme === 'light' ? '#f6f8f7' : '#0c100e');
@@ -18,7 +17,6 @@
 
   paint();
   document.addEventListener('DOMContentLoaded', paint);
-  system.addEventListener('change', paint);
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.theme-btn')) return;
     choice = root.dataset.theme === 'light' ? 'dark' : 'light';

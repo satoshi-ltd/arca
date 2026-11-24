@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, cp, rm, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -26,7 +27,7 @@ export function publicUrl(value) {
     );
   return url.href.replace(/\/$/, "");
 }
-const text = (html) =>
+export const text = (html) =>
   html
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
@@ -75,6 +76,31 @@ export function expectedRelease(version, repository = "satoshi-ltd/arca") {
       },
     ),
   };
+}
+const cardAlt = "Arca: your files, your devices. Folders, photos, music and movies on a hub you run.";
+export function socialTags(type, title, description, url, image) {
+  return [
+    ["property", "og:type", type],
+    ["property", "og:site_name", "Arca"],
+    ["property", "og:title", title],
+    ["property", "og:description", description],
+    url && ["property", "og:url", url],
+    ["property", "og:locale", "en_US"],
+    ["property", "og:image", image],
+    url && ["property", "og:image:secure_url", image],
+    ["property", "og:image:type", "image/png"],
+    ["property", "og:image:width", "1200"],
+    ["property", "og:image:height", "630"],
+    ["property", "og:image:alt", cardAlt],
+    ["name", "twitter:card", "summary_large_image"],
+    ["name", "twitter:title", title],
+    ["name", "twitter:description", description],
+    ["name", "twitter:image", image],
+    ["name", "twitter:image:alt", cardAlt],
+  ]
+    .filter(Boolean)
+    .map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(text(value))}" />`)
+    .join("\n    ");
 }
 export function render(template, release, config = {}) {
   if (!/^v\d+\.\d+\.\d+$/.test(release.tag_name) || release.draft)
@@ -130,24 +156,7 @@ export function render(template, release, config = {}) {
   const absolute = (path) => (origin ? `${origin}/${path}` : path);
   const title = text(/<title>([\s\S]*?)<\/title>/.exec(template)?.[1] || "Arca");
   const description = /<meta\s+name="description"\s+content="([^"]*)"/.exec(template)?.[1] || "";
-  const social = [
-    ["property", "og:type", "website"],
-    ["property", "og:site_name", "Arca"],
-    ["property", "og:title", title],
-    ["property", "og:description", description],
-    origin && ["property", "og:url", `${origin}/`],
-    ["property", "og:image", absolute("assets/og-image.png")],
-    ["property", "og:image:width", "1200"],
-    ["property", "og:image:height", "630"],
-    ["property", "og:image:alt", "Arca: your files, your devices. Folders, photos, music and movies on a hub you run."],
-    ["name", "twitter:card", "summary_large_image"],
-    ["name", "twitter:title", title],
-    ["name", "twitter:description", description],
-    ["name", "twitter:image", absolute("assets/og-image.png")],
-  ]
-    .filter(Boolean)
-    .map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(text(value))}" />`)
-    .join("\n    ");
+  const social = socialTags("website", title, description, origin && `${origin}/`, absolute("assets/og-image.png"));
   const faq = questions(template);
   const structured = [
     json({
@@ -272,25 +281,7 @@ export function siteLinks(pages, prefix = "", current = "") {
 export function renderPage(layout, page, pages, config = {}) {
   if (!/^\d+\.\d+\.\d+$/.test(config.version)) throw new Error("Expected a version");
   const origin = config.siteUrl ? publicUrl(config.siteUrl) : "";
-  const image = origin ? `${origin}/assets/og-image.png` : "../assets/og-image.png";
-  const social = [
-    ["property", "og:type", "article"],
-    ["property", "og:site_name", "Arca"],
-    ["property", "og:title", page.title],
-    ["property", "og:description", page.description],
-    origin && ["property", "og:url", `${origin}/${page.slug}/`],
-    ["property", "og:image", image],
-    ["property", "og:image:width", "1200"],
-    ["property", "og:image:height", "630"],
-    ["property", "og:image:alt", "Arca: your files, your devices. Folders, photos, music and movies on a hub you run."],
-    ["name", "twitter:card", "summary_large_image"],
-    ["name", "twitter:title", page.title],
-    ["name", "twitter:description", page.description],
-    ["name", "twitter:image", image],
-  ]
-    .filter(Boolean)
-    .map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(value)}" />`)
-    .join("\n    ");
+  const social = socialTags("article", page.title, page.description, origin && `${origin}/${page.slug}/`, `${origin || ".."}/assets/card-${page.slug}.png`);
   for (const [, , address] of page.body.matchAll(/href\s*=\s*(["']?)([^"'\s>]*)\1/gi)) {
     const local = /^\.\.\/(?:([a-z0-9-]+)\/)?(?:#[\w-]+)?$/.exec(address);
     if (!local && !/^(https:\/\/|#)/.test(address)) throw new Error(`${page.slug} has a link that is neither https, an anchor nor ../page/: ${address}`);
@@ -371,17 +362,19 @@ if (
   if (!process.env.SITE_OUTPUT) await rm(output, { recursive: true, force: true });
   await mkdir(path.join(output, "assets"), { recursive: true });
   const sources = Object.fromEntries([
-    ...["platforms.svg", "og-image.png", "apple-touch-icon.png"].map((name) => [name, path.join(root, "site/assets", name)]),
+    ...["platforms.svg", "og-image.png", "apple-touch-icon.png", ...pages.map((page) => `card-${page.slug}.png`)].map((name) => [name, path.join(root, "site/assets", name)]),
     ...["arca-icon.svg", "fonts/manrope.woff2", "fonts/geist-mono.woff2"].map((name) => [path.basename(name), path.join(root, "apps/desktop/src/assets", name)]),
   ]);
   const stamps = new Map();
   for (const [name, file] of Object.entries(sources))
+    if (/^(card-|og-image)/.test(name) && !existsSync(file)) throw new Error(`Missing ${name}: draw the social cards with npm run site:cards`);
+  for (const [name, file] of Object.entries(sources))
     stamps.set(name, createHash("sha256").update(await readFile(file)).digest("hex").slice(0, 10));
   const digest = (data) => createHash("sha256").update(data).digest("hex").slice(0, 10);
   const stamped = (text) =>
-    text.replace(/assets\/([\w.-]+)(?=["')#])/g, (match, name) => {
+    text.replace(/(\w\/)?assets\/([\w.-]+)(?=["')#])/g, (match, absolute, name) => {
       if (!stamps.has(name)) throw new Error(`The site references assets/${name}, which the build does not ship`);
-      return `${match}?v=${stamps.get(name)}`;
+      return absolute ? match : `${match}?v=${stamps.get(name)}`;
     });
   const styles = stamped(await readFile(path.join(root, "site/styles.css"), "utf8"));
   const theme = await readFile(path.join(root, "site/theme.js"));

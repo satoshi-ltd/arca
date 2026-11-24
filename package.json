@@ -17,6 +17,7 @@
     "build:local": "node scripts/build-local.js",
     "format": "prettier --write packages apps/desktop/src scripts tests SPEC.md README.md AGENTS.md package.json compose.yaml",
     "site:build": "node site/scripts/build.mjs",
+    "site:cards": "node site/scripts/cards.mjs",
     "site:release": "node site/scripts/read-release.mjs"
   },
   "devDependencies": {
