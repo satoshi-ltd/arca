@@ -171,7 +171,7 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.match(app, /revoked: m\.revoked,\s+player: m\.role === "player",\s+\}\)\}\s+cells=\{deviceCells\(\{/);
   assert.match(app, /role=\{m\.role === "player" \? "Player" : m\.role \|\| "Replica"\}/);
   assert.match(app, /!m\.isHub &&\s+m\.role !== "player" &&\s+m\.credentialId !== connection\?\.id/, "a player is never listed as holding a copy");
-  assert.match(read("components.jsx"), /name=\{hub \? "server" : player \? "tv" : /);
+  assert.match(read("components.jsx"), /name=\{deviceIcon\(\{ hub, player, platform \}\)\}/);
   assert.match(read("icons.js"), /"circle-arrow-up": "CircleArrowUp"/);
 });
 

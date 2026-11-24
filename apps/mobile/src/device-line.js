@@ -6,6 +6,9 @@ const PLATFORMS = { darwin: "macOS", linux: "Linux", win32: "Windows", android: 
 
 export const platformName = (platform) => PLATFORMS[platform] || platform || "";
 
+export const deviceIcon = ({ hub = false, player = false, platform = "" }) =>
+  hub || /^server$/i.test(platform) ? "server" : player ? "tv" : /^(ios|android)$/i.test(platform) ? "phone" : "monitor";
+
 export const versionCore = (value) => /^\d+\.\d+\.\d+/.exec(value || "")?.[0] || value || "";
 
 const versionParts = (value) =>

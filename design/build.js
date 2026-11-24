@@ -132,7 +132,7 @@ ${lines(changed(themeColors("dark"), light))}
     0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line);
   --shadow-dialog:
     0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line);
-  --shadow-card: 0 0 0 1px var(--div), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --shadow-card: 0 0 0 1px var(--div);
 }
 @keyframes brand-draw {
   from {

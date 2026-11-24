@@ -3575,6 +3575,7 @@ summary {
 
 .settings-card.replica-danger {
   border-color: var(--er);
+  box-shadow: none;
 }
 
 section:has(> .replica-danger) > .section-label {

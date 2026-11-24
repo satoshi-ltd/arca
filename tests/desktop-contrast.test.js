@@ -58,3 +58,10 @@ test("the phone's filled controls carry a white label on the brand fill, never o
   assert.match(theme, /playButton: \{[^}]*backgroundColor: c\.fill,/);
   assert.match(theme, /selectionCheck: \{[^}]*backgroundColor: c\.fill,/);
 });
+
+test("a card draws one ring in dark, never a second line inside it", () => {
+  const dark = /--shadow-card:\s*([^;]+);/.exec(css.slice(split))[1];
+  assert.equal(dark, "0 0 0 1px var(--div)");
+  const style = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  assert.doesNotMatch(style, /box-shadow:[^;]*var\(--shadow-card\)[^;]*inset/, "no card adds an inner line of its own");
+});

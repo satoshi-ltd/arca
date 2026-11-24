@@ -8,7 +8,7 @@ COPY packages ./packages
 COPY apps/desktop/src ./apps/desktop/src
 RUN mkdir -p /data/state /data/files && chown -R node:node /data && chmod 700 /data/state
 USER node
-ENV ARCA_HOME=/data/state ARCA_FILES=/data/files XDG_DATA_HOME=/data/state
+ENV ARCA_HOME=/data/state ARCA_FILES=/data/files XDG_DATA_HOME=/data/state ARCA_PLATFORM=Server
 EXPOSE 17831
 ENTRYPOINT ["node", "packages/cli/arca.js"]
 CMD ["daemon", "--setup", "--port", "17831", "--host", "0.0.0.0", "--private-network"]

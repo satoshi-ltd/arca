@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.2 — 2026-11-24
+
+- A server that runs the Docker image now appears as Server with the server icon in every device list, on desktop, web and phone, instead of looking like a Linux computer. It shows once that server runs the new image.
+- In the dark theme, cards on desktop and web draw a single outline: the faint second line inside it read as a double border around settings, devices and history.
+- The website has a page for each library, comparisons with other products, setup guides and a changelog, opens dark, and every page shares its own card when its link is posted.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.10.1 — 2026-11-23
 
 - The desktop app now takes over a daemon left running by another install or an older version: at launch it points the login service at itself and restarts the daemon, instead of quietly talking to old code. A Mac that had also run a development copy kept the old daemon after updating, so fixes such as the one for videos stopping never took effect.

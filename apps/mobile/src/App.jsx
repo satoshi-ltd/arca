@@ -217,7 +217,7 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, count, fileCount, folderSize, unbroken } from "./format";
 import { neededBytes, notEnoughSpace, spaceShort } from "./space";
-import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
+import { deviceCells, deviceIcon, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, entryLabel, revealWindow } from "./browse";
 import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld, streamedOfflineCaption } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
@@ -3600,11 +3600,7 @@ export default function App() {
                                         >
                                           <View style={s.leadSlot}>
                                             <Icon
-                                              name={
-                                                /android|ios/.test(m.platform)
-                                                  ? "phone"
-                                                  : "monitor"
-                                              }
+                                              name={deviceIcon({ platform: m.platform })}
                                             />
                                           </View>
                                           <Text style={[s.heading, s.flex]}>

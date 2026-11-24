@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.10.1";
+const APP_VERSION = "0.10.2";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1370,7 +1370,7 @@ function renderCopies() {
     known
       .map(
         (m) =>
-          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong>${copyTag(m, v)}</div>`,
+          `<div class="copy-row">${icon(deviceGlyph(m.isHub ? "hub" : "", m.platform))}<strong>${escape(m.name)}</strong>${copyTag(m, v)}</div>`,
       )
       .join("") +
     (copiesUnavailable
@@ -9284,9 +9284,11 @@ async function renderHistory(
   icons();
 }
 const managedGlyph = () => (status.role === "hub" || !native ? "server" : "monitor");
-const machineRow = (name, tags, description, state, controls, metadata) => {
+const deviceGlyph = (role, platform) =>
+  role === "hub" ? "server" : role === "player" ? "tv" : /^(ios|android|iphone|ipad|ipados)$/i.test(platform) ? "smartphone" : /^server$/i.test(platform) ? "server" : "monitor";
+const machineRow = (name, tags, description, state, controls, metadata, glyph) => {
   const tone = /class="pill (wa|er)"/.exec(state)?.[1] || "";
-  return `<article class="device-row discovered"><div class="tile large${tone ? ` ${tone}` : ""}">${icon(/ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}</div>${controls}</article>`;
+  return `<article class="device-row discovered"><div class="tile large${tone ? ` ${tone}` : ""}">${icon(glyph)}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}</div>${controls}</article>`;
 };
 
 const versionParts = (value) =>
@@ -9339,7 +9341,7 @@ function roleChip(role, backup = false) {
   return `<span class="role-set">${label ? `<span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>` : ""}${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
 }
 const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, cells = "", end = "", tone = "", dashed = false }) =>
-  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : role === "player" ? "tv" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
+  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role !== "hub" && role !== "player" && self ? managedGlyph() : deviceGlyph(role, platform))}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
 let rosterReadAt = 0,
   rosterReadClock = 0,
   devicesWatch = 0;
@@ -9637,6 +9639,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
                   : ""
               : "",
             `${platform(p)}${/^\d/.test(p.arca.version || "") ? ` · v${escape(p.arca.version)}` : ""}`,
+            deviceGlyph(p.arca.role, p.arca.platform || p.os || ""),
           ),
         )
         .join(""),

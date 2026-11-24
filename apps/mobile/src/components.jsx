@@ -16,7 +16,7 @@ import { putFlight } from "./flight.js";
 import { announce } from "./announce.js";
 import { SELECTION_LIMIT_REASON, selectionNote } from "./photo-selection.js";
 import { deviceLabel, folderState, historyTone, machineTone } from "./home-data.js";
-import { foldRowFits, machineLabel, platformName, segmentText } from "./device-line.js";
+import { deviceIcon, foldRowFits, machineLabel, platformName, segmentText } from "./device-line.js";
 import React, {
   createContext,
   useContext,
@@ -1809,7 +1809,7 @@ export function MachineRow({
       <Icon
         size={wide ? 20 : 16}
         color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
-        name={hub ? "server" : player ? "tv" : /android|ios/i.test(platform) ? "phone" : "monitor"}
+        name={deviceIcon({ hub, player, platform })}
       />
       {!wide && !!presence && <View style={[s.presenceBadge, !presence.connected && s.presenceOff]} />}
     </View>
