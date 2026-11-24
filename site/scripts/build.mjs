@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, cp, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, cp, rm, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -45,7 +45,7 @@ export function questions(template) {
     ),
   ].map((match) => ({ question: text(match[1]), answer: text(match[2]) }));
 }
-export function seoFiles(siteUrl, published) {
+export function seoFiles(siteUrl, published, slugs = []) {
   const origin = siteUrl ? publicUrl(siteUrl) : "";
   const day = published ? new Date(published) : null;
   const lastmod =
@@ -55,7 +55,7 @@ export function seoFiles(siteUrl, published) {
   return {
     robots: `User-agent: *\nAllow: /\n${origin ? `\nSitemap: ${origin}/sitemap.xml\n` : ""}`,
     sitemap: origin
-      ? `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${escape(origin)}/</loc>${lastmod}</url></urlset>\n`
+      ? `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${["", ...slugs.map((slug) => `${slug}/`)].map((page) => `<url><loc>${escape(origin)}/${page}</loc>${lastmod}</url>`).join("")}</urlset>\n`
       : null,
   };
 }
@@ -197,6 +197,7 @@ export function render(template, release, config = {}) {
     MOBILE_ACCESS: stores.length
       ? `<div class="store-row">${stores.join("")}</div>`
       : '<p class="mobile-status">The Android and iOS apps are not in the app stores yet. They are still being qualified.</p>',
+    SITE_LINKS: config.siteLinks || "",
     CANONICAL: config.siteUrl
       ? `<link rel="canonical" href="${escape(publicUrl(config.siteUrl))}/">`
       : "",
@@ -205,6 +206,126 @@ export function render(template, release, config = {}) {
     if (!(key in tokens)) throw new Error(`Unknown template token: ${key}`);
     return tokens[key];
   });
+}
+
+export const groups = ["Libraries", "Compare", "Guides"];
+export function parsePage(slug, source) {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new Error(`Invalid page name: ${slug}`);
+  const title = /^<title>([^<]+)<\/title>\s*/.exec(source);
+  if (!title) throw new Error(`${slug}: a page starts with its <title>`);
+  let body = source.slice(title[0].length);
+  const meta = {};
+  for (let match; (match = /^<meta name="(description|group|label)" content="([^"]+)" \/>\s*/.exec(body)); body = body.slice(match[0].length))
+    meta[match[1]] = match[2];
+  for (const key of ["description", "group", "label"])
+    if (!meta[key]) throw new Error(`${slug}: missing <meta name="${key}">`);
+  if (/&#?\w+;/.test(title[1] + Object.values(meta).join("")))
+    throw new Error(`${slug}: the title and metas are plain text, without HTML entities`);
+  if (!groups.includes(meta.group)) throw new Error(`${slug}: unknown group ${meta.group}`);
+  const section = body.indexOf("<h2");
+  if ((body.match(/<h1>[^<]+<\/h1>/g) || []).length !== 1 || (section !== -1 && section < body.indexOf("<h1>")))
+    throw new Error(`${slug}: the content has one <h1>, before any <h2>`);
+  return { slug, title: title[1], ...meta, body };
+}
+const inline = (value) =>
+  escape(value)
+    .replace(/\//g, "&#47;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+export function changelogPage(markdown, repository = "satoshi-ltd/arca", limit = 30) {
+  const entries = markdown
+    .replace(/\r\n/g, "\n")
+    .split(/^## /m)
+    .slice(1, limit + 1)
+    .map((entry) => {
+      const [heading, ...lines] = entry.trim().split("\n");
+      const [version, date] = heading.split(" — ");
+      const items = lines.filter((line) => line.startsWith("- ")).map((line) => `<li>${inline(line.slice(2))}</li>`);
+      const hub = lines.some((line) => /^Needs:.*\bhub redeploy\b/.test(line)) ? '\n<p class="fine">Needs an updated hub.</p>' : "";
+      return `<section>\n<h2>${escape(version)}${date ? ` <small>${escape(date)}</small>` : ""}</h2>\n<ul>\n${items.join("\n")}\n</ul>${hub}\n</section>`;
+    });
+  return {
+    slug: "changelog",
+    title: "Arca changelog — what each version shipped",
+    description: "Release notes for Arca, the free self-hosted cloud for your files, photos, music and movies: what changed in each of the latest versions.",
+    group: "Guides",
+    label: "Changelog",
+    body: `<h1>Changelog</h1>\n<p class="lede">What each version of Arca shipped, newest first. The desktop app updates itself; a Docker hub updates when you pull the new image.</p>\n${entries.join("\n")}\n<p>Older versions are in the <a href="https://github.com/${repository}/blob/main/CHANGELOG.md">full changelog on GitHub</a>.</p>`,
+  };
+}
+const appOrder = ["file-sync", "photos", "music", "movies"];
+export function sorted(pages) {
+  const rank = (page) => groups.indexOf(page.group) * 100 + (appOrder.indexOf(page.slug) + 1 || 99);
+  return [...pages].sort((a, b) => rank(a) - rank(b));
+}
+export function siteLinks(pages, prefix = "", current = "") {
+  const columns = groups
+    .map((group) => {
+      const links = pages
+        .filter((page) => page.group === group)
+        .map((page) => `<li><a href="${prefix}${page.slug}/"${page.slug === current ? ' aria-current="page"' : ""}>${escape(page.label)}</a></li>`);
+      return links.length ? `<div><h2 class="eyebrow">${group}</h2><ul>${links.join("")}</ul></div>` : "";
+    })
+    .join("");
+  return columns ? `<nav class="site-links wrap" aria-label="More about Arca">${columns}</nav>` : "";
+}
+export function renderPage(layout, page, pages, config = {}) {
+  if (!/^\d+\.\d+\.\d+$/.test(config.version)) throw new Error("Expected a version");
+  const origin = config.siteUrl ? publicUrl(config.siteUrl) : "";
+  const image = origin ? `${origin}/assets/og-image.png` : "../assets/og-image.png";
+  const social = [
+    ["property", "og:type", "article"],
+    ["property", "og:site_name", "Arca"],
+    ["property", "og:title", page.title],
+    ["property", "og:description", page.description],
+    origin && ["property", "og:url", `${origin}/${page.slug}/`],
+    ["property", "og:image", image],
+    ["property", "og:image:width", "1200"],
+    ["property", "og:image:height", "630"],
+    ["property", "og:image:alt", "Arca: your files, your devices. Folders, photos, music and movies on a hub you run."],
+    ["name", "twitter:card", "summary_large_image"],
+    ["name", "twitter:title", page.title],
+    ["name", "twitter:description", page.description],
+    ["name", "twitter:image", image],
+  ]
+    .filter(Boolean)
+    .map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(value)}" />`)
+    .join("\n    ");
+  for (const [, , address] of page.body.matchAll(/href\s*=\s*(["']?)([^"'\s>]*)\1/gi)) {
+    const local = /^\.\.\/(?:([a-z0-9-]+)\/)?(?:#[\w-]+)?$/.exec(address);
+    if (!local && !/^(https:\/\/|#)/.test(address)) throw new Error(`${page.slug} has a link that is neither https, an anchor nor ../page/: ${address}`);
+    if (local?.[1] && !pages.some((other) => other.slug === local[1])) throw new Error(`${page.slug} links to a page that does not exist: ${local[1]}`);
+  }
+  const tokens = {
+    TITLE: escape(page.title),
+    DESCRIPTION: escape(page.description),
+    GROUP: escape(page.group),
+    CONTENT: page.body,
+    VERSION: escape(config.version),
+    SOCIAL: social,
+    SITE_LINKS: siteLinks(pages, "../", page.slug),
+    CANONICAL: origin ? `<link rel="canonical" href="${escape(origin)}/${page.slug}/">` : "",
+    STRUCTURED_DATA: origin
+      ? json({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Arca", item: `${origin}/` },
+            { "@type": "ListItem", position: 2, name: page.label, item: `${origin}/${page.slug}/` },
+          ],
+        })
+      : "",
+  };
+  return layout.replace(/\{\{([A-Z_]+)\}\}/g, (_, key) => {
+    if (!(key in tokens)) throw new Error(`Unknown template token: ${key}`);
+    return tokens[key];
+  });
+}
+export async function readPages(directory, changelog, repository) {
+  const names = (await readdir(directory)).filter((name) => name.endsWith(".html")).sort();
+  const pages = [];
+  for (const name of names) pages.push(parsePage(name.slice(0, -5), (await readFile(path.join(directory, name), "utf8")).replace(/\r\n/g, "\n")));
+  return sorted([...pages, changelogPage(changelog, repository)]);
 }
 
 if (
@@ -231,11 +352,13 @@ if (
   const output = path.resolve(
     process.env.SITE_OUTPUT || path.join(root, "site/dist"),
   );
+  const pages = await readPages(path.join(root, "site/pages"), await readFile(path.join(root, "CHANGELOG.md"), "utf8"), repository);
   const html = render(
     await readFile(path.join(root, "site/index.html"), "utf8"),
     release,
     {
       repository,
+      siteLinks: siteLinks(pages),
       siteUrl: process.env.SITE_URL,
       appStore:
         process.env.APP_STORE_URL ||
@@ -262,14 +385,22 @@ if (
     });
   const styles = stamped(await readFile(path.join(root, "site/styles.css"), "utf8"));
   const theme = await readFile(path.join(root, "site/theme.js"));
-  const page = stamped(html)
-    .replace('href="styles.css"', `href="styles.css?v=${digest(styles)}"`)
-    .replace('src="theme.js"', `src="theme.js?v=${digest(theme)}"`);
-  await writeFile(path.join(output, "index.html"), page);
+  const finished = (text) =>
+    stamped(text)
+      .replace(/href="((?:\.\.\/)?styles\.css)"/, `href="$1?v=${digest(styles)}"`)
+      .replace(/src="((?:\.\.\/)?theme\.js)"/, `src="$1?v=${digest(theme)}"`);
+  await writeFile(path.join(output, "index.html"), finished(html));
+  for (const [, target] of html.matchAll(/href="([a-z0-9-]+)\/"/g))
+    if (!pages.some((page) => page.slug === target)) throw new Error(`The home page links to a page that does not exist: ${target}`);
+  const layout = await readFile(path.join(root, "site/page.html"), "utf8");
+  for (const page of pages) {
+    await mkdir(path.join(output, page.slug), { recursive: true });
+    await writeFile(path.join(output, page.slug, "index.html"), finished(renderPage(layout, page, pages, { version: release.tag_name.slice(1), siteUrl: process.env.SITE_URL })));
+  }
   await writeFile(path.join(output, "styles.css"), styles);
   await cp(path.join(root, "site/theme.js"), path.join(output, "theme.js"));
   for (const [name, file] of Object.entries(sources)) await cp(file, path.join(output, "assets", name));
-  const seo = seoFiles(process.env.SITE_URL, release.published_at);
+  const seo = seoFiles(process.env.SITE_URL, release.published_at, pages.map((page) => page.slug));
   await writeFile(path.join(output, "robots.txt"), seo.robots);
   if (seo.sitemap) await writeFile(path.join(output, "sitemap.xml"), seo.sitemap);
   await writeFile(

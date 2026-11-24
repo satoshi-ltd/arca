@@ -42,12 +42,15 @@
     <main>
       <section class="hero wrap">
         <div class="hero-copy">
-          <p class="eyebrow">Free · Self-hosted · No account · No telemetry</p>
-          <h1>Your files.<br /><em>Your devices.</em></h1>
+          <h1>
+            <span class="eyebrow">Free self-hosted cloud · No account · No telemetry</span>
+            Your files.<br /><em>Your devices.</em>
+          </h1>
           <p class="intro">
-            One computer you run, your hub, keeps your folders, photos, music
-            and movies. Your laptop, phone, tablet and TV reach all of it, with
-            no company server in the middle.
+            Arca turns one of your computers into a private cloud for your
+            folders, photos, music and movies. Choose the folders each laptop
+            or phone keeps: they work offline and sync both ways, with no
+            company server in the middle.
           </p>
           <div class="hero-download">
             {{MAC_DOWNLOAD}}<a class="setup-link" href="#setup"
@@ -81,11 +84,11 @@
                 <span class="folder-symbol"></span>
                 <div>
                   <strong>Folders</strong
-                  ><small>All the things worth keeping.</small>
+                  ><small>On this Mac</small>
                 </div>
                 <span class="status">✓ Up to date</span>
               </div>
-              <div class="breadcrumb">Home server <span>›</span> Folders</div>
+              <div class="breadcrumb">MacBook <span>›</span> Folders</div>
               <div class="file-row">
                 <span class="folder-symbol small"></span
                 ><strong>Documents</strong><span>28 files</span><b>›</b>
@@ -125,12 +128,11 @@
       <section class="section wrap">
         <div class="section-heading">
           <p class="eyebrow">01 / One hub. Four libraries.</p>
-          <h2>Everything you keep.<br />One home.</h2>
+          <h2>Files, photos, music<br />and movies.</h2>
           <p>
-            A private, self-hosted cloud on your own hardware. Files sync to the
-            devices you choose; photos, music and movies open in their own
-            library, with covers, posters and a play button instead of a list of
-            files.
+            Keep documents in your usual folders. Link a phone album to collect
+            original photos on your hub, browse your music by artist or album,
+            and stream your own movies to your TV.
           </p>
         </div>
         <div class="feature-grid library-grid">
@@ -156,18 +158,18 @@
             <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
             <h3>Music.</h3>
             <p>
-              Artists, albums, playlists and podcasts from your own files. Each
-              device plays its own copy, offline too, and Android Auto plays it
-              in the car from your phone.
+              Artists, albums, playlists and podcasts from your own files, on
+              your computer, the web and Android. Stream from the hub or
+              download albums for the road; Android Auto plays them in the car.
             </p>
           </article>
           <article>
             <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" /><path d="m6.2 5.3 3.1 3.9" /><path d="m12.4 3.4 3.1 4" /><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg></span>
             <h3>Movies &amp; TV.</h3>
             <p>
-              Posters, ratings and a Watch next row that follows you from laptop
-              to phone to TV. It all streams from your hub; download a title to
-              your phone or laptop for the road.
+              Pick up a show where you left off on your TV. On your phone or
+              computer, stream from the hub, download a title for a trip or
+              keep the whole video folder in sync.
             </p>
           </article>
         </div>
@@ -567,7 +569,8 @@
                   Each synced folder keeps earlier versions for 30 days by
                   default; change it per folder to Off, 1 day, 1 week, 30 days
                   or Forever. A shorter window removes older versions for good.
-                  Movies &amp; TV keeps no history.
+                  For video, this covers files changed through Arca. Changes made
+                  directly on the hub’s disk have no video history.
                 </p>
               </div>
             </li>
@@ -638,8 +641,8 @@
             <div class="card-top"><span class="eyebrow">Phone &amp; tablet</span></div>
             <h3>Arca for mobile</h3>
             <p>
-              Take folders offline, upload photo albums, play your music and
-              watch your movies. In the car, Android Auto plays your music.
+              Take folders offline, upload original photos and watch your movies.
+              On Android, listen to your music on the phone or with Android Auto.
             </p>
             <div class="card-action">{{MOBILE_ACCESS}}</div>
             <small class="card-hint">Phones, tablets and foldables · Free, no account</small>
@@ -710,110 +713,81 @@
         </div>
         <div class="answers">
           <details open>
-            <summary>Is Arca really free?</summary>
+            <summary>Do I need a dedicated server?</summary>
             <p>
-              Yes. There is no price, no account and no subscription. It is free for personal and non-commercial use under the PolyForm Strict License, so using it for a business or at work is not covered; you can read the source, but it is not open source.
+              A Mac, Windows PC or Linux computer you already own can be your hub. You can also run it with Docker on a server or NAS. The hub needs to be on for devices to exchange changes or stream media.
             </p>
           </details>
           <details>
-            <summary>Do I need a server to use Arca?</summary>
+            <summary>What happens if my hub goes offline or breaks?</summary>
             <p>
-              A dedicated server is optional. A computer you already own can be the hub, or you can run one with Docker. Phones and tablets connect to a hub; they cannot act as one.
+              Files already synced to another device stay there. If the hub is offline, you can edit those files and they sync when it returns. If its disk fails, recovering its history and files stored only there depends on your backups.
             </p>
           </details>
           <details>
-            <summary>What happens if my hub breaks?</summary>
+            <summary>How much space do I need on my phone?</summary>
             <p>
-              Your devices keep complete copies of the folders they chose. Folders no device chose and the history live only on the hub, unless you turned on the optional full backup on a desktop or server. Movies &amp; TV stays only on the hub: it keeps no history and the backup skips it, so keep your own copy of your video files. A desktop or server with a complete copy of every shared folder can take over as the new hub, with a fresh history.
+              You choose which folders to sync. Each one takes up its full size on your phone, including a shared photo folder linked to a phone album. Movies, and music on Android, stream from the hub instead, and you download just the titles and albums you want.
             </p>
           </details>
           <details>
-            <summary>Is sync a backup?</summary>
+            <summary>If I delete a photo on my phone, does Arca keep it?</summary>
             <p>
-              Sync also carries file deletions between ordinary folder copies. Retained history offers a way back, but keep an independent backup. Arca’s optional full hub backup is off by default and runs on a desktop or server, separately from working copies; it does not include Movies &amp; TV.
-            </p>
-          </details>
-          <details>
-            <summary>Who can see my data?</summary>
-            <p>
-              Only you and the devices you pair: there is no company server in the middle and no telemetry. If you add a TMDB key, the hub sends the titles and years of your movies and shows to TMDB for posters and details. The desktop app checks GitHub for signed updates, and Open in Maps on a photo opens Google Maps. Arca is not end-to-end encrypted: paired devices are trusted with your files and a local network without HTTPS carries plain HTTP, so if you cannot trust your network, use a private network such as Tailscale.
-            </p>
-          </details>
-          <details>
-            <summary>Where do my files live?</summary>
-            <p>
-              On your hub and on the devices that sync them, as ordinary files any app can open: desktop copies in folders you choose, phone copies in app storage. The hub’s history and optional backup use Arca’s own format. Your own disks set the capacity.
-            </p>
-          </details>
-          <details>
-            <summary>Does every device need to keep everything?</summary>
-            <p>
-              No. Each device chooses whole folders independently, and the folders you sync download as complete files, ready for offline use. Movies &amp; TV stays on the hub and streams; download a single title when you want it offline. A linked phone album adds its photos to a shared folder, and that phone then keeps the complete folder in app storage like any other device.
-            </p>
-          </details>
-          <details>
-            <summary>Does my hub have to stay on?</summary>
-            <p>
-              To exchange changes and to stream. Once a folder finishes syncing, its local files work offline, and edits wait until the hub is reachable again. Movies &amp; TV and everything on arca TV stream from the hub, so they need it, except a title you downloaded beforehand. An always-on hub keeps all of it within reach.
+              Once a photo has uploaded, deleting the original from your phone’s photo library leaves the Arca copy in place. Deleting it inside Arca removes it from the shared Arca folder on every synced device. The original in your phone’s photo library stays untouched.
             </p>
           </details>
           <details>
             <summary>Can I use Arca away from home?</summary>
             <p>
-              Yes, if your device can reach the hub. Arca has no public relay, so away from home you need a private network you control, such as Tailscale (a separate service you set up yourself), or your own HTTPS address.
+              Yes. Files you have already synced work offline. To sync changes or stream from home, your device needs to reach your hub through a private network such as Tailscale or an HTTPS address you set up.
+            </p>
+          </details>
+          <details>
+            <summary>Who can access my files?</summary>
+            <p>
+              Only you and the devices you pair: Arca runs without a company account, public relay or telemetry. If you add a TMDB key, the hub sends the titles and years of your movies and shows to TMDB. The desktop app checks GitHub for signed updates, and Open in Maps on a photo opens Google Maps. Arca is not end-to-end encrypted: paired devices are trusted with your files, and a local network without HTTPS carries plain HTTP.
+            </p>
+          </details>
+          <details>
+            <summary>Can I share a folder with friends or family?</summary>
+            <p>
+              Arca is designed for one person’s devices. It has no public sharing links, guest accounts or per-person folder permissions. Pairing someone’s device means trusting it with your files.
+            </p>
+          </details>
+          <details>
+            <summary>Do I still need a backup?</summary>
+            <p>
+              Yes. Deleting a synced file also deletes it from the other synced copies. The hub keeps earlier versions for 30 days by default. For protection if its disk fails, enable full backup on a separate computer or server. Back up Movies &amp; TV separately.
+            </p>
+          </details>
+          <details>
+            <summary>How does music work on each device?</summary>
+            <p>
+              Computers, the web and Android browse artists, albums, playlists and podcasts and play them. An Android phone streams from the hub and downloads what you choose for offline listening, and Android Auto plays it in the car. An iPhone keeps the whole music folder and opens tracks in other apps for now.
             </p>
           </details>
           <details>
             <summary>How is Arca different from Dropbox, Nextcloud or Syncthing?</summary>
             <p>
-              Dropbox, iCloud and Google Drive keep your files on a company’s servers; Nextcloud is a self-hosted platform for many people; Syncthing syncs device to device, with no hub. Arca keeps complete copies of the folders each device chooses, around a hub you run that keeps their history. It has no accounts or per-person permissions, so it suits one person or a group that trusts each other; for per-person sharing or no setup at all, those tools may suit you better.
+              Dropbox, iCloud and Google Drive keep your files on a company’s servers; Nextcloud is a self-hosted platform for many people; Syncthing syncs device to device, with no hub. Arca keeps complete copies of the folders each device chooses, around a hub you run that keeps their history. It has no accounts or per-person permissions, so for per-person sharing or no setup at all, those tools may suit you better. See the comparisons with <a href="dropbox-alternative/">Dropbox</a>, <a href="nextcloud-alternative/">Nextcloud</a> and <a href="syncthing-alternative/">Syncthing</a>.
             </p>
           </details>
           <details>
             <summary>Can Arca replace Google Photos, iCloud or Plex?</summary>
             <p>
-              For one person, or a household that trusts each other, it covers the same ground on your own hardware: photo and video uploads from your phone, a music and podcast library, and movies and shows with posters and Watch next on your laptop, phone and TV. It has no face recognition or AI search, no sharing links for people outside your devices, and it never re-encodes video: a file whose audio a device cannot play gets a compatible audio track.
+              For one person’s devices it covers the same ground on your own hardware: photo and video uploads from your phone, a music and podcast library, and movies and shows with posters and Watch next on your laptop, phone and TV. It has no face recognition or AI search, no sharing links for people outside your devices, and it never re-encodes video: a file whose audio a device cannot play gets a compatible audio track. See the comparisons with <a href="google-photos-alternative/">Google Photos</a> and <a href="plex-alternative/">Plex</a>.
             </p>
           </details>
           <details>
-            <summary>How do photo albums work?</summary>
+            <summary>Is Arca really free?</summary>
             <p>
-              Link a phone album to a hub folder. Arca uploads new photos and videos without recompressing the originals; browse them by date on desktop or the web. Deleting from your phone’s gallery keeps the uploaded files, and hub changes never write back to your Photos library. Deleting a photo in Arca’s shared gallery removes it from every device’s Arca copy, and it stays recoverable while history is kept.
-            </p>
-          </details>
-          <details>
-            <summary>How does music work?</summary>
-            <p>
-              Choose Set up as library… → Audio on a hub folder. Every device that keeps it browses artists, albums, playlists and recent plays and plays its own complete copy, offline too, on desktop, the web, Android and Android Auto; iPhone browses it and opens tracks in other apps for now. The playlists you make are saved as ordinary files in that folder. An Android app installed outside the Play Store needs Unknown sources turned on in Android Auto’s developer settings.
-            </p>
-          </details>
-          <details>
-            <summary>How do Movies &amp; TV work?</summary>
-            <p>
-              Choose Set up as library… → Movies &amp; TV on a hub folder. The hub names movies and shows from their files, and with your own free TMDB key adds posters, overviews, ratings and cast. Every device streams from the hub without re-encoding the video, picking up where you left off on another; the phone and the desktop app can download a title to watch offline, and arca TV plays it on your television.
-            </p>
-          </details>
-          <details>
-            <summary>Will my phone sync in the background?</summary>
-            <p>
-              Background work follows iOS and Android scheduling limits. Arca also resumes work when you open it. Keep the app open for a large first upload; background sync is not continuous.
-            </p>
-          </details>
-          <details>
-            <summary>Can I undo an edit or recover a deleted file?</summary>
-            <p>
-              Yes, for as long as the folder’s history keeps it: 30 days by default, adjustable per folder. Restoring needs the hub to be reachable and adds a new version, leaving earlier history intact. Conflicting edits are kept as separate versions for you to review.
-            </p>
-          </details>
-          <details>
-            <summary>How do I update Arca?</summary>
-            <p>
-              The desktop app updates itself from signed releases. Update a Docker server by pulling the new image; Android updates through Google Play. Check the release notes for any requirement to update the hub and its devices together.
+              Yes. There is no price, no account and no subscription. It is free for personal and non-commercial use under the PolyForm Strict License, so using it for a business or at work is not covered; you can read the source, but it is not open source.
             </p>
           </details>
         </div>
       </section>
     </main>
+    {{SITE_LINKS}}
     <footer class="wrap">
       <div class="footer-identity">
         <div class="brand">

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f8f7" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{{TITLE}}</title>
+    <meta name="description" content="{{DESCRIPTION}}" />
+    <meta name="application-name" content="Arca" />
+    <meta name="author" content="Satoshi Ltd." />
+    {{CANONICAL}}
+    {{SOCIAL}}
+    <link rel="icon" href="../assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png" />
+    {{STRUCTURED_DATA}}
+    <link
+      rel="preload"
+      href="../assets/manrope.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script src="../theme.js"></script>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wrap masthead-row">
+        <a class="brand" href="../" aria-label="Arca home"
+          ><img src="../assets/arca-icon.svg" width="40" height="40" alt="" />arca</a
+        >
+        <div class="masthead-end">
+          <span class="eyebrow release"><span class="dot"></span> {{VERSION}}</span>
+          <a class="nav-cta eyebrow" href="../#download">Download</a>
+        </div>
+      </div>
+    </header>
+    <main>
+      <article class="doc wrap">
+        <p class="eyebrow"><a href="../">Arca</a> / {{GROUP}}</p>
+        {{CONTENT}}
+        <aside class="doc-cta">
+          <div>
+            <h2>Try Arca on your own devices.</h2>
+            <p>
+              Free for personal use, with no account and no telemetry. Start
+              with the desktop app or a Docker hub, then add your phone and TV.
+            </p>
+          </div>
+          <a class="button primary" href="../#download">Download Arca</a>
+        </aside>
+      </article>
+    </main>
+    {{SITE_LINKS}}
+    <footer class="wrap">
+      <div class="footer-identity">
+        <div class="brand">
+          <img src="../assets/arca-icon.svg" width="32" height="32" alt="" />arca
+        </div>
+        <span class="eyebrow">{{VERSION}}</span>
+      </div>
+      <span
+        >By <a href="https://www.satoshi-ltd.com">Satoshi Ltd.</a> · free for
+        personal use ·
+        <a href="https://github.com/satoshi-ltd/arca/blob/main/LICENSE"
+          >PolyForm Strict License</a
+        >
+        · no telemetry</span
+      >
+    </footer>
+    <button class="theme-btn" type="button" aria-label="Switch theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg>
+    </button>
+  </body>
+</html>

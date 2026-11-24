@@ -1,0 +1,63 @@
+<title>Use Arca away from home: Tailscale or HTTPS — Arca</title>
+<meta name="description" content="Arca has no public relay. Reach your hub away from home through a private network such as Tailscale or your own HTTPS address. What each option needs." />
+<meta name="group" content="Guides" />
+<meta name="label" content="Remote access" />
+<h1>Use Arca away from home</h1>
+<p class="lede">
+  Files you have already synced work anywhere, with no connection. To sync
+  changes or stream from your hub, your device has to reach it, and Arca has
+  no public relay: you choose the route.
+</p>
+<h2>What works with no setup</h2>
+<p>
+  Every folder a device keeps is a complete copy. You can open and edit those
+  files offline, and the edits sync when the hub is reachable again. The same
+  goes for the movies, albums and tracks you downloaded beforehand.
+</p>
+<h2>Option 1: a private network</h2>
+<p>
+  A private network such as Tailscale joins your devices as if they were at
+  home. It is a separate service that you set up yourself.
+</p>
+<ol>
+  <li>Install Tailscale on the hub and on every device that should reach it, phones included.</li>
+  <li>Pair each device using the hub’s Tailscale address.</li>
+  <li>
+    With a <a href="../docker/">Docker hub</a>, publish the port on the
+    server’s Tailscale address rather than on every network, and start
+    Docker after Tailscale so that address exists. Docker can
+    make such a device look like one on the local network; if pairing is
+    refused, turn on Settings → Network → Allow HTTP connections on the hub.
+  </li>
+</ol>
+<h2>Option 2: your own HTTPS address</h2>
+<p>
+  If you already run a reverse proxy with a certificate, put the hub behind
+  it. Set <code>ARCA_WEB_ORIGIN</code> to the exact public address, for
+  example <code>https://arca.example</code>, keep the Host header intact and
+  make sure only the proxy can reach the hub’s port. With Docker, add it under
+  <code>environment:</code> in the compose file.
+</p>
+<p>
+  The hub cannot see the proxy’s encryption: to it, every device arrives over
+  plain HTTP from the proxy. If pairing is refused, turn on Settings → Network
+  → Allow HTTP connections on the hub.
+</p>
+<h2>At home</h2>
+<p>
+  On your own network, devices can use the hub’s private address over plain
+  HTTP once you turn on Settings → Network → Allow HTTP connections on the
+  hub. It is off by default, and it is meant for a network you trust.
+</p>
+<h2>What to keep in mind</h2>
+<ul>
+  <li>
+    Arca is not end-to-end encrypted. The devices you pair are trusted with
+    your files, and the route you choose protects the connection.
+  </li>
+  <li>
+    Pairing uses a six-digit code that works once and expires after ten
+    minutes. A paired device keeps its access until you revoke it on the hub.
+  </li>
+  <li>Never publish the hub’s port directly on the internet over plain HTTP.</li>
+</ul>

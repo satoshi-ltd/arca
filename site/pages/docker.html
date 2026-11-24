@@ -1,0 +1,98 @@
+<title>Run an Arca hub with Docker on a server or NAS — Arca</title>
+<meta name="description" content="Set up Arca with Docker Compose on a home server, NAS or Raspberry Pi: the compose file, the one-time setup code and how your devices reach the hub." />
+<meta name="group" content="Guides" />
+<meta name="label" content="Docker setup" />
+<h1>Run your hub with Docker</h1>
+<p class="lede">
+  An always-on hub keeps everything within reach of your devices. The Arca
+  image runs on a home server or a NAS and is managed from your browser.
+</p>
+<h2>What you need</h2>
+<ul>
+  <li>A computer that stays on, with Docker and Docker Compose.</li>
+  <li>
+    A 64-bit Intel or AMD processor, or 64-bit ARM. The image is published
+    for both, so it should run on a Raspberry Pi 4 or 5 with a 64-bit system,
+    though it has not been tested on one.
+  </li>
+  <li>Disk space for your files and their history.</li>
+</ul>
+<h2>1. Write the compose file</h2>
+<p>Save this as <code>compose.yaml</code> in an empty folder:</p>
+<pre><code>services:
+  arca:
+    image: satoshiltd/arca:latest
+    restart: unless-stopped
+    stop_grace_period: 15s
+    init: true
+    ports:
+      - "127.0.0.1:17831:17831"
+    volumes:
+      - arca-state:/data/state
+      - arca-files:/data/files
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "packages/cli/arca.js", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  arca-state:
+  arca-files:</code></pre>
+<p>
+  The two volumes keep Arca’s state and your files apart, and both must
+  persist. To use folders that already exist on the server, mount them
+  instead of <code>arca-files</code> and make sure user 1000 owns them. Keep
+  the state outside any folder Arca syncs.
+</p>
+<h2>2. Start it and open the wizard</h2>
+<pre><code>docker compose up -d
+docker compose exec arca node packages/cli/arca.js web-code</code></pre>
+<p>
+  The second command prints a one-time, six-digit <code>code</code> that is
+  valid for ten minutes. Open <code>http://localhost:17831</code> in a browser
+  on the server. If the server has no screen, forward the port from your
+  computer first with <code>ssh -L 17831:127.0.0.1:17831 your-server</code>
+  and open the same address there. Then follow the wizard: name the server and choose its role, enter the code and pick
+  the folder root.
+</p>
+<h2>3. Let your devices reach it</h2>
+<p>
+  The compose file above publishes the port only on the server itself. To pair
+  other devices, choose one:
+</p>
+<ul>
+  <li>
+    <strong>Your home network.</strong> Publish the port on the server’s
+    private address instead of <code>127.0.0.1</code>, then turn on Settings →
+    Network → Allow HTTP connections on the hub. This is plain HTTP for a
+    network you trust: anyone on it can also reach the hub’s sign-in page.
+  </li>
+  <li>
+    <strong>A private network or HTTPS.</strong> Use Tailscale or your own
+    HTTPS address to reach the hub from anywhere. See
+    <a href="../remote-access/">remote access</a>.
+  </li>
+</ul>
+<p>
+  Then install Arca on your computer or phone, choose to pair with a hub and
+  enter the pairing code the hub shows.
+</p>
+<h2>Updating</h2>
+<pre><code>docker compose pull
+docker compose up -d</code></pre>
+<p>
+  The <a href="../changelog/">changelog</a> marks the versions that need an
+  updated hub.
+</p>
+<h2>Many files on Linux</h2>
+<p>
+  Arca watches each folder for changes. If the server runs out of file
+  watches, the affected folders are checked periodically instead. Raise the
+  limit on the host, not in the container:
+</p>
+<pre><code>echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/60-arca-inotify.conf
+sudo sysctl --system</code></pre>

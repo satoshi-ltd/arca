@@ -1,0 +1,57 @@
+<title>A Syncthing alternative with a hub and media apps — Arca</title>
+<meta name="description" content="Syncthing syncs folders device to device. Arca syncs them through a hub you run that keeps history, and adds photo, music and movie libraries. Compare them." />
+<meta name="group" content="Compare" />
+<meta name="label" content="Syncthing" />
+<h1>Arca as a Syncthing alternative</h1>
+<p class="lede">
+  Syncthing keeps folders in sync between devices that are online at the same
+  time. Arca adds what is missing: a hub that always has everything, its
+  history, and libraries for your photos, music and movies.
+</p>
+<div class="table-scroll">
+  <table class="compare">
+    <thead>
+      <tr><td></td><th scope="col">Arca</th><th scope="col">Syncthing</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Shape</th><td>Devices around one hub</td><td>Devices connected to each other</td></tr>
+      <tr><th scope="row">When changes travel</th><td>Whenever a device reaches the hub</td><td>When two devices sharing a folder are online together</td></tr>
+      <tr><th scope="row">History</th><td>Kept on the hub, 30 days by default</td><td>Optional versioning, set per folder and device</td></tr>
+      <tr><th scope="row">Photos, music, movies</th><td>Built-in libraries, with a TV app</td><td>File sync only</td></tr>
+      <tr><th scope="row">Phone apps</th><td>Arca’s own, for Android and iPhone</td><td>From the community</td></tr>
+      <tr><th scope="row">Television</th><td><a href="https://arca-tv.satoshi-ltd.com/">arca TV</a> for Google TV and Android TV</td><td>None</td></tr>
+    </tbody>
+  </table>
+</div>
+<h2>Why choose Arca</h2>
+<ul>
+  <li>
+    <strong>The same ownership, and more on top.</strong> Your data stays on your own devices and you set the rules, with a hub that makes it a personal cloud.
+  </li>
+  <li>
+    <strong>One place that always has everything.</strong> With an always-on hub, your phone and laptop never need to be awake at the same time.
+  </li>
+  <li>
+    <strong>History in one place.</strong> The hub keeps earlier versions of your folders for 30 days by default, whichever device made the change.
+  </li>
+  <li>
+    <strong>More than folders.</strong> The same files open as a photo timeline, a music library and a movie library.
+  </li>
+  <li>
+    <strong>One app on every screen.</strong> Phone, desktop, web and TV, made together.
+  </li>
+  <li>
+    <strong>Simple to reason about.</strong> Every device talks to the hub. There is no mesh of devices and folder pairs to keep track of.
+  </li>
+</ul>
+<h2>What Arca leaves out, on purpose</h2>
+<p>
+  Arca needs one computer to be the hub, and away from home a device reaches
+  it through a private network or your own HTTPS address. Arca has no public
+  relay: you choose the route.
+</p>
+<h2>More</h2>
+<p>
+  Read how <a href="../file-sync/">file sync works in Arca</a> and how to
+  <a href="../docker/">run a hub with Docker</a>.
+</p>

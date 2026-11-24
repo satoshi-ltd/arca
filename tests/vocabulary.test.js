@@ -10,6 +10,8 @@ const sources = [
   "apps/desktop/src/tray.js",
   "apps/desktop/src/index.html",
   "site/index.html",
+  "site/page.html",
+  ...fs.readdirSync(path.join(root, "site/pages")).map((name) => `site/pages/${name}`),
   "design/desktop.html",
   "design/mobile.html",
   "design/index.html",
