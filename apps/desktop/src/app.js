@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.10.3";
+const APP_VERSION = "0.10.4";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -4950,12 +4950,8 @@ function galleryPhotoDate(item) {
 }
 let captionTimer;
 function galleryCaption(item) {
-  const meta = item.metadata || {};
-  const detail = [
-    meta.captured ? galleryPhotoDate({ date: meta.captured }) : "",
-    meta.location ? `${meta.location.latitude.toFixed(6)}, ${meta.location.longitude.toFixed(6)}` : "",
-  ].filter(Boolean).join(" · ");
-  return `<p class="mono">${escape(item.path.split("/").pop())}</p>${detail ? `<p>${escape(detail)}</p>` : ""}`;
+  const day = item.kind === "video" ? "" : String(item.date || "").slice(0, 10);
+  return galleryMoment(day) ? `<p>${escape(galleryPhotoDate({ date: day }))}</p>` : "";
 }
 // Keep only a small window of decoded previews; share work between navigation and prefetch.
 async function galleryPreview(state, item) {
@@ -5137,8 +5133,6 @@ async function openGalleryPhoto(index) {
           }),
       );
       item.metadata = metadata;
-      const caption = $(".photo-viewer-caption");
-      if (caption && infoPanel.isConnected) caption.innerHTML = galleryCaption(item);
       if (infoPanel.isConnected) {
         infoPanel.querySelector(".photo-info-body").innerHTML = galleryInfo(
           item,

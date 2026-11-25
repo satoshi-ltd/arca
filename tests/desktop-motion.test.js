@@ -554,21 +554,24 @@ test("double-clicking the photo in the viewer zooms it and a second double click
   assert.match(fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8"), /\.photo-viewer-image img \{[^}]*transform: translate\(var\(--photo-x, 0px\), var\(--photo-y, 0px\)\) scale\(var\(--photo-zoom, 1\)\);/);
 });
 
-test("the viewer captions the photo with its name, capture date and place, and the name alone when it has none", async (t) => {
-  const info = (args) =>
-    args.route.includes("dated.jpg") ? { captured: "2026-09-12T18:42:00", location: { latitude: 41.3874, longitude: 2.1686 } } : {};
-  const ui = await viewerGallery(t, [photo("dated.jpg", "20"), photo("plain.jpg", "19")], { info });
+test("the viewer captions a photo with its date alone at the lower left, and shows nothing for a video or an undated photo", async (t) => {
+  const info = () => ({ captured: "2026-09-12T18:42:00", location: { latitude: 41.3874, longitude: 2.1686 } });
+  const ui = await viewerGallery(t, [photo("dated.jpg", "20"), { ...photo("clip.mp4", "19"), kind: "video" }, { ...photo("undated.jpg", "18"), date: "" }], { info });
   const title = () => ui.$("#dialog .photo-viewer-head h2").textContent;
-  const caption = () => ui.$$("#dialog .photo-viewer-caption p").map((p) => p.textContent);
+  const caption = () => ui.$("#dialog .photo-viewer-caption").innerHTML;
   await openViewer(ui, 0);
   assert.equal(title(), "dated.jpg");
-  await until(ui.settled(() => caption().length === 2));
-  assert.deepEqual(caption(), ["dated.jpg", "September 12, 2026 at 06:42 PM · 41.387400, 2.168600"]);
-  ui.$(".photo-next").click();
-  await until(ui.settled(() => title() === "plain.jpg"));
-  await until(ui.settled(() => ui.$("#dialog .photo-info-body")?.textContent && caption().length >= 1));
-  assert.deepEqual(caption(), ["plain.jpg"]);
-  assert.match(style, /\.photo-info-open \.photo-viewer-caption \{\s+display: none;/);
+  assert.equal(caption(), "<p>September 20, 2026</p>");
+  await until(ui.settled(() => !ui.$("#dialog .photo-info-body .scaffold-line")));
+  assert.equal(caption(), "<p>September 20, 2026</p>");
+  for (const name of ["clip.mp4", "undated.jpg"]) {
+    ui.$(".photo-next").click();
+    await until(ui.settled(() => title() === name));
+    assert.equal(caption(), "");
+  }
+  const rule = /\.photo-viewer-caption \{[^}]*\}/.exec(style)[0];
+  assert.doesNotMatch(rule, /align-items|text-align|justify/);
+  assert.match(style, /\.photo-viewer-caption:empty,\s+\.photo-info-open \.photo-viewer-caption \{\s+display: none;/);
 });
 
 test("deleting the only photo from the viewer closes the viewer once the confirmation leaves, and focus lands in the gallery", async (t) => {

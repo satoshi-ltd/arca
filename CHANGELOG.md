@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.4 — 2026-11-25
+
+- The photo viewer on desktop and web shows only the photo's date, at the lower left, instead of a centred file name with the date, time and raw coordinates. The name, the time and the coordinates stay in Info, and a video shows no caption.
+
+Needs: desktop build · hub redeploy
+
 ## 0.10.3 — 2026-11-24
 
 - Arca is now open source under the GNU AGPL-3.0, replacing the PolyForm Strict License and its personal and non-commercial use only: anyone may use it for any purpose, including at work, read the code, change it and share it. Whoever shares a changed version, or runs one as a service for other people, offers them its source under the same license.

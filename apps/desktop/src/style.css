@@ -4119,10 +4119,6 @@ dialog.photo-viewer {
   right: 0;
   bottom: 0;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
   padding: var(--space-5) var(--space-4) var(--space-4);
   background: linear-gradient(transparent, var(--mediaFade));
   color: var(--onMedia);
@@ -4134,6 +4130,7 @@ dialog.photo-viewer {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+.photo-viewer-caption:empty,
 .photo-info-open .photo-viewer-caption {
   display: none;
 }
