@@ -27,9 +27,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **PHOTOS-DB-LOCKED** — A hub answer never fails on a briefly locked photo index
-  `bug · agent · normal`
-  Seen twice on the Windows runner, both passing on rerun: run 45135942258, `tests/mass-delete.test.js` "renaming a large directory is a move, not a disappearance: nothing is held" failed with `Hub 409: {"error":"Photos: database is locked"}`; and run 44690626609: `tests/proposed-deletes.test.js` "another device's edit of a held file, based on the revision before the hold, lands without a conflict copy" failed with `Photos: Hub 409: {"error":"Photos: database is locked"}`. A slow disk can make the photo index's SQLite busy long enough for a sync request to fail, which a real hub on a busy disk could hit too. Accept: with the photo index held by a second writer for longer than today's wait, the request waits and completes instead of answering 409.
+_None._
 
 ## In progress
 

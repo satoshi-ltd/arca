@@ -668,25 +668,33 @@ export class Store {
         .some((column) => column.name === "side")
     )
       this.db.exec("ALTER TABLE pending ADD COLUMN side TEXT");
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      if (
-        !this.db
-          .prepare("PRAGMA table_info(pending)")
-          .all()
-          .some((column) => column.name === "path_key")
-      )
-        this.db.exec("ALTER TABLE pending ADD COLUMN path_key TEXT");
-      this.db.exec(
-        "CREATE INDEX IF NOT EXISTS pending_volume_path_key ON pending(volume,path_key); CREATE INDEX IF NOT EXISTS pending_unkeyed ON pending(volume) WHERE path_key IS NULL",
-      );
-      const key = this.db.prepare("UPDATE pending SET path_key=? WHERE volume=? AND path=?");
-      for (const row of this.db.prepare("SELECT volume,path FROM pending WHERE path_key IS NULL").all())
-        key.run(row.path.toLowerCase(), row.volume, row.path);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+    const pendingIndexes = new Set(this.db.prepare("PRAGMA index_list(pending)").all().map((index) => index.name));
+    const pendingKeyed =
+      this.db.prepare("PRAGMA table_info(pending)").all().some((column) => column.name === "path_key") &&
+      pendingIndexes.has("pending_volume_path_key") &&
+      pendingIndexes.has("pending_unkeyed") &&
+      !this.db.prepare("SELECT 1 FROM pending WHERE path_key IS NULL LIMIT 1").get();
+    if (!pendingKeyed) {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        if (
+          !this.db
+            .prepare("PRAGMA table_info(pending)")
+            .all()
+            .some((column) => column.name === "path_key")
+        )
+          this.db.exec("ALTER TABLE pending ADD COLUMN path_key TEXT");
+        this.db.exec(
+          "CREATE INDEX IF NOT EXISTS pending_volume_path_key ON pending(volume,path_key); CREATE INDEX IF NOT EXISTS pending_unkeyed ON pending(volume) WHERE path_key IS NULL",
+        );
+        const key = this.db.prepare("UPDATE pending SET path_key=? WHERE volume=? AND path=?");
+        for (const row of this.db.prepare("SELECT volume,path FROM pending WHERE path_key IS NULL").all())
+          key.run(row.path.toLowerCase(), row.volume, row.path);
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
     }
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",

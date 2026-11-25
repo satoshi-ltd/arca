@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { init } from "../packages/daemon/storage.js";
+import { DatabaseSync } from "node:sqlite";
+import { init, Store } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
 async function setup(t) {
@@ -285,6 +286,67 @@ test("Delete from every device confirms only the holds that were shown: a later 
   await hub.sync();
   assert.ok(later.every((name) => !live(hub, name)));
   assert.equal(folder(hub).held, undefined);
+});
+
+test("a folder scan that finds the index locked by another writer waits and completes instead of failing", async (t) => {
+  const { hub, volume, write, live } = await setup(t);
+  await hub.sync();
+  write(hub, "arrives.txt");
+  const scan = hub.engine.scanner.scan.bind(hub.engine.scanner);
+  let locked = 2;
+  hub.engine.scanner.scan = async (...args) => {
+    if (locked-- > 0) throw new Error("database is locked");
+    return scan(...args);
+  };
+  await hub.engine.scanHub(volume.id, { paths: ["arrives.txt"] });
+  assert.equal(locked, -1, "the scan is tried again after each locked answer");
+  assert.ok(live(hub, "arrives.txt"));
+  assert.notEqual(hub.engine.folderStates.get(volume.id)?.state, "error");
+
+  write(hub, "second.txt");
+  const commit = hub.engine.store.commit.bind(hub.engine.store);
+  let refused = 1;
+  hub.engine.store.commit = (...args) => {
+    if (refused-- > 0) throw new Error("database is locked");
+    return commit(...args);
+  };
+  await hub.engine.scanHub(volume.id, { paths: ["second.txt"] });
+  assert.ok(live(hub, "second.txt"), "a write refused in the daemon's own connection is tried again too");
+
+  let asked = 0;
+  hub.engine.scanner.scan = async () => {
+    asked++;
+    throw new Error("database is locked");
+  };
+  const states = [];
+  const set = hub.engine.folderStates.set.bind(hub.engine.folderStates);
+  hub.engine.folderStates.set = (id, state) => (states.push(state.state), set(id, state));
+  await assert.rejects(hub.engine.scanHub(volume.id, { paths: ["second.txt"] }), { status: 409, message: "Photos: database is locked" });
+  assert.equal(asked, 3, "a lock that stays is reported after two more tries");
+  assert.deepEqual(states, ["scanning", "pending", "scanning", "pending", "scanning", "error"], "the folder reads pending, not scanning, while it waits");
+
+  asked = 0;
+  hub.engine.scanner.scan = async () => {
+    asked++;
+    throw new Error("Symlink requires attention: database is locked");
+  };
+  await assert.rejects(hub.engine.scanHub(volume.id, { paths: ["second.txt"] }), { status: 409 });
+  assert.equal(asked, 1, "another error that only mentions the words is not tried again");
+});
+
+test("opening the index for a scan asks for no write lock when there is nothing to migrate", async (t) => {
+  const { hub } = await setup(t);
+  const home = hub.engine.store.home;
+  const other = new DatabaseSync(path.join(home, "index.sqlite"));
+  const started = Date.now();
+  try {
+    other.exec("BEGIN IMMEDIATE");
+    new Store(home).close();
+    other.exec("ROLLBACK");
+  } finally {
+    other.close();
+  }
+  assert.ok(Date.now() - started < 4000, "it does not wait for the writer");
 });
 
 test("renaming a large directory is a move, not a disappearance: nothing is held", async (t) => {

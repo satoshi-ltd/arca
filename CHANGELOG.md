@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.10 — 2026-11-25
+
+- A hub on a slow or busy disk no longer refuses a device's change with "database is locked". Each folder scan used to ask for the index's write lock even with nothing to write, and a scan that still finds the index held now waits and tries again instead of failing the request.
+
+Needs: desktop build · hub redeploy
+
 ## 0.10.9 — 2026-11-25
 
 - With photo uploads on, the phone no longer re-reads the whole photo library every minute while Arca is open: it looks at the most recently changed photos and stops at the first page it already knows. A new or edited photo is still picked up within the minute, and the whole library is read when the app starts, on Sync now and at least every six hours.

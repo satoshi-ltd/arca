@@ -67,6 +67,9 @@ import {
 export const ACCESS_LOST =
   "This device no longer has access to the hub. Connect it again with a new pairing code.";
 const EXCLUSIVE_GRACE_MS = 1000;
+const INDEX_BUSY_RETRIES = 2;
+const INDEX_BUSY_WAIT_MS = 200;
+const indexBusy = (error) => /^database is locked$/i.test(error?.message || "");
 const CHUNK = 1024 * 1024;
 const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
 const HOLD_ATTEMPTS = 24;
@@ -2594,12 +2597,18 @@ export class Engine {
         errors.push(`${v.name}: ${waiting.message}`);
         continue;
       }
-      await this.folderWork(v.id, async () => {
+      const scanFolder = async (attempt = 0) => {
         checkpoint();
-        v = s.volumes().find((row) => row.id === v.id && row.selected);
-        if (!v) return;
+        const selected = s.volumes().find((row) => row.id === v.id && row.selected);
+        if (!selected) {
+          if (attempt) this.folderStates.delete(v.id);
+          return;
+        }
+        v = selected;
         const plan = this.work.plan(v, incremental, paths);
         if (plan.paths?.length === 0) {
+          if (attempt && !plan.dropped && !this.folderIssues.has(v.id))
+            this.folderStates.set(v.id, { state: "synced", lastCompleted: v.last_sync });
           if (!paths && !this.folderBackoff.waiting(v.id)) this.folderBackoff.succeeded(v.id);
           if (plan.dropped) {
             this.work.complete(v, plan);
@@ -2714,6 +2723,11 @@ export class Engine {
             });
             throw e;
           }
+          if (indexBusy(e) && attempt < INDEX_BUSY_RETRIES) {
+            this.folderStates.set(v.id, { state: "pending", lastCompleted: v.last_sync });
+            await new Promise((resolve) => setTimeout(resolve, INDEX_BUSY_WAIT_MS * (attempt + 1)));
+            return scanFolder(attempt + 1);
+          }
           this.folderStates.set(v.id, {
             state: "error",
             error: e.message,
@@ -2723,7 +2737,8 @@ export class Engine {
           if (!this.folderBackoff.failed(v.id, e)) deviceWide = true;
           errors.push(`${v.name}: ${e.message}`);
         }
-      });
+      };
+      await this.folderWork(v.id, () => scanFolder());
     }
     if (errors.length)
       throw Object.assign(new Error(errors.join("; ")), {
