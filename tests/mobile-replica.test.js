@@ -1705,11 +1705,14 @@ test("changing the album during an interrupted repair keeps restoring every inde
   const apply = r.apply.bind(r);
   let restored = 0;
   r.apply = async (...args) => {
-    if (restored++ === 1) throw new Error("Repair interrupted");
+    if (restored++ === 1) {
+      r.suspend();
+      r.check();
+    }
     return apply(...args);
   };
   await r.sync();
-  assert.match(r.error, /Repair interrupted/);
+  assert.equal(names.filter((name) => fs.existsSync(files.work(r.scope, volume.id, name))).length, 1, "the repair was cut after its first file");
   assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting");
   r.apply = apply;
 
@@ -1728,6 +1731,91 @@ test("changing the album during an interrupted repair keeps restoring every inde
   assert.equal(gallery.mode, "source");
   assert.deepEqual(gallery.albums, []);
   assert.equal(gallery.videos, false);
+});
+
+test("an album repair meets a file the hub no longer holds as indexed: it takes the hub's newer version, accepts its deletion, or leaves it waiting, and always finishes without proposing a deletion", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, store, files, volume } = f;
+  const s = f.daemon.engine.store;
+  const names = ["edited.jpg", "deleted.jpg", "damaged.jpg", "kept.jpg"];
+  for (const name of names) fs.writeFileSync(path.join(volume.path, name), `first ${name}`);
+  await f.daemon.engine.cycle();
+  await sync(f);
+  await f.enable();
+  const old = Object.fromEntries(names.map((name) => [name, s.current(volume.id, name)]));
+  fs.writeFileSync(path.join(volume.path, "edited.jpg"), "edited on another device");
+  fs.rmSync(path.join(volume.path, "deleted.jpg"));
+  await f.daemon.engine.cycle();
+  for (const name of ["edited.jpg", "deleted.jpg", "damaged.jpg"]) fs.rmSync(s.blob(old[name].hash), { force: true });
+  await store.setGallery(r.scope, volume.id, { ...(await store.gallery(r.scope, volume.id)), mode: "converting" });
+  await files.removeFolder(r.scope, volume.id);
+  await r.sync();
+  const work = (name) => files.work(r.scope, volume.id, name);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "source", "the repair finishes");
+  assert.equal(fs.readFileSync(work("kept.jpg"), "utf8"), "first kept.jpg");
+  assert.equal(fs.readFileSync(work("edited.jpg"), "utf8"), "edited on another device", "a file edited since takes the hub's version");
+  assert.equal(fs.existsSync(work("deleted.jpg")), false);
+  assert.equal((await store.current(r.scope, volume.id, "deleted.jpg")).deleted, 1, "a file deleted since counts as applied");
+  assert.equal(fs.existsSync(work("damaged.jpg")), false);
+  assert.equal((await store.current(r.scope, volume.id, "damaged.jpg")).unapplied, true, "a file whose content the hub cannot serve waits");
+  assert.match(r.error, /Could not sync 1 file: damaged\.jpg/);
+  await f.daemon.engine.cycle();
+  assert.equal(s.current(volume.id, "damaged.jpg").deleted, 0, "and is never proposed as a deletion");
+  assert.equal(s.current(volume.id, "damaged.jpg").rev, old["damaged.jpg"].rev);
+  assert.equal(s.current(volume.id, "kept.jpg").deleted, 0);
+  fs.writeFileSync(s.blob(old["damaged.jpg"].hash), "first damaged.jpg");
+  await sync(f);
+  assert.equal(fs.readFileSync(work("damaged.jpg"), "utf8"), "first damaged.jpg", "it arrives once the hub can serve it");
+
+  fs.writeFileSync(path.join(volume.path, "kept.jpg"), "second kept.jpg");
+  await f.daemon.engine.cycle();
+  fs.rmSync(s.blob(old["kept.jpg"].hash), { force: true });
+  await store.setGallery(r.scope, volume.id, { ...(await store.gallery(r.scope, volume.id)), mode: "converting" });
+  await files.removeFolder(r.scope, volume.id);
+  const api = f.client.api.bind(f.client);
+  f.client.api = async (route, ...rest) => {
+    const answer = await api(route, ...rest);
+    if (route.startsWith("/v1/changes?") && answer.files) for (const row of answer.files) if (row.path === "kept.jpg") row.volume = "another-folder";
+    return answer;
+  };
+  await r.sync();
+  f.client.api = api;
+  const waiting = await store.current(r.scope, volume.id, "kept.jpg");
+  assert.equal(waiting.unapplied, true, "a head row the hub answers with a wrong folder is not applied");
+  assert.equal(waiting.rev, old["kept.jpg"].rev);
+  assert.equal(waiting.volume, volume.id);
+  const syncIgnore = r.syncIgnore.bind(r);
+  let early = null;
+  r.syncIgnore = async (...args) => {
+    early ??= fs.existsSync(work("kept.jpg")) ? fs.readFileSync(work("kept.jpg"), "utf8") : "";
+    return syncIgnore(...args);
+  };
+  await sync(f);
+  r.syncIgnore = syncIgnore;
+  assert.equal(early, "second kept.jpg", "the next cycle takes the hub's valid head for the waiting file, before the change feed could bring it");
+
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.tmp\n");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  const policy = s.current(volume.id, ".arcaignore").hash;
+  fs.renameSync(s.blob(policy), `${s.blob(policy)}.away`);
+  await store.setGallery(r.scope, volume.id, { ...(await store.gallery(r.scope, volume.id)), mode: "converting" });
+  await files.removeFolder(r.scope, volume.id);
+  await r.sync();
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting", "a policy file that cannot be restored keeps the repair open");
+  fs.renameSync(`${s.blob(policy)}.away`, s.blob(policy));
+  await sync(f);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "source");
+  assert.equal(fs.readFileSync(work(".arcaignore"), "utf8"), "*.tmp\n");
+
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.bak\n");
+  await f.daemon.engine.cycle();
+  fs.rmSync(s.blob(policy), { force: true });
+  await store.setGallery(r.scope, volume.id, { ...(await store.gallery(r.scope, volume.id)), mode: "converting" });
+  await files.removeFolder(r.scope, volume.id);
+  await sync(f);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "source", "a newer policy on the hub is taken and the repair finishes");
+  assert.equal(fs.readFileSync(work(".arcaignore"), "utf8"), "*.bak\n");
 });
 
 test("gallery records that are not valid settings read as damaged", () => {

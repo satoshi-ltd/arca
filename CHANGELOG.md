@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.14 — 2026-11-25
+
+- On the phone, repairing a linked album no longer blocks its folder for good when the hub no longer holds a file as the phone remembers it: the repair takes the hub's newer version or its deletion, leaves a file the hub cannot serve waiting as a single file issue, and the folder goes on syncing. Stop syncing is no longer the only way out.
+
+Needs: native build
+
 ## 0.10.13 — 2026-11-25
 
 - Adding files on the phone can no longer stop every sync until the app restarts: when the app that holds a file stops sending it, the import ends with a message instead of waiting forever.

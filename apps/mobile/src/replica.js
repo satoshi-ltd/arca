@@ -1287,32 +1287,84 @@ export class Replica {
     let awaiting = false;
     for (const row of journaled)
       if (!(await this.awaitsDownload(row, rows)))
-        await this.isolated(row, () => this.apply(row, true));
+        await this.isolated(row, () =>
+          rows.find((known) => known.path === row.path)?.unapplied ? this.applyWaiting(row) : this.apply(row, true),
+        );
       else if (initialized && (await this.supersededOnHub(row)))
         await this.store.discard(this.scope, row);
       else awaiting = true;
     return awaiting;
   }
+  async publishedHead(row) {
+    const { versions } = await this.client.api(
+      `/v1/history?${new URLSearchParams({ volume: row.volume, path: row.path, limit: "1" })}`,
+    );
+    const head = versions[0];
+    if (!(head?.rev > row.rev)) return null;
+    const { files } = await this.client.api(
+      `/v1/changes?${new URLSearchParams({ volume: row.volume, after: String(head.rev - 1), through: String(head.rev) })}`,
+    );
+    const published = files.find((other) => other.path === row.path && other.rev === head.rev);
+    return published ? validRow(published, row.volume) : null;
+  }
   async supersededOnHub(row) {
     try {
       if (!(await this.files.exists(this.files.partial(this.scope, row.hash))))
         return false;
-      const { versions } = await this.client.api(
-        `/v1/history?${new URLSearchParams({ volume: row.volume, path: row.path, limit: "1" })}`,
-      );
-      const head = versions[0];
-      if (!(head?.rev > row.rev)) return false;
-      const { files } = await this.client.api(
-        `/v1/changes?${new URLSearchParams({ volume: row.volume, after: String(head.rev - 1), through: String(head.rev) })}`,
-      );
-      const published = files.find(
-        (other) => other.path === row.path && other.rev === head.rev,
-      );
+      const published = await this.publishedHead(row);
       return !!published && !(published.deleted && published.replacementPath);
     } catch (error) {
       if (isHubUnreachable(error) || this.syncAbort?.signal.aborted) throw error;
       return false;
     }
+  }
+  cutsCycle(error) {
+    return (
+      ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED", "MISSING_ROOT"].includes(error?.code) ||
+      isHubUnreachable(error) ||
+      !!this.syncAbort?.signal.aborted
+    );
+  }
+  async applyWaiting(row) {
+    try {
+      await this.apply(row, true);
+    } catch (error) {
+      if (this.cutsCycle(error)) throw error;
+      let head = null;
+      try {
+        head = await this.publishedHead(row);
+      } catch (lookup) {
+        if (this.cutsCycle(lookup)) throw lookup;
+      }
+      if (!head) throw error;
+      await this.apply(head, true);
+    }
+  }
+  async repairMissing(row) {
+    this.check();
+    const policy = row.path === ".arcaignore";
+    let waiting = row;
+    let failure;
+    try {
+      await this.apply(row, true);
+      return;
+    } catch (error) {
+      if (this.cutsCycle(error)) throw error;
+      failure = error;
+    }
+    try {
+      const head = await this.publishedHead(row);
+      if (head && !(policy && head.size > 65536)) {
+        waiting = head;
+        await this.apply(head, true);
+        return;
+      }
+    } catch (error) {
+      if (this.cutsCycle(error)) throw error;
+    }
+    if (policy) throw failure;
+    await this.store.put(this.scope, { ...waiting, unapplied: true });
+    await this.store.journal(this.scope, waiting);
   }
   // Defer only when the working file still holds its acknowledged baseline, or is absent with no live row, so scan cannot propose an edit or deletion.
   async awaitsDownload(row, rows) {
@@ -1340,14 +1392,7 @@ export class Replica {
     try {
       await work();
     } catch (error) {
-      if (
-        ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED", "MISSING_ROOT"].includes(
-          error?.code,
-        ) ||
-        isHubUnreachable(error) ||
-        this.syncAbort?.signal.aborted
-      )
-        throw error;
+      if (this.cutsCycle(error)) throw error;
       await this.store.journal(this.scope, row);
       this.rowIssues.set(row.volume, [
         ...(this.rowIssues.get(row.volume) || []),
@@ -1787,7 +1832,7 @@ export class Replica {
                   this.files.work(this.scope, folder.id, row.path),
                 ))
               )
-                await this.apply(row, true);
+                await this.repairMissing(row);
             await this.store.setGallery(this.scope, folder.id, {
               ...album,
               mode: "source",
