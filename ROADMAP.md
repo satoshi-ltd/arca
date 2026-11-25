@@ -27,10 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
-  `bug · agent · high`
-  Requested by the maintainer after the switch's off-centre knob. The arithmetic defects shipped in 0.9.70. Left: about 25 places where the app and the kit (`design/mobile.css`) draw the same element differently (gaps of 8 against 6, 10 or 14; the sheet header 72 against 64; the setup display title 26 against 36; the Fold's compact rail; field insets 12 against 16; the mini player's controls and Now playing's header), which wait for the maintainer to say which side wins; and the Android text centring checks only a device can confirm. Accept: each remaining difference resolved on the side the maintainer chooses, with a test, and the device checks listed for the maintainer.
-
 - **MOB-RENAME-MODIFIED** — The phone renames a file whose edits have not reached the hub
   `feature · agent · low`
   Decided by the maintainer (yes to DEC-RENAME-MODIFIED). Desktop and server replicas already do; the phone refuses with "Local file changed. Sync before renaming.". accept: the phone renames a locally modified file, the edit and the new name both reach the hub and nothing is lost when the hub rejects a stale deletion, with a test.
@@ -58,9 +54,20 @@ _None._
 - **DEPLOY-0954** — Put 0.9.52 to 0.9.54 on the live devices
   `deploy · maintainer · normal`
   Native build for the phone (0.9.52 fields and empty states, 0.9.53 header buttons and choice sheets); desktop build (0.9.52 Settings and status card, 0.9.54 first-run Folders step); hub redeploy so the catalog carries `rules` and Start syncing can say that `.arcaignore` excludes files (an older hub shows no note); server replica redeploy for the 0.9.54 web wizard.
+- **VERIFY-PIXEL-0107** — The 0.10.7 phone corrections look right on the devices
+  `verify · maintainer · normal`
+  accept: on a build with 0.10.7, on Android the bottom tab labels and the segmented control labels sit centred in their boxes; on the Fold the 40 dp tile beside a folder's title has the tiles' rounded corners, and the compact rail's items are as wide as the kit draws them with 12 dp below the last one.
 - **VERIFY-WIZARD-FOLDERS** — The first-run Folders step starts empty and scrolls
   `verify · maintainer · normal · depends: DEPLOY-0954`
   accept: on the built desktop app and on a server's web wizard, pairing with a hub that has more folders than the window shows lists them with none chosen, scrolls to Start syncing, and Choose folders stays disabled until one is switched on.
+
+### Decisions
+
+Each carries a recommendation; a yes or no is enough.
+
+- **DEC-PIXEL-CHOICES** — Seven places where the phone and its kit still differ and neither side is plainly right
+  `decision · maintainer · normal`
+  Left by MOB-PIXEL-AUDIT (0.10.7 made the kit draw the app everywhere else). (1) Search photo thumbs: the app spaces them 8 dp, the kit 4 dp like the gallery wall; recommendation 4. (2) The file ⋯ dropdown: the app has no padding, the kit 4 dp, desktop menus 8; recommendation 8, as desktop. (3) Now playing header: the app is 56 dp with "Playing from" left-aligned, the kit 64 dp and centred; recommendation the kit's centred header. (4) Now playing cover: the app has radius 12 and no shadow, the kit radius 18 and the menu shadow; recommendation the app. (5) Search results: the app draws flat 48 dp rows, the kit grouped cards of 74 dp rows as SPEC's list rule says; recommendation the kit. (6) The setup title ships at the title size (26/32) and the kit now draws that, where it used to draw 36/38 and SPEC names a display role of 28/34; recommendation 28/34. (7) Phone cards and grouped lists ship with the control radius (12) where the Shape rule gives cards the surface radius (18); recommendation keep 12, as SPEC now says.
 
 ### Native work waiting for a build
 

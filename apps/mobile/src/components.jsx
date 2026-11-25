@@ -1623,7 +1623,7 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
             numberOfLines={1}
             maxFontSizeMultiplier={wide && compact ? railLabelFontCap : undefined}
             style={[
-              wide ? (compact ? s.compactNavLabel : s.navLabel) : s.caption,
+              wide ? (compact ? s.compactNavLabel : s.navLabel) : [s.caption, s.tabLabel],
               view === tab && s.active,
               !wide && view === tab && s.tabSelectedLabel,
             ]}

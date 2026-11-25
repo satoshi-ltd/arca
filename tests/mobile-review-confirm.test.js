@@ -268,7 +268,7 @@ test("a mounted notice is announced with its title and body", async () => {
 test("segmented controls meet the touch height, the Text size control scrolls and labels stay on one line", () => {
   assert.match(read("theme.js"), /segment: \{\s+flex: wide \? 0 : 1,\s+paddingHorizontal: wide \? sp\[3\] : 0,\s+minHeight: g\.touchHeight,/);
   assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+style=\{\[\s+s\.buttonLabel,\s+s\.segmentText,/);
-  assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+maxFontSizeMultiplier=\{wide && compact \? railLabelFontCap : undefined\}\s+style=\{\[\s+wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : s\.caption,/);
+  assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+maxFontSizeMultiplier=\{wide && compact \? railLabelFontCap : undefined\}\s+style=\{\[\s+wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : \[s\.caption, s\.tabLabel\],/);
   assert.match(read("App.jsx"), /options=\{textSizes\}\s+scroll\s+value=\{textScale\(prefs\.textSize\)\}/);
 });
 

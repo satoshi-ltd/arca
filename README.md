@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free and open source under the [GNU AGPL-3.0](LICENSE).
 
-**v0.10.6 · Phase 1 release.**
+**v0.10.7 · Phase 1 release.**
 
 ## How it works
 

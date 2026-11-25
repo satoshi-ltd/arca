@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.7 — 2026-11-25
+
+- On the Fold, the icon tile beside a folder's title has the same rounded corners as every other tile instead of looking like a circle, and the compact side rail gives its items the width the design draws.
+- On Android, the labels of the bottom tabs and of segmented controls no longer carry the extra font padding that pushed them off centre.
+
+Needs: native build
+
 ## 0.10.6 — 2026-11-25
 
 - On a desktop or server that is not the hub, a Movies & TV library and its titles open at once from the copy saved on that device and update when the hub answers, instead of waiting up to ten seconds for a hub that is slow or away.

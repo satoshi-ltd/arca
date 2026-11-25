@@ -6,7 +6,7 @@ import { noticeMetrics } from "../apps/desktop/src/notice-contract.js";
 
 const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
 
-async function phoneStyles(fontScale = 1) {
+async function phoneStyles(fontScale = 1, wide = false, compact = false) {
   const { geometry, radius, space } = await import("../apps/mobile/src/design-tokens.js");
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const source = read("theme.js")
@@ -15,7 +15,56 @@ async function phoneStyles(fontScale = 1) {
     .replace("export function styles", "function styles");
   const context = { g: geometry, n: noticeMetrics, sp: space, r: radius, palettes, StyleSheet: { create: (value) => value, absoluteFill: {}, absoluteFillObject: {} } };
   vm.runInNewContext(source + ";this.makeStyles = styles;", context);
-  return { s: context.makeStyles(palettes.light, false, false, fontScale), g: geometry };
+  return { s: context.makeStyles(palettes.light, wide, compact, fontScale), g: geometry, c: palettes.light, space };
+}
+
+const kebab = (name) => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
+async function kitRules() {
+  const { g, c, space } = await phoneStyles();
+  const tokens = new Map([
+    ...Object.entries(space).map(([step, value]) => [`--space-${step}`, `${value}px`]),
+    ...Object.entries(g).map(([name, value]) => [`--m-${kebab(name)}`, typeof value === "number" ? `${value}px` : String(value)]),
+    ...Object.entries(c).map(([name, value]) => [`--m-${kebab(name)}`, value]),
+  ]);
+  const rules = new Map();
+  for (const [, selectors, body] of fs.readFileSync(new URL("../design/mobile.css", import.meta.url), "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const selector of selectors.split(",").map((part) => part.trim().replace(/\s+/g, " "))) {
+      const rule = rules.get(selector) || {};
+      for (const line of body.split(";")) {
+        const at = line.indexOf(":");
+        if (at > 0) rule[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+      }
+      rules.set(selector, rule);
+    }
+  }
+  const seen = new Set();
+  const lastClass = (selector) => selector.split(" ").at(-1).match(/\.[\w-]+/g)?.at(-1);
+  const rivals = () =>
+    [...seen].flatMap((entry) => {
+      const [selector, property] = entry.split("|");
+      return [...rules.keys()]
+        .filter((other) => other !== selector && lastClass(selector) && lastClass(other) === lastClass(selector) && property in rules.get(other) && !seen.has(`${other}|${property}`))
+        .map((other) => `${other} also sets ${property} of ${selector}`);
+    });
+  const raw = (selector, property) => {
+    const value = rules.get(selector)?.[property];
+    assert.ok(value, `${selector} sets ${property}`);
+    seen.add(`${selector}|${property}`);
+    return value.replace(/var\((--[\w-]+)\)/g, (_, name) => {
+      assert.ok(tokens.has(name), `${name} is a token`);
+      return tokens.get(name);
+    });
+  };
+  const sum = (expression) =>
+    expression
+      .split(" ")
+      .reduce((state, part) => (part === "+" || part === "-" ? { ...state, sign: part === "-" ? -1 : 1 } : { total: state.total + state.sign * parseFloat(part), sign: 1 }), { total: 0, sign: 1 }).total;
+  const kit = (selector, property) =>
+    raw(selector, property)
+      .match(/calc\([^)]*\)|\S+/g)
+      .map((part) => (part.startsWith("calc(") ? sum(part.slice(5, -1)) : /^-?[\d.]+(px)?$/.test(part) ? parseFloat(part) : part));
+  return { kit, raw, rivals };
 }
 
 test("a segmented control's sliding thumb sits on its segment, with the same inset above and below", async () => {
@@ -59,6 +108,112 @@ test("labels in fixed-height boxes carry their line height and drop Android's fo
     assert.ok(s[name].lineHeight >= s[name].fontSize, `${name} has a line height`);
     assert.equal(s[name].includeFontPadding, false, `${name} drops Android font padding`);
   }
+  for (const [name, base, box] of [["segmentText", "buttonLabel", "segment"], ["tabLabel", "caption", "tab"]]) {
+    const label = { ...s[base], ...s[name] };
+    assert.ok(s[box].minHeight > label.lineHeight, `${name} sits in a box of its own height`);
+    assert.equal(s[name].lineHeight, s[base].lineHeight, `${name} has a line height`);
+    assert.ok(label.lineHeight >= label.fontSize, `${name} has a line height`);
+    assert.equal(s[name].includeFontPadding, false, `${name} drops Android font padding`);
+  }
+  assert.match(read("components.jsx"), /style=\{\[\s+s\.buttonLabel,\s+s\.segmentText,/);
+  assert.match(read("components.jsx"), /wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : \[s\.caption, s\.tabLabel\],/);
+});
+
+test("the kit draws the phone's own numbers", async () => {
+  const { s, g, c } = await phoneStyles();
+  const { s: fold } = await phoneStyles(1, true, true);
+  const { kit, rivals } = await kitRules();
+  const cover = read("MusicLibrary.jsx").match(/<Cover uri=\{coverUri\} size=\{wide \? (\d+) : (\d+)\}/);
+  const pairs = [
+    ["bottom tab gap", [s.tab.gap], kit(".m-tab", "gap")],
+    ["pairing code cells gap", [s.codeCells.gap], kit(".m-code", "gap")],
+    ["onboarding dots gap", [s.stepIndicator.gap], kit(".m-dots", "gap")],
+    ["stat cell", [s.statCell.padding, s.statCell.gap], [...kit(".m-stat", "padding"), ...kit(".m-stat", "gap")]],
+    ["device name to tag gap", [s.machineIdentity.gap], kit(".m-identity-row", "gap")],
+    ["empty state gap", [s.empty.gap], kit(".m-empty", "gap")],
+    ["sidebar brand gap", [s.brand.gap], kit(".m-brand", "gap")],
+    ["nav and drawer item gap", [s.navItem.gap, s.drawerItem.gap], [...kit(".m-nav-item", "gap"), ...kit(".m-nav-item", "gap")]],
+    ["rail item padding", [s.compactNav.paddingVertical, s.compactNav.paddingHorizontal], kit(".m-labelled .m-nav-item", "padding")],
+    ["album header gap", [s.musicHeader.gap, s.musicHeaderWide.gap], [...kit(".m-album-head", "gap"), ...kit(".m-fold .m-album-head", "gap")]],
+    ["album header cover", [Number(cover[2]), Number(cover[1])], [...kit(".m-album-head .m-cover", "width"), ...kit(".m-fold .m-album-head .m-cover", "width")]],
+    ["Play and Shuffle top margin", [s.musicActions.marginTop], kit(".m-album-head .m-actions-row", "margin-top")],
+    ["breadcrumb", [0, s.breadcrumb.paddingHorizontal, s.breadcrumb.gap], [...kit(".m-breadcrumb", "padding"), ...kit(".m-breadcrumb", "gap")]],
+    ["video language chips gap", [s.videoLanguages.rowGap, s.videoLanguages.columnGap], kit(".m-video-languages", "gap")],
+    ["sleep chip margin", [s.sleepChip.marginRight], kit(".m-np-top .m-sleep-chip", "margin-right")],
+    ["track number column", [s.musicNumber.width], kit(".m-track-number", "width")],
+    ["month bubble", [0, s.scrubBubble.paddingHorizontal, s.scrubBubbleText.fontSize, s.scrubBubbleText.lineHeight], [...kit(".m-scrub-bubble", "padding"), ...kit(".m-scrub-bubble", "font-size"), ...kit(".m-scrub-bubble", "line-height")]],
+    ["year chip", [s.scrubYear.fontSize, s.scrubYear.lineHeight, `translateY(${s.scrubYear.transform[0].translateY}px)`], [...kit(".m-scrub-year", "font-size"), ...kit(".m-scrub-year", "line-height"), ...kit(".m-scrub-year", "transform")]],
+    ["On this day card", [s.memoryCard.paddingBottom, s.memoryCard.paddingHorizontal, s.memoryTitle.fontSize, s.memoryTitle.lineHeight, s.memoryCaption.fontSize, s.memoryCaption.lineHeight], [...kit(".m-memory > span", "bottom"), ...kit(".m-memory > span", "left"), ...kit(".m-memory > span", "font-size"), ...kit(".m-memory > span", "line-height"), ...kit(".m-memory small", "font-size"), ...kit(".m-memory small", "line-height")]],
+    ["History revision column", [s.historyRevision.width], kit(".m-history-rev", "width")],
+    ["screen header", [s.viewHeader.padding, s.viewHeader.padding, s.viewHeader.paddingBottom, s.viewHeader.gap], [...kit(".m-header", "padding"), ...kit(".m-header", "gap")]],
+    ["detail header", [s.detailViewHeader.paddingTop, s.detailViewHeader.gap], [...kit(".m-header:has(.m-back)", "padding-top"), ...kit(".m-header:has(.m-back)", "gap")]],
+    ["Fold header", [fold.viewHeader.padding, fold.viewHeader.padding, fold.viewHeader.paddingBottom, fold.detailViewHeader.paddingTop], [...kit(".m-fold .m-header", "padding"), ...kit(".m-fold .m-header:has(.m-back)", "padding-top")]],
+    ["content inset", [0, s.content.padding, s.content.padding], kit(".m-body", "padding")],
+    ["Fold content inset", [0, fold.content.padding, fold.content.padding], kit(".m-fold .m-body", "padding")],
+    ["selection bar", [s.selectionBar.paddingVertical, s.selectionBar.paddingHorizontal, s.selectionBar.borderTopWidth, "solid", s.selectionBar.borderColor], [...kit(".m-selection.m-pinned", "padding"), ...kit(".m-selection.m-pinned", "border-top")]],
+    ["sheet header", [s.sheetHeader.minHeight, s.sheetHeader.paddingVertical, s.sheetHeader.paddingHorizontal], [...kit(".m-sheet-header", "min-height"), ...kit(".m-sheet-header", "padding")]],
+    ["Fold sheet header", [fold.sheetHeader.paddingVertical, fold.sheetHeader.paddingHorizontal], kit(".m-fold .m-sheet-header", "padding")],
+    ["drag handle", [s.sheetHandle.marginTop, "auto", s.sheetHandle.marginBottom + s.sheetGrabber.paddingBottom], kit(".m-handle", "margin")],
+    ["menu sheet", [s.sheetMenu.paddingVertical, 0], kit(".m-sheet-menu", "padding")],
+    ["card", [s.card.paddingVertical, s.card.paddingHorizontal, s.card.borderRadius, s.card.gap], [...kit(".m-card", "padding"), ...kit(".m-card", "border-radius"), ...kit(".m-card", "gap")]],
+    ["conflict choice", [s.card.paddingVertical, s.card.paddingHorizontal, s.card.borderRadius, s.conflictChoice.gap, s.conflictChoice.borderWidth, "solid", s.conflictChoice.borderColor], [...kit(".m-choice", "padding"), ...kit(".m-choice", "border-radius"), ...kit(".m-choice", "gap"), ...kit(".m-choice", "border")]],
+    ["setup display title", [s.displayTitle.fontSize, s.displayTitle.lineHeight, s.displayTitle.letterSpacing, Number(s.displayTitle.fontFamily.match(/_(\d+)/)[1])], [...kit(".m-display", "font-size"), ...kit(".m-display", "line-height"), ...kit(".m-display", "letter-spacing"), ...kit(".m-display", "font-weight")]],
+    ["header Back", [s.button.minHeight, s.button.gap, c.ink, s.buttonLabel.fontSize, s.buttonLabel.lineHeight, s.headerBack.marginLeft, 0, s.button.paddingHorizontal], [...kit(".m-back", "min-height"), ...kit(".m-back", "gap"), ...kit(".m-back", "color"), ...kit(".m-back", "font-size"), ...kit(".m-back", "line-height"), ...kit(".m-header .m-back", "margin-left"), ...kit(".m-header .m-back", "padding")]],
+    ["field inset", [0, s.inputShell.paddingHorizontal, s.input.paddingHorizontal], [...kit(".m-field", "padding"), kit(".m-field", "padding")[1]]],
+    ["switch in its target", [s.switchTarget.minWidth, s.switchTarget.minHeight, s.switchTarget.alignItems, s.switchTarget.justifyContent], [...kit(".m-switch-target", "min-width"), ...kit(".m-switch-target", "min-height"), ...kit(".m-switch-target", "justify-content"), ...kit(".m-switch-target", "align-items")]],
+    ["onboarding feature tile", [s.tileLarge.width, s.tileLarge.borderRadius], [...kit(".m-tile.m-large", "width"), ...kit(".m-tile.m-large", "border-radius")]],
+    ["Up next pane", [fold.nowQueue.width, fold.nowQueue.backgroundColor], [...kit(".m-np-queue", "width"), ...kit(".m-np-queue", "background")]],
+    ["mini player", [s.miniPlayer.paddingVertical, s.miniPlayer.paddingHorizontal, s.miniPlayer.gap, s.miniControl.width, s.miniControl.height], [...kit(".m-player", "padding"), ...kit(".m-player-controls", "gap"), ...kit(".m-player-control", "width"), ...kit(".m-player-control", "height")]],
+    ["Now playing inset", [s.nowPage.paddingTop, s.nowPage.paddingHorizontal, 0], kit(".m-np-stage", "padding")],
+    ["Now playing rhythm", [s.nowPage.gap, s.nowPage.gap, s.nowPage.gap, s.nowPage.gap, s.nowPage.paddingHorizontal, 0], [...kit(".m-np-meta", "margin-top"), ...kit(".m-np-scrub", "margin-top"), ...kit(".m-np-transport", "margin-top"), ...kit(".m-np-next", "margin")]],
+    ["Now playing sides", [0, s.nowPage.paddingHorizontal, 0, s.nowPage.paddingHorizontal, 0, s.nowPage.paddingHorizontal], [...kit(".m-np-meta", "padding"), ...kit(".m-np-scrub", "padding"), ...kit(".m-np-transport", "padding")]],
+    ["Now playing title and links", [s.nowPlayingText.alignItems, s.stack.gap, s.nowLinks.alignItems, s.nowLinks.gap, "column"], [...kit(".m-np-meta", "align-items"), ...kit(".m-np-meta", "gap"), ...kit(".m-np-links", "align-items"), ...kit(".m-np-links", "gap"), ...kit(".m-np-links", "flex-direction")]],
+    ["Up next row", [s.nowUpNext.minHeight, s.nowUpNext.gap, s.nowUpNext.backgroundColor, s.nowUpNext.borderRadius], [...kit(".m-np-next", "min-height"), ...kit(".m-np-next", "gap"), ...kit(".m-np-next", "background"), ...kit(".m-np-next", "border-radius")]],
+    ["subtitle cue radius", [s.videoCue.borderRadius], kit(".m-video-cue", "border-radius")],
+    ["Fold header tile", [g.detailTile, fold.detailTile.borderRadius], [...kit(".m-tile.m-detail", "width"), ...kit(".m-tile.m-detail", "border-radius")]],
+    ["rail", [fold.navigation.width, fold.navigation.paddingTop, fold.navigation.paddingHorizontal, fold.navigation.padding], [...kit(".m-sidebar.m-compact", "width"), ...kit(".m-sidebar.m-compact", "padding")]],
+  ];
+  for (const [name, app, drawn] of pairs) assert.deepEqual(drawn, app, name);
+  assert.deepEqual(
+    rivals(),
+    [
+      ".m-labelled .m-nav-item also sets gap of .m-nav-item",
+      ".m-nav-item also sets padding of .m-labelled .m-nav-item",
+      ".m-player .m-cover also sets width of .m-album-head .m-cover",
+      ".m-srch-hit .m-cover also sets width of .m-album-head .m-cover",
+      ".m-player .m-cover also sets width of .m-fold .m-album-head .m-cover",
+      ".m-srch-hit .m-cover also sets width of .m-fold .m-album-head .m-cover",
+      ".m-actions-row also sets margin-top of .m-album-head .m-actions-row",
+    ],
+    "no other kit rule sets a compared property on the same class, beyond these that target other elements or a base the compared rule overrides",
+  );
+});
+
+test("the Fold's header tile and the rail keep the geometry the spec states", async () => {
+  const { s, g } = await phoneStyles(1, true, true);
+  assert.equal(s.detailTile.borderRadius, g.tileRadiusLarge);
+  assert.equal(s.detailTile.borderRadius, Math.round(g.detailTile * 0.225));
+  assert.equal(s.navigation.width - 2 * s.navigation.paddingHorizontal, 60);
+  const { s: wide } = await phoneStyles(1, true, false);
+  assert.equal(wide.navigation.paddingHorizontal, wide.navigation.padding);
+});
+
+test("the kit's mini player and Now playing follow the app's structure", async () => {
+  const { s } = await phoneStyles();
+  const { raw } = await kitRules();
+  const page = fs.readFileSync(new URL("../design/mobile.html", import.meta.url), "utf8");
+  const players = page.match(/<div class="m-player-controls">.*?<\/div>/g);
+  assert.ok(players.length > 0);
+  for (const player of players) assert.match(player, /^<div class="m-player-controls">(<span class="m-player-control"><span data-icon="[\w-]+" data-size="22"><\/span><\/span>){2}<\/div>$/);
+  assert.equal((read("MusicLibrary.jsx").match(/style=\{s\.miniControl\}/g) || []).length, 2);
+  const links = page.match(/<div class="m-np-links">.*?<\/div>/g);
+  assert.ok(links.length > 0);
+  for (const link of links) assert.match(link, /^<div class="m-np-links">(<span class="m-np-link">[^<]+<\/span>){1,2}<\/div>$/);
+  assert.match(read("NowPlayingPage.jsx"), /<View style=\{\[s\.stack, s\.nowPlayingText\]\}>\s+<Text numberOfLines=\{2\} style=\{\[s\.title, s\.centerText\]\}>/);
+  assert.equal(raw(".m-np-meta", "text-align"), "center");
+  const cover = read("NowPlayingPage.jsx").match(/size=\{twoPane \? (\d+) : Math\.min\(width - (\d+), (\d+)\)\}/);
+  assert.equal(cover[1], cover[3]);
+  assert.equal(raw(".m-np-cover", "width"), `min(100% - ${Number(cover[2]) - 2 * s.nowPage.paddingHorizontal}px, ${cover[3]}px)`);
 });
 
 test("small icons in pills, tags and chips leave whole-pixel insets", async () => {
