@@ -27,10 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **REPLICA-FOLDER-OUTAGE** — A desktop replica's folder that keeps losing its connection does not stop the folders after it
-  `bug · agent · normal`
-  Found by the review of MOB-SYNC-STARVATION, not traced: `engine.js` marks the hub unavailable on a folder's transport failure and SPEC says that ends the cycle, so one folder whose requests keep failing while the hub answers may starve the rest, as it did on the phone before 0.10.5. Accept: a failing test first; then a desktop or server replica with one such folder still completes the others, as the phone does.
-
 - **UX-DESK-A11Y** — The photo viewer shows its errors
   `bug · agent · normal`
   An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.

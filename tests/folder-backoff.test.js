@@ -119,6 +119,53 @@ test("a replica cycle whose only failures are folder errors says so, and a devic
   assert.equal(replica.engine.folderBackoff.waiting(healthy.id), null);
 });
 
+test("a replica folder whose requests keep losing the connection while the hub answers does not stop the folders after it", async (t) => {
+  const { hub, replica, broken, healthy } = await pair(t, { timer: false });
+  await replica.sync();
+  write(hub, healthy, "later.txt", "arrives");
+  await hub.sync();
+  const lost = () => Object.assign(new TypeError("fetch failed"), { hubUnavailable: true });
+  const folder = breakFolder(replica.engine, "syncIgnore", broken.id, lost);
+  replica.engine.outageWaitMs = 1;
+  const seen = [];
+  const state = replica.engine.folderStates.set.bind(replica.engine.folderStates);
+  replica.engine.folderStates.set = (id, value) => (id === broken.id && seen.push(value.state), state(id, value));
+  await assert.rejects(replica.sync(), (error) => error.folderOnly === true && !error.hubUnavailable && /Broken: The hub did not complete this folder's requests/.test(error.message));
+  replica.engine.folderStates.set = state;
+  assert.equal(folder.attempts, 3, "the folder is tried three times in the cycle");
+  assert.deepEqual(seen, ["syncing", "pending", "syncing", "pending", "syncing", "error"], "and reads pending, not failed, between tries");
+  assert.equal(fs.readFileSync(path.join(replica.engine.store.volume(healthy.id).path, "later.txt"), "utf8"), "arrives");
+  assert.equal(replica.engine.hubUnavailable, false, "the hub answered, so the device does not read as offline");
+  assert.equal(replica.engine.folderStates.get(broken.id).state, "error");
+  assert.equal(replica.engine.folderStates.get(healthy.id).state, "synced");
+  assert.ok(replica.engine.folderBackoff.waiting(broken.id), "the folder backs off alone");
+  folder.broken = false;
+  await replica.sync();
+  assert.equal(replica.engine.folderStates.get(broken.id).state, "synced");
+
+  folder.broken = true;
+  folder.attempts = 0;
+  const once = replica.engine.syncIgnore;
+  replica.engine.syncIgnore = async (v, ...rest) => {
+    if (v?.id === broken.id && folder.attempts === 1) folder.broken = false;
+    return once(v, ...rest);
+  };
+  await replica.sync();
+  assert.equal(folder.attempts, 1, "one lost request is retried in the same cycle without ever showing an error");
+  assert.equal(replica.engine.folderBackoff.waiting(broken.id), null);
+  replica.engine.syncIgnore = once;
+
+  folder.broken = true;
+  folder.attempts = 0;
+  const catalog = replica.engine.metadata.bind(replica.engine);
+  replica.engine.metadata = async (route, ...rest) => {
+    if (route === "/v1/catalog" && folder.attempts > 0) throw lost();
+    return catalog(route, ...rest);
+  };
+  await assert.rejects(replica.sync(), (error) => error.hubUnavailable === true, "a hub that does not answer the check still ends the cycle as an outage");
+  assert.equal(replica.engine.folderStates.get(broken.id).state, "pending");
+});
+
 test("with one replica folder failing every cycle, an edit in another reaches the hub within the event latency", async (t) => {
   if (!(await canWatchDirectory(2))) return t.skip("the operating system cannot deliver folder watcher events here");
   const { hub, replica, broken, healthy } = await pair(t, { timer: true });

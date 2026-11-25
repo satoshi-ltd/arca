@@ -69,6 +69,9 @@ export const ACCESS_LOST =
 const EXCLUSIVE_GRACE_MS = 1000;
 const INDEX_BUSY_RETRIES = 2;
 const INDEX_BUSY_WAIT_MS = 200;
+const FOLDER_OUTAGE = "The hub did not complete this folder's requests. Arca retries it shortly.";
+const FOLDER_OUTAGE_TRIES = 3;
+const FOLDER_OUTAGE_WAIT_MS = 2000;
 const indexBusy = (error) => /^database is locked$/i.test(error?.message || "");
 const CHUNK = 1024 * 1024;
 const INTEGRITY_FAILED = "Downloaded content failed integrity verification";
@@ -391,6 +394,15 @@ export class Engine {
     )
       this.hubUnavailable = true;
     return error;
+  }
+  async hubStillAnswers() {
+    try {
+      await this.metadata("/v1/catalog");
+      return true;
+    } catch (error) {
+      if (error.syncInterrupted) throw error;
+      return false;
+    }
   }
   async request(route, options = {}) {
     const {
@@ -1322,18 +1334,28 @@ export class Engine {
           }
         }
         // A backup engine never scans or proposes, whatever an older layout left selected.
-        for (const v of s
+        const turns = s
           .volumes()
           .filter(
             (v) =>
               this.config.role !== "backup" &&
               v.selected &&
               activeIds.has(v.id),
-          )) {
+          );
+        const outages = new Map();
+        for (let turn = 0; turn < turns.length; turn++) {
+          const v = turns[turn];
           const waiting = incremental && this.folderBackoff.waiting(v.id);
           if (waiting) {
             folderErrors.push(`${v.name}: ${waiting.message}`);
             continue;
+          }
+          const outage = outages.get(v.id);
+          const before = this.folderStates.get(v.id);
+          if (outage) {
+            await new Promise((resolve) => setTimeout(resolve, Math.max(0, outage.until - Date.now())));
+            if (abort.signal.aborted) throw abort.signal.reason;
+            if (!s.volume(v.id)?.selected) continue;
           }
           try {
             this.folderStates.set(v.id, {
@@ -1863,10 +1885,26 @@ export class Engine {
             );
             if (marker?.gallery) this.gallery?.prepare(v.id);
             if (marker?.music) this.music?.prepare(v.id);
-          } catch (e) {
+          } catch (failure) {
             if (abort.signal.aborted)
               throw abort.signal.reason;
-            if (e.syncInterrupted || e.hubUnavailable || !this.config.hub) throw e;
+            if (failure.syncInterrupted || !this.config.hub) throw failure;
+            if (failure.hubUnavailable && !(await this.hubStillAnswers())) throw failure;
+            if (abort.signal.aborted) throw abort.signal.reason;
+            const tries = (outage?.tries || 0) + 1;
+            if (failure.hubUnavailable && tries < FOLDER_OUTAGE_TRIES) {
+              outages.set(v.id, {
+                tries,
+                issue: outage ? outage.issue : before?.state === "error" ? before.error : null,
+                until: Date.now() + (this.outageWaitMs ?? FOLDER_OUTAGE_WAIT_MS) * 2 ** (tries - 1),
+              });
+              this.folderStates.set(v.id, { state: "pending", lastCompleted: v.last_sync });
+              turns.push(v);
+              continue;
+            }
+            const e = failure.hubUnavailable
+              ? new Error((outage ? outage.issue : before?.state === "error" && before.error) || FOLDER_OUTAGE)
+              : failure;
             this.folderStates.set(v.id, {
               state: "error",
               error: e.message,

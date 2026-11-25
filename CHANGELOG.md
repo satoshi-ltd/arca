@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.15 — 2026-11-25
+
+- On a computer or server that is not the hub, a folder whose requests keep losing the connection while the hub still answers no longer stops the folders after it: the problem shows on that folder, which retries on its own, instead of the whole device reading "hub unavailable". The phone has done this since 0.10.5.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.10.14 — 2026-11-25
 
 - On the phone, repairing a linked album no longer blocks its folder for good when the hub no longer holds a file as the phone remembers it: the repair takes the hub's newer version or its deletion, leaves a file the hub cannot serve waiting as a single file issue, and the folder goes on syncing. Stop syncing is no longer the only way out.

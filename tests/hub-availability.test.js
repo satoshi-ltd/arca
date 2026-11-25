@@ -609,7 +609,7 @@ test("local file actions never queue behind a pending hub action or a paused rep
   assert.ok((await restore) instanceof Error);
 });
 
-test("a gateway error or a lost body marks the hub offline instead of failing the folder", async (t) => {
+test("a gateway error marks the hub offline, and a body lost while the hub still answers is that folder's problem alone", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "first");
   await hub.sync();
@@ -641,9 +641,11 @@ test("a gateway error or a lost body marks the hub offline instead of failing th
     cut: (req) => req.url.startsWith("/v1/blobs/"),
   });
   replica.engine.config.hub.url = cut.url;
-  await assert.rejects(replica.sync(), (error) => error.hubUnavailable);
-  assert.equal(replica.engine.status().phase, "offline");
-  assert.notEqual(replica.engine.status().volumes[0].sync.state, "error");
+  replica.engine.outageWaitMs = 1;
+  await assert.rejects(replica.sync(), (error) => !error.hubUnavailable && error.folderOnly === true && /did not complete this folder's requests/.test(error.message));
+  assert.equal(replica.engine.status().phase, "error");
+  assert.equal(replica.engine.hubUnavailable, false);
+  assert.equal(replica.engine.status().volumes[0].sync.state, "error");
   replica.engine.config.hub.url = url;
   await replica.sync();
   assert.equal(replica.engine.status().phase, "idle");
