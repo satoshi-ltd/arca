@@ -3634,12 +3634,6 @@ test("mobile renames synced files offline, rejects collisions and propagates ord
     /changed/,
   );
   const file = f.files.work(f.replica.scope, v.id, row.path);
-  fs.writeFileSync(file, "unsynced");
-  await assert.rejects(
-    f.replica.renameFile(v.id, row.path, "new.txt", row.rev),
-    /changed/,
-  );
-  fs.writeFileSync(file, "retained");
   f.offline();
   await f.replica.renameFile(v.id, row.path, "renamed.txt", row.rev);
   assert.equal(fs.existsSync(file), false);
@@ -4275,6 +4269,44 @@ test("a busy snapshot capacity is a retryable wait, not a stored folder failure"
     .run();
   await sync(f);
   assert.ok((await f.store.folder(f.replica.scope, other.id)).initialized);
+});
+
+test("a file edited on the phone is renamed before its edit reaches the hub, and both the edit and the name arrive", async (t) => {
+  const f = await fixture(t),
+    s = f.daemon.engine.store;
+  const sha = (text) => crypto.createHash("sha256").update(text).digest("hex");
+  for (const name of ["note.txt", "raced.txt"]) fs.writeFileSync(path.join(f.volume.path, name), "first");
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.volume);
+  await sync(f);
+  const work = (name) => f.files.work(f.replica.scope, f.volume.id, name);
+  fs.writeFileSync(work("note.txt"), "edited on the phone");
+  assert.deepEqual(await f.replica.renameFile(f.volume.id, "note.txt", "renamed.txt"), { path: "renamed.txt" });
+  await sync(f);
+  assert.equal(s.current(f.volume.id, "renamed.txt").hash, sha("edited on the phone"));
+  assert.equal(s.current(f.volume.id, "note.txt").deleted, 1);
+  assert.deepEqual(fs.readdirSync(f.files.folder(f.replica.scope, f.volume.id)).filter((name) => /note|renamed|conflict/.test(name)), ["renamed.txt"]);
+
+  fs.writeFileSync(work("raced.txt"), "phone edit");
+  fs.writeFileSync(path.join(f.volume.path, "raced.txt"), "another device's edit");
+  await f.daemon.engine.cycle();
+  const racedRev = s.current(f.volume.id, "raced.txt").rev;
+  await f.replica.renameFile(f.volume.id, "raced.txt", "mine.txt");
+  await f.replica.sync();
+  await f.replica.sync();
+  assert.equal(s.current(f.volume.id, "mine.txt").hash, sha("phone edit"), "the phone's edit arrives under its new name");
+  assert.equal(s.current(f.volume.id, "raced.txt").hash, sha("another device's edit"), "the hub refuses the stale deletion");
+  assert.equal(s.current(f.volume.id, "raced.txt").rev, racedRev, "and keeps the other device's revision as it was");
+  assert.equal(s.current(f.volume.id, "raced.txt").deleted, 0);
+  assert.equal(fs.readFileSync(work("raced.txt"), "utf8"), "another device's edit", "and the phone gets the other edit back");
+  assert.equal(fs.readFileSync(work("mine.txt"), "utf8"), "phone edit");
+  await sync(f);
+
+  const current = f.store.current.bind(f.store);
+  f.store.current = async (...args) => ({ ...(await current(...args)), unapplied: true });
+  await assert.rejects(f.replica.renameFile(f.volume.id, "mine.txt", "later.txt"), /File changed\. Reload before renaming\./, "a file waiting for the hub's newer version is not renamed");
+  f.store.current = current;
+  assert.equal(fs.existsSync(work("mine.txt")), true);
 });
 
 test("a file added and renamed offline reaches the hub only under its new name", async (t) => {

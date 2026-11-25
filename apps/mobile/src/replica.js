@@ -2006,7 +2006,7 @@ export class Replica {
     this.changed();
     return result;
   }
-  async moveFile(volume, name, newName, { rev, rewrites = false } = {}) {
+  async moveFile(volume, name, newName, { rev } = {}) {
     validPath(name);
     const destination = validPath(renamedPath(name, newName));
     const folder = await this.store.folder(this.scope, volume);
@@ -2018,12 +2018,8 @@ export class Replica {
     const info = await this.files.stat(file);
     if (!info || info.directory || row?.directory)
       throw new Error("Only synced files can be renamed here.");
-    if (row && !row.deleted) {
-      if (rev != null && row.rev !== Number(rev))
-        throw new Error("File changed. Reload before renaming.");
-      if (!rewrites && (await this.localHash(file, volume, name)) !== row.hash)
-        throw new Error("Local file changed. Sync before renaming.");
-    }
+    if (row && !row.deleted && (row.unapplied || (rev != null && row.rev !== Number(rev))))
+      throw new Error("File changed. Reload before renaming.");
     if ([name, destination].some(await folderExclusion(this, volume)))
       throw new Error("Excluded files cannot be renamed here.");
     if (destination === name) return { path: name };
@@ -2186,7 +2182,7 @@ export class Replica {
       const renamed =
         target === path
           ? path
-          : (await this.moveFile(volume, path, target.split("/").at(-1), { rewrites: true })).path;
+          : (await this.moveFile(volume, path, target.split("/").at(-1))).path;
       await this.writePlaylist(volume, renamed, next);
       return { path: renamed };
     });

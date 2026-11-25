@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.8 — 2026-11-25
+
+- The phone renames a file you edited there before the edit has synced, instead of answering "Local file changed. Sync before renaming.". The edit reaches the hub under the new name, as it already did from a computer.
+
+Needs: native build
+
 ## 0.10.7 — 2026-11-25
 
 - On the Fold, the icon tile beside a folder's title has the same rounded corners as every other tile instead of looking like a circle, and the compact side rail gives its items the width the design draws.

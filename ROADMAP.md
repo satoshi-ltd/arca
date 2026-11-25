@@ -27,14 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-RENAME-MODIFIED** — The phone renames a file whose edits have not reached the hub
-  `feature · agent · low`
-  Decided by the maintainer (yes to DEC-RENAME-MODIFIED). Desktop and server replicas already do; the phone refuses with "Local file changed. Sync before renaming.". accept: the phone renames a locally modified file, the edit and the new name both reach the hub and nothing is lost when the hub rejects a stale deletion, with a test.
-
-- **DEC-CONVERTING-LEGACY** — SPEC says once what the `converting` gallery mode is for
-  `chore · agent · low`
-  Decided by the maintainer: the mode stays. accept: SPEC's "Interrupted conversions" bullet is folded into "Damaged records"; no code changes.
-
 - **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
   `feature · agent · high`
   The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
