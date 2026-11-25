@@ -43,6 +43,7 @@ export const VERIFY_MS = 3000;
 export const OFFLINE_HOLD_MS = 5 * 60000;
 export const PROGRESS_MS = 1000;
 const IGNORE_HEAD_MS = 5000;
+const FOLDER_OUTAGE_RETRIES = 3;
 const WEEK = 7 * 86400000;
 const missingRoot = () =>
   Object.assign(
@@ -116,6 +117,8 @@ export class Replica {
     this.retryDelay = (attempt) => Math.min(30000, 2000 * 2 ** attempt);
     this.progressAt = 0;
     this.rowIssues = new Map();
+    this.folderOutages = new Map();
+    this.syncTurn = null;
     this.swept = new Set();
   }
   inventoryKey(folderId) {
@@ -176,6 +179,7 @@ export class Replica {
     }
     this.scope = await this.store.get("scope");
     await this.store.clearInterrupted(this.scope);
+    if (this.scope) this.syncTurn = await this.store.get(`syncTurn:${this.scope}`, null);
     if (this.scope)
       for (const folder of await this.store.folders(this.scope)) {
         const at = await this.store.get(this.inventoryKey(folder.id), 0);
@@ -1566,9 +1570,11 @@ export class Replica {
     const watchdog = setInterval(() => {
       if (Date.now() - this.lastChangeAt > NO_PROGRESS_MS) this.suspend();
     }, 30000);
+    this.folderOutages.clear();
     this.active = (async () => {
       let offlineSince = 0;
       let attempt = 0;
+      let outageAttempt = 0;
       try {
         for (;;) {
           this.holdingOffline = !!offlineSince;
@@ -1591,6 +1597,9 @@ export class Replica {
           }
           offlineSince = 0;
           attempt = 0;
+          if (this.outageRetry) await this.waitToRetry(this.retryDelay(outageAttempt++));
+          else outageAttempt = 0;
+          if (this.stopped || this.paused) break;
           if (
             !this.force &&
             !again &&
@@ -1622,6 +1631,15 @@ export class Replica {
     this.hubUnavailable = isHubUnreachable(error);
     this.error = error.message;
   }
+  async hubStillAnswers() {
+    try {
+      await this.refreshCatalog();
+      this.check();
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async refreshCatalog() {
     const pending = this.interactiveClient.refresh({ owner: "sync" });
     const signal = this.syncAbort?.signal;
@@ -1647,6 +1665,7 @@ export class Replica {
     this.stopped = false;
     this.moreGalleryWork = false;
     this.moreFolderWork = false;
+    this.outageRetry = false;
     this.cycleAnswered = false;
     if (!this.hubUnavailable) this.error = null;
     this.changed();
@@ -1689,6 +1708,9 @@ export class Replica {
       const folders = (await this.store.folders(this.scope))
         .filter((f) => f.selected)
         .sort((a, b) => Number(!!b.initialized) - Number(!!a.initialized));
+      const turnKey = `syncTurn:${this.scope}`;
+      const cutAt = folders.findIndex((f) => f.id === this.syncTurn);
+      if (cutAt >= 0) folders.push(...folders.splice(0, cutAt + 1));
       if (this.force) {
         this.lastFullScan = Date.now();
         await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
@@ -1715,6 +1737,16 @@ export class Replica {
             "This folder is no longer shared by the hub. Export local changes before removing it.",
           );
           continue;
+        }
+        const outageIssue = "The hub did not complete this folder's requests. Arca retries it on the next sync.";
+        if (this.folderOutages.get(folder.id) >= FOLDER_OUTAGE_RETRIES) {
+          settled.add(folder.id);
+          errors.push(`${folder.name}: ${folder.issue || outageIssue}`);
+          continue;
+        }
+        if (folders.length > 1 && this.syncTurn !== folder.id) {
+          this.syncTurn = folder.id;
+          await this.store.set(turnKey, folder.id).catch(() => {});
         }
         this.syncingVolume = folder.id;
         this.rowIssues.delete(folder.id);
@@ -1807,29 +1839,50 @@ export class Replica {
               `Could not sync ${fileCount(failed.length)}: ${failed.slice(0, 3).join("; ")}`,
             );
           if (galleryError) throw galleryError;
+          this.folderOutages.delete(folder.id);
         } catch (e) {
           if (e.code === "SYNC_YIELD") {
             this.moreFolderWork = true;
+            this.folderOutages.delete(folder.id);
             if (galleryError)
               await this.store.issue(this.scope, folder.id, galleryError.message);
             continue;
           }
           if (this.syncAbort?.signal.aborted) this.check();
-          if (isHubUnreachable(e)) throw e;
-          if (transientSnapshot(e)) {
+          if (e.code === "SYNC_INTERRUPTED") throw e;
+          let message = e.message;
+          if (isHubUnreachable(e)) {
+            if (!(await this.hubStillAnswers())) {
+              this.check();
+              throw e;
+            }
+            const outages = (this.folderOutages.get(folder.id) || 0) + 1;
+            this.folderOutages.set(folder.id, outages);
+            if (outages < FOLDER_OUTAGE_RETRIES) {
+              this.moreFolderWork = true;
+              this.outageRetry = true;
+              continue;
+            }
+            message =
+              galleryError?.message ||
+              (await this.store.folder(this.scope, folder.id))?.issue ||
+              outageIssue;
+          } else if (transientSnapshot(e)) {
             deferred = true;
             continue;
           }
-          if (e.code !== "SYNC_INTERRUPTED")
-            await this.store.issue(this.scope, folder.id, e.message);
-          if (e.code === "SYNC_INTERRUPTED") throw e;
+          await this.store.issue(this.scope, folder.id, message);
           settled.add(folder.id);
-          errors.push(`${folder.name}: ${e.message}`);
+          errors.push(`${folder.name}: ${message}`);
         } finally {
           this.turnDeadline = null;
           this.syncingVolume = null;
           this.changed();
         }
+      }
+      if (this.syncTurn) {
+        this.syncTurn = null;
+        await this.store.set(turnKey, null).catch(() => {});
       }
       await this.cleanTransferObjects(this.scope).catch(() => {});
       const complete = !errors.length && !this.moreFolderWork && !deferred;

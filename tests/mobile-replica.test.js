@@ -3947,7 +3947,7 @@ test("a folder that fails every cycle does not keep scheduled cycles forcing ful
   assert.equal(scans.includes(healthy.id), false, "the next scheduled cycle no longer re-verifies the healthy folder");
 });
 
-test("gallery connection loss stops the batch without failing every photo and resumes online", async (t) => {
+test("uploads that keep losing the connection stop the batch without failing every photo, and resume", async (t) => {
   const f = await galleryFixture(
     t,
     [1, 2, 3].map((id) => ({
@@ -3964,9 +3964,11 @@ test("gallery connection loss stops the batch without failing every photo and re
     attempts++;
     throw new Error("Network request failed");
   };
+  r.retryDelay = () => 1;
   await r.sync();
-  assert.equal(attempts, 1);
-  assert.equal(r.hubUnavailable, true);
+  assert.equal(attempts, 3, "one photo per try, and a bounded number of tries while the hub answers");
+  assert.equal(r.hubUnavailable, false);
+  assert.match((await f.store.folder(r.scope, f.volume.id)).issue, /did not complete this folder's requests/);
   assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).failed, 0);
   r.upload = upload;
   await sync(f);
@@ -4322,8 +4324,10 @@ test("a retried upload does not hash the pending file again", async (t) => {
     if (options.method === "PUT") throw new Error("Network request failed");
     return fetch(url.replace("https://fixture.invalid", base), options);
   });
+  f.replica.retryDelay = () => 1;
   await f.replica.sync();
-  assert.equal(f.replica.hubUnavailable, true);
+  assert.equal(f.replica.hubUnavailable, false);
+  assert.equal(hashes, 3, "the first try hashes the file, its snapshot and its queued object; the two further tries hash nothing");
   assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 1);
   hashes = 0;
   await f.replica.sync();
@@ -4355,7 +4359,7 @@ test("a slow optional view serves saved data without marking the hub offline", a
   assert.ok(!(await f.replica.remoteView("/v1/machines")).offline);
 });
 
-test("a Tailscale route failure is an outage with saved views, and a lost chunk keeps the queue without a folder issue", async (t) => {
+test("a Tailscale route failure is an outage with saved views, and a lost chunk is sent again without a folder issue or an offline hub", async (t) => {
   const f = await fixture(t);
   await f.replica.select(f.volume);
   await sync(f);
@@ -4387,16 +4391,97 @@ test("a Tailscale route failure is an outage with saved views, and a lost chunk 
     f.files.work(f.replica.scope, f.volume.id, "large.bin"),
     crypto.randomBytes(CHUNK * 2 + 5),
   );
-  await f.replica.sync();
-  assert.equal(f.replica.hubUnavailable, true);
+  f.replica.retryDelay = () => 1;
+  await sync(f);
+  assert.equal(f.replica.hubUnavailable, false);
   assert.equal(
     (await f.store.folder(f.replica.scope, f.volume.id)).issue,
     null,
   );
-  assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 1);
+  assert.equal(puts > 2, true, "the lost chunk is sent again in the same sync");
+  assert.ok(f.daemon.engine.store.current(f.volume.id, "large.bin"));
+  f.stall(null);
+});
+
+test("a folder whose requests keep failing while the hub answers never stops the folders after it", async (t) => {
+  const f = await fixture(t),
+    s = f.daemon.engine.store;
+  const later = s.addVolume("Zeta");
+  await f.replica.select(f.volume);
+  await f.replica.select(later);
+  await sync(f);
+  fs.writeFileSync(path.join(f.volume.path, "stuck.txt"), "never arrives");
+  fs.writeFileSync(path.join(later.path, "good.txt"), "healthy");
+  await f.daemon.engine.cycle();
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  const stuck = s.current(f.volume.id, "stuck.txt").hash;
+  let refused = 0;
+  f.stall((url, options) => {
+    if (url.includes(stuck)) {
+      refused++;
+      throw Object.assign(new Error("The connection to the hub was interrupted. Check the connection and try again."), { code: "CONNECTION_LOST" });
+    }
+    return fetch(url.replace("https://fixture.invalid", base), options);
+  });
+  const waits = [];
+  f.replica.retryDelay = (attempt) => (waits.push(attempt), 1);
+  const cycle = f.replica.cycle.bind(f.replica);
+  let cycles = 0;
+  f.replica.cycle = async () => {
+    await cycle();
+    if (++cycles === 3) f.replica.runAgain = true;
+  };
+  await f.replica.sync();
+  assert.equal(cycles, 4, "a further cycle of the same sync leaves the folder alone");
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, later.id, "good.txt"), "utf8"), "healthy");
+  assert.equal(f.replica.hubUnavailable, false, "the hub answered, so it is not shown as offline");
+  assert.equal(refused, 3, "the folder is retried a bounded number of times in one sync");
+  assert.deepEqual(waits, [0, 1], "each further try waits longer");
+  assert.match((await f.store.folder(f.replica.scope, f.volume.id)).issue, /did not complete this folder's requests/);
+  assert.equal((await f.store.folder(f.replica.scope, later.id)).issue, null);
+  await f.store.issue(f.replica.scope, f.volume.id, "Could not sync 1 file: a.txt");
+  await f.replica.sync();
+  assert.equal(refused, 6, "the next sync tries the folder again from the start");
+  assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).issue, "Could not sync 1 file: a.txt", "a real issue is not replaced by the connection one");
   f.stall(null);
   await sync(f);
-  assert.ok(f.daemon.engine.store.current(f.volume.id, "large.bin"));
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, f.volume.id, "stuck.txt"), "utf8"), "never arrives");
+  assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).issue, null);
+});
+
+test("a cycle cut inside a folder starts the next one after it, so a folder that hangs every time does not starve the rest", async (t) => {
+  const f = await fixture(t),
+    s = f.daemon.engine.store;
+  const later = s.addVolume("Zeta");
+  await f.replica.select(f.volume);
+  await f.replica.select(later);
+  await sync(f);
+  fs.writeFileSync(path.join(f.volume.path, "hangs.txt"), "held");
+  fs.writeFileSync(path.join(later.path, "good.txt"), "healthy");
+  await f.daemon.engine.cycle();
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  const held = s.current(f.volume.id, "hangs.txt").hash;
+  f.stall((url, options) => {
+    if (!url.includes(held)) return fetch(url.replace("https://fixture.invalid", base), options);
+    return new Promise((resolve, reject) => {
+      options.signal?.addEventListener("abort", () => reject(options.signal.reason));
+      setTimeout(() => running.suspend(), 20);
+    });
+  });
+  let running = f.replica;
+  await f.replica.sync();
+  assert.equal(fs.existsSync(f.files.work(f.replica.scope, later.id, "good.txt")), false, "the first cycle is cut before the later folder");
+  assert.equal(await f.store.get(`syncTurn:${f.replica.scope}`), f.volume.id);
+  const reopened = new Replica({ store: f.store, files: f.files, client: f.client, platform: "ios" });
+  await reopened.load();
+  running = reopened;
+  await reopened.sync();
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, later.id, "good.txt"), "utf8"), "healthy", "a relaunched app starts after the folder it was cut in");
+  assert.equal(await f.store.get(`syncTurn:${f.replica.scope}`), f.volume.id);
+  f.stall(null);
+  await sync(f);
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, f.volume.id, "hangs.txt"), "utf8"), "held");
+  assert.equal(await f.store.get(`syncTurn:${f.replica.scope}`), null);
 });
 
 test("a photo export timeout fails that photo only and never marks the hub offline", async (t) => {
@@ -5390,6 +5475,7 @@ test("mobile keeps each synchronized file once and objects only while a transfer
     }
     return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
   });
+  replica.retryDelay = () => 1;
   await replica.sync();
   const pendingHash = (await store.pending(replica.scope, volume.id)).find((op) => op.path === "local.bin")?.hash;
   assert.ok(pendingHash, "the local edit waits for the hub");

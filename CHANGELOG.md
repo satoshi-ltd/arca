@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.5 — 2026-11-25
+
+- On the phone, a folder that keeps failing no longer stops the folders after it from syncing: when one folder loses its connection while the hub still answers, the phone goes on with the rest, tries that folder again and shows the problem on it instead of "hub unavailable".
+- A phone sync cut in the middle of a folder, also by closing the app, starts the next one at the folder after it.
+
+Needs: native build
+
 ## 0.10.4 — 2026-11-25
 
 - The photo viewer on desktop and web shows only the photo's date, at the lower left, instead of a centred file name with the date, time and raw coordinates. The name, the time and the coordinates stay in Info, and a video shows no caption.

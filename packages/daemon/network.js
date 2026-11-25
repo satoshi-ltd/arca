@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
 export const release = {
-  version: "0.10.4",
+  version: "0.10.5",
 };
 export function tuneServer(server) {
   server.requestTimeout = 65000;

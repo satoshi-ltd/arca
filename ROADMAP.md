@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-11-23 · Phase 1 release.
+Updated 2026-11-25 · Phase 1 release.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -27,10 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-SYNC-STARVATION** — A stuck Photos folder never stops the phone's other folders from syncing
-  `bug · agent · high`
-  Reported by the maintainer on the Fold: Photos stays "Incomplete" and the other folders stop syncing. 0.9.72 stops each upload turn from re-exporting and re-hashing the original, the likeliest cause. Left: a cycle restarts at the first folder (alphabetical) and ends early on a hub-unreachable or interrupted error raised inside any folder, so a folder that keeps failing that way starves every folder after it; confirm with a trace from a development build on the Fold. Accept: with one folder that fails, times out or loops every cycle, every other selected folder still completes a sync, with a test.
-
 - **MOB-PIXEL-AUDIT** — Every phone component is pixel perfect on iOS and Android
   `bug · agent · high`
   Requested by the maintainer after the switch's off-centre knob. The arithmetic defects shipped in 0.9.70. Left: about 25 places where the app and the kit (`design/mobile.css`) draw the same element differently (gaps of 8 against 6, 10 or 14; the sheet header 72 against 64; the setup display title 26 against 36; the Fold's compact rail; field insets 12 against 16; the mini player's controls and Now playing's header), which wait for the maintainer to say which side wins; and the Android text centring checks only a device can confirm. Accept: each remaining difference resolved on the side the maintainer chooses, with a test, and the device checks listed for the maintainer.
@@ -38,6 +34,22 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 - **VIDEO-LIBRARY-CACHE-FIRST** — A replica's video library paints from its saved copy and refreshes from the hub behind it
   `feature · agent · normal`
   Approved by the maintainer. Opening the library waits up to ten seconds for the hub before falling back to the saved copy. accept: with a held hub the desktop library and a title page render from the saved copy at once and update when the hub answers; with no saved copy the downloads list as today; tests hold the hub and assert the first paint, and check what the phone does with the same route.
+
+- **MOB-RENAME-MODIFIED** — The phone renames a file whose edits have not reached the hub
+  `feature · agent · low`
+  Decided by the maintainer (yes to DEC-RENAME-MODIFIED). Desktop and server replicas already do; the phone refuses with "Local file changed. Sync before renaming.". accept: the phone renames a locally modified file, the edit and the new name both reach the hub and nothing is lost when the hub rejects a stale deletion, with a test.
+
+- **DEC-CONVERTING-LEGACY** — SPEC says once what the `converting` gallery mode is for
+  `chore · agent · low`
+  Decided by the maintainer: the mode stays. accept: SPEC's "Interrupted conversions" bullet is folded into "Damaged records"; no code changes.
+
+- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
+  `feature · agent · high`
+  The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
+
+- **PHOTOS-DB-LOCKED** — A hub answer never fails on a briefly locked photo index
+  `bug · agent · normal`
+  Seen twice on the Windows runner, both passing on rerun: run 45135942258, `tests/mass-delete.test.js` "renaming a large directory is a move, not a disappearance: nothing is held" failed with `Hub 409: {"error":"Photos: database is locked"}`; and run 44690626609: `tests/proposed-deletes.test.js` "another device's edit of a held file, based on the revision before the hold, lands without a conflict copy" failed with `Photos: Hub 409: {"error":"Photos: database is locked"}`. A slow disk can make the photo index's SQLite busy long enough for a sync request to fail, which a real hub on a busy disk could hit too. Accept: with the photo index held by a second writer for longer than today's wait, the request waits and completes instead of answering 409.
 
 ## In progress
 
@@ -53,17 +65,6 @@ _None._
 - **VERIFY-WIZARD-FOLDERS** — The first-run Folders step starts empty and scrolls
   `verify · maintainer · normal · depends: DEPLOY-0954`
   accept: on the built desktop app and on a server's web wizard, pairing with a hub that has more folders than the window shows lists them with none chosen, scrolls to Start syncing, and Choose folders stays disabled until one is switched on.
-
-### Decisions
-
-Each carries a recommendation; a yes or no is enough.
-
-- **DEC-RENAME-MODIFIED** — Should the phone rename a file whose edits have not reached the hub?
-  `decision · maintainer · low`
-  Desktop and server replicas already do; the phone refuses with "Local file changed. Sync before renaming.". Recommendation: allow it; the hub rejects a stale deletion, so nothing is lost.
-- **DEC-CONVERTING-LEGACY** — Keep the `converting` gallery mode?
-  `decision · maintainer · low`
-  `gallery.js` writes it on purpose when Change album… repairs a damaged record. Recommendation: keep it, close this decision and fold SPEC's "Interrupted conversions" bullet into "Damaged records".
 
 ### Native work waiting for a build
 
@@ -107,17 +108,16 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
   `bug · agent · normal · native` · small
   The credential is stored `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so a background task that starts on a locked phone cannot load it and ends as failed. Accept: after-first-unlock, this device only, re-saved once, pinned by a test; in the same change `NSAllowsLocalNetworking` replaces `NSAllowsArbitraryLoads` (the native module already refuses plain HTTP outside verified addresses) and the config test pins it.
 
-### Data safety — high
-
-- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
-  `feature · agent · high` · medium
-  The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
-
 ### Reliability — normal
 
-- **PHOTOS-DB-LOCKED** — A hub answer never fails on a briefly locked photo index
-  `bug · agent · normal` · small
-  Seen twice on the Windows runner, both passing on rerun: run 45135942258, `tests/mass-delete.test.js` "renaming a large directory is a move, not a disappearance: nothing is held" failed with `Hub 409: {"error":"Photos: database is locked"}`; and run 44690626609: `tests/proposed-deletes.test.js` "another device's edit of a held file, based on the revision before the hold, lands without a conflict copy" failed with `Photos: Hub 409: {"error":"Photos: database is locked"}`. A slow disk can make the photo index's SQLite busy long enough for a sync request to fail, which a real hub on a busy disk could hit too. Accept: with the photo index held by a second writer for longer than today's wait, the request waits and completes instead of answering 409.
+- **TEST-SHARED-DOWNLOAD-LOAD** — The shared-download test does not depend on the machine's load
+  `bug · agent · low` · small
+  Seen once on 2026-11-25 in the local pre-push suite, passing alone and on the next two runs: `tests/mobile-replica.test.js` "identical files materialize from one download across snapshot pages after the first copy moved into place" counted two downloads of the shared object where it expects one, after 18 s where it normally takes 3. Unknown whether a turn that yields under load really downloads the object twice on a slow phone. Accept: the cause is traced; a real double download is fixed with a test that forces the yield, a test-only timing assumption is removed.
+
+- **REPLICA-FOLDER-OUTAGE** — A desktop replica's folder that keeps losing its connection does not stop the folders after it
+  `bug · agent · normal` · medium
+  Found by the review of MOB-SYNC-STARVATION, not traced: `engine.js` marks the hub unavailable on a folder's transport failure and SPEC says that ends the cycle, so one folder whose requests keep failing while the hub answers may starve the rest, as it did on the phone before 0.10.5. Accept: a failing test first; then a desktop or server replica with one such folder still completes the others, as the phone does.
+
 - **HUB-SCAN-SAME-FOLDER** — A proposal does not wait for a full scan of its own folder
   `feature · agent · normal` · medium
   Found by the review of HUB-SCAN-LOCK. A hub folder's scan holds that folder, so during a restart scan or the six-hour reconciliation of a large folder its own proposals, and the phones' gallery requests for it, wait for the whole scan and replicas can still mark the hub unavailable for that folder. A control that waited a second also holds back new folder work behind that scan. Accept: with a full scan of a folder held open by a stubbed scanner, a proposal for a path in that folder completes, and the scan never records a deletion or an older version over what the proposal committed.
