@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.9 — 2026-11-25
+
+- With photo uploads on, the phone no longer re-reads the whole photo library every minute while Arca is open: it looks at the most recently changed photos and stops at the first page it already knows. A new or edited photo is still picked up within the minute, and the whole library is read when the app starts, on Sync now and at least every six hours.
+
+Needs: native build
+
 ## 0.10.8 — 2026-11-25
 
 - The phone renames a file you edited there before the edit has synced, instead of answering "Local file changed. Sync before renaming.". The edit reaches the hub under the new name, as it already did from a computer.

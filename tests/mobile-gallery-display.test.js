@@ -210,6 +210,7 @@ test("under limited photo access Photo uploads offers Open settings below the wa
   const media = read("media-library.js");
   assert.match(media, /allowMore: \(\) =>\s+Platform\.OS === "ios"\s+\? MediaLibrary\.presentPermissionsPickerAsync\(\)\s+: Linking\.openSettings\(\),/, "iPhone opens the system photo selection, Android the app settings");
   assert.match(media, /changes: \(listener\) => MediaLibrary\.addListener\(listener\),/);
+  assert.match(media, /sortBy: \[\[source\.recent \? "modificationTime" : "creationTime", false\]\],/, "a quick pass reads the most recently changed first, so a photo without a capture date is seen");
 });
 
 test("refreshing Photo uploads only reads the photo permission, so Android never reopens its picker in a loop", async () => {

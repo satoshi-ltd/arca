@@ -359,7 +359,7 @@ export class Gallery {
       await r.store.setGallery(r.scope, volume, {
         ...source,
         enabled: !!enabled,
-        ...(enabled ? { scannedAt: null } : {}),
+        ...(enabled ? { scannedAt: null, cursors: {} } : {}),
       });
     } finally {
       r.importing = r.busy = false;
@@ -853,6 +853,11 @@ export class Gallery {
     const r = this.r;
     let source = await r.store.gallery(r.scope, folder.id);
     source.prefix = source.prefix.replace(/^Phone-/, "Machine-");
+    if (source.enabled && !source.whole && (!source.scannedAt || r.force || r.inventoryDue.get(folder.id) === true)) {
+      source.whole = true;
+      source.cursors = {};
+      await r.store.setGallery(r.scope, folder.id, source);
+    }
     for (const { id, row } of await r.store.corruptPicks(r.scope, folder.id)) {
       const kept = r.files.picked(r.scope, folder.id, id);
       if (await r.files.stat(kept)) {
@@ -945,13 +950,10 @@ export class Gallery {
       const scanning = () => Object.keys(source.cursors).length > 0;
       const policy = await this.policy(folder.id);
       if (r.force) await r.store.retryGallery(r.scope, folder.id);
-      // Persist the cursor only after the entire page is durable. A fresh pass
-      // after completion catches moved/older photos and changing OS inventories.
+      // Persist the cursor only after the entire page is durable.
       const scanDue =
         scanning() ||
-        !source.scannedAt ||
-        r.force ||
-        r.inventoryDue.get(folder.id) === true ||
+        source.whole ||
         Date.now() - Date.parse(source.scannedAt) >= r.discoveryMs;
       for (let pageIndex = 0; scanDue && pageIndex < 4; pageIndex++) {
         r.check();
@@ -960,6 +962,7 @@ export class Gallery {
         );
         if (target === undefined) {
           source.cursors = {};
+          source.whole = undefined;
           source.scannedAt = new Date().toISOString();
           await r.store.setGallery(r.scope, folder.id, source);
           break;
@@ -971,11 +974,13 @@ export class Gallery {
             ...source,
             albumId: target,
             after: cursor,
+            recent: !source.whole,
           });
         } catch (error) {
           source.cursors = {};
           throw error;
         }
+        let unchanged = true;
         for (const asset of page.assets) {
           r.check();
           const known = await r.store.galleryAsset(
@@ -984,6 +989,7 @@ export class Gallery {
             asset.id,
           );
           if (!known) {
+            unchanged = false;
             await r.store.putGalleryAsset(r.scope, folder.id, {
               id: asset.id,
               creationTime: asset.creationTime,
@@ -998,11 +1004,13 @@ export class Gallery {
             Number.isFinite(known.modificationTime) &&
             asset.modificationTime !== known.modificationTime
           ) {
+            unchanged = false;
             await r.store.putGalleryAsset(r.scope, folder.id, {
               ...known,
               modificationTime: asset.modificationTime,
             });
           } else if (known.state === "unavailable") {
+            unchanged = false;
             await r.store.putGalleryAsset(r.scope, folder.id, {
               ...known,
               modificationTime: asset.modificationTime,
@@ -1015,6 +1023,7 @@ export class Gallery {
             Number.isFinite(asset.modificationTime) &&
             asset.modificationTime !== known.modificationTime
           ) {
+            unchanged = false;
             await r.store.putGalleryAsset(r.scope, folder.id, {
               ...known,
               modificationTime: asset.modificationTime,
@@ -1030,13 +1039,14 @@ export class Gallery {
           throw new Error("The photo library returned an invalid page cursor.");
         source.cursors = {
           ...source.cursors,
-          [cursorKey(target)]: page.hasNextPage ? page.endCursor : null,
+          [cursorKey(target)]: page.hasNextPage && (source.whole || !unchanged) ? page.endCursor : null,
         };
         const finished = targets.every(
           (id) => source.cursors[cursorKey(id)] === null,
         );
         if (finished) {
           source.cursors = {};
+          source.whole = undefined;
           source.scannedAt = new Date().toISOString();
         }
         await r.store.setGallery(r.scope, folder.id, source);

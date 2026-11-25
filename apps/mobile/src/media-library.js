@@ -20,7 +20,7 @@ export const mediaLibrary = {
       ...(source.after ? { after: source.after } : {}),
       ...(source.albumId ? { album: source.albumId } : {}),
       mediaType: source.videos ? ["photo", "video"] : ["photo"],
-      sortBy: [["creationTime", false]],
+      sortBy: [[source.recent ? "modificationTime" : "creationTime", false]],
     });
   },
   async preview(id) {

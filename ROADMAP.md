@@ -27,10 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **PERF-MOB-REDISCOVERY** — The phone does not re-read the whole photo library every minute
-  `feature · agent · high`
-  The foreground rediscovery pages the whole camera roll every 60 s and every 4 pages runs another full sync cycle: about 75 cycles per pass for 30,000 photos. Accept: the minute pass stops at the first fully known, unchanged page (full passes stay for the first scan, Sync now and the inventory schedule); a test with 3,000 known assets pages at most twice and runs no follow-up cycle, a new asset is still queued, and `force` pages everything. SPEC §5's "rediscovered every minute" changes with it.
-
 - **PHOTOS-DB-LOCKED** — A hub answer never fails on a briefly locked photo index
   `bug · agent · normal`
   Seen twice on the Windows runner, both passing on rerun: run 45135942258, `tests/mass-delete.test.js` "renaming a large directory is a move, not a disappearance: nothing is held" failed with `Hub 409: {"error":"Photos: database is locked"}`; and run 44690626609: `tests/proposed-deletes.test.js` "another device's edit of a held file, based on the revision before the hold, lands without a conflict copy" failed with `Photos: Hub 409: {"error":"Photos: database is locked"}`. A slow disk can make the photo index's SQLite busy long enough for a sync request to fail, which a real hub on a busy disk could hit too. Accept: with the photo index held by a second writer for longer than today's wait, the request waits and completes instead of answering 409.

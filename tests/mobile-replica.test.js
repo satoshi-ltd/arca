@@ -3941,6 +3941,114 @@ test("a folder that fails every cycle does not keep scheduled cycles forcing ful
   assert.equal(scans.includes(healthy.id), false, "the next scheduled cycle no longer re-verifies the healthy folder");
 });
 
+test("the minute rediscovery stops at the first page of known photos, still queues a new one, and a forced pass pages everything", async (t) => {
+  const f = await galleryFixture(t, []);
+  const r = f.replica;
+  await f.enable();
+  await sync(f);
+  for (let n = 0; n < 3000; n++) {
+    const asset = { id: `known-${n}`, filename: `${n}.jpg`, creationTime: 1750000000000 - n, modificationTime: 1 };
+    f.assets.push(asset);
+    await f.store.putGalleryAsset(r.scope, f.volume.id, { id: asset.id, creationTime: asset.creationTime, modificationTime: 1, name: asset.filename, state: "accepted", resources: [] });
+  }
+  let pages = 0;
+  const page = f.media.page;
+  const orders = new Set();
+  f.media.page = async (source) => (pages++, orders.add(source.recent), page(source));
+  let cycles = 0;
+  const cycle = r.cycle.bind(r);
+  r.cycle = async () => (cycles++, cycle());
+  r.discoveryMs = 0;
+  const minute = () => r.sync(false, { scheduled: true });
+  await minute();
+  assert.equal(pages, 1, "one page of known, unchanged photos ends the pass");
+  assert.equal(cycles, 1, "and asks for no follow-up cycle");
+  assert.deepEqual([...orders], [true], "the quick pass reads the most recently changed first");
+
+  f.assets.unshift({ id: "fresh", filename: "fresh.jpg", creationTime: 1750000000001, modificationTime: 1 });
+  f.data.set("fresh", Buffer.from("original fresh"));
+  pages = 0;
+  await minute();
+  assert.equal(pages, 2, "a page with a new photo is followed by one more, which is all known");
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, "fresh")).state, "accepted", "the new photo is uploaded");
+
+  pages = 0;
+  await r.sync(true);
+  const source = async () => galleryConfig(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(pages, 4, "Sync now starts a whole pass, four pages a cycle");
+  assert.equal(orders.has(false), true);
+  assert.equal((await source()).whole, true);
+  let failed = false;
+  const reading = f.media.page;
+  f.media.page = async (query) => {
+    if (failed) return reading(query);
+    failed = true;
+    throw new Error("The photo library is busy");
+  };
+  await minute();
+  assert.equal((await source()).whole, true, "a whole pass that fails stays owed");
+  pages = 0;
+  orders.clear();
+  for (let turn = 0; turn < 20 && (await source()).whole; turn++) await minute();
+  assert.equal(pages, 31, "and the minute cycles read the whole library from the start instead of a quick look");
+  assert.deepEqual([...orders], [false], "in capture order");
+  assert.equal((await source()).whole, undefined);
+});
+
+test("a whole pass replaces a quick one left mid-way, and a quick pass looks at every selected album", async (t) => {
+  const f = await galleryFixture(t, []);
+  const r = f.replica;
+  const camera = [];
+  const trips = [];
+  f.media.albums = async () => [
+    { id: "camera", title: "Camera", assetCount: camera.length },
+    { id: "trips", title: "Trips", assetCount: trips.length },
+  ];
+  const asked = [];
+  f.media.page = async (query) => {
+    asked.push(`${query.albumId}:${query.after || 0}:${query.recent ? "recent" : "whole"}`);
+    const list = query.albumId === "camera" ? camera : trips;
+    const after = Number(query.after || 0);
+    return { assets: list.slice(after, after + 100), hasNextPage: after + 100 < list.length, endCursor: String(after + 100) };
+  };
+  f.media.export = async () => {
+    throw new Error("Photo no longer accessible");
+  };
+  await r.gallery.configure(f.volume.id, { albums: [{ id: "camera", title: "Camera" }, { id: "trips", title: "Trips" }], videos: true }, true);
+  await sync(f);
+  const known = async (list, name, count) => {
+    for (let n = 0; n < count; n++) {
+      list.push({ id: `${name}-${n}`, filename: `${name}-${n}.jpg`, creationTime: 1750000000000 - n, modificationTime: 1 });
+      await f.store.putGalleryAsset(r.scope, f.volume.id, { id: `${name}-${n}`, creationTime: 1750000000000 - n, modificationTime: 1, name: `${name}-${n}.jpg`, state: "accepted", resources: [] });
+    }
+  };
+  await known(camera, "camera", 250);
+  await known(trips, "trips", 250);
+  trips.unshift({ id: "new-trip", filename: "new-trip.jpg", creationTime: 1750000000002, modificationTime: 2 });
+  r.discoveryMs = 0;
+  asked.length = 0;
+  await r.sync(false, { scheduled: true });
+  assert.deepEqual(asked, ["camera:0:recent", "trips:0:recent", "trips:100:recent"], "the first album ends on its known page and the second is still read");
+  assert.ok(await f.store.galleryAsset(r.scope, f.volume.id, "new-trip"));
+
+  for (let n = 0; n < 500; n++) camera.unshift({ id: `burst-${n}`, filename: `burst-${n}.jpg`, creationTime: 1750000001000 + n, modificationTime: 3 });
+  await r.sync(false, { scheduled: true });
+  const source = async () => galleryConfig(await f.store.folder(r.scope, f.volume.id));
+  assert.equal((await source()).cursors.camera, "400", "four pages of new photos leave the quick pass mid-way");
+  asked.length = 0;
+  await r.sync(true);
+  assert.equal(asked[0], "camera:0:whole", "Sync now starts over in capture order");
+  assert.equal((await source()).whole, true);
+  asked.length = 0;
+  await r.sync(true);
+  assert.equal(asked[0], "camera:400:whole", "a whole pass under way goes on from its cursor when another one falls due");
+  await r.gallery.setEnabled(f.volume.id, false);
+  await r.gallery.setEnabled(f.volume.id, true);
+  asked.length = 0;
+  await r.sync(false, { scheduled: true });
+  assert.equal(asked[0], "camera:0:whole", "turning uploads off and on reads the library from the start");
+});
+
 test("uploads that keep losing the connection stop the batch without failing every photo, and resume", async (t) => {
   const f = await galleryFixture(
     t,
