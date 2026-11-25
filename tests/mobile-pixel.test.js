@@ -239,6 +239,13 @@ test("the decided phone geometry: display headline, 64 dp Now playing header, fl
   assert.ok((phone.match(/data-icon="chevron-right" data-size="20"/g) || []).length > 0);
   assert.doesNotMatch(phone, /data-icon="chevron-right" data-size="(?!20)\d+"/);
   assert.doesNotMatch(phone, /class="m-srch-hit/);
+  const searching = page.split("\n").filter((line) => line.includes("m-srch")).join("\n");
+  const led = '<div class="m-setting m-line"><div class="m-tile"><span data-icon="[a-z0-9-]+" data-size="16"><\\/span><\\/div><div class="m-stack m-grow"><span class="m-row-title">';
+  assert.equal(searching.split('<div class="m-setting m-line">').length - 1, 9);
+  assert.equal((searching.match(new RegExp(led, "g")) || []).length, 9, "a recent search, an action and Show all lead with the app's tile and row title");
+  assert.match(search, /<View style=\{\[s\.tile, item\.type === "artist" && s\.searchCoverRound\]\}>\s+<Icon name=\{[^}]+\} size=\{16\} color=\{c\.accent\} \/>/);
+  const { kit } = await kitRules();
+  assert.deepEqual(kit(".m-srch-sel", "background"), [s.historyRowChosen.backgroundColor], "the Fold's chosen result is filled as the app fills it");
   for (const hit of phone.match(/<div class="m-row">.*?<div class="m-row-action">/g) || []) assert.match(hit, /<div class="m-stack"><span class="m-row-title">[^<]+<\/span><span class="m-caption">/);
 });
 

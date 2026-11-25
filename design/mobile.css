@@ -1620,10 +1620,6 @@
 .m-srch-round {
   border-radius: 50%;
 }
-.m-srch-more {
-  color: var(--m-ok-fg);
-  font-weight: 500;
-}
 .m-srch-chip {
   display: inline-flex;
   align-items: center;
@@ -1684,7 +1680,7 @@
   border-radius: var(--m-control-radius);
 }
 .m-srch-sel {
-  background: var(--m-tint);
+  background: var(--m-hover);
 }
 .m-srch-hit .m-tile,
 .m-srch-hit .m-cover {

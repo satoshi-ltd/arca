@@ -140,10 +140,6 @@ A fix lands only for a cost the measurement shows.
 - **MOB-UI-FIXES** — Five small phone defects
   `bug · agent · normal` · medium
   Android Back closes the Audio or Subtitles panel before the film; the Off position of a switch uses `line` (about 1.5:1) where desktop and SPEC §9 use `control` (3:1); the video player rotates on the nearly square Fold; the Photo uploads sheet shows no sign that a selected album is gone and Save is disabled without a reason; the player and photo viewer bars ignore the cutout and the gesture bar. Accept: `onRequestClose` closes an open panel first; `switchTrack` uses the control token with a 3:1 test in both palettes; a pure rotation rule skips the rotation under an aspect ratio of about 1.2 or on a wide layout; the album row reads "Unavailable" and the button carries its reason; a `layout.js` helper gives both bars their four margins, tested for portrait, landscape and the rotated player; the kit is regenerated.
-- **KIT-SEARCH-LEADS** — The kit draws the phone's search rows with the app's own icons
-  `chore · agent · low` · small
-  Found by the review of 0.10.11. In Search Arca the kit draws a bare 20 dp glyph before a recent search, an action and Show all, a Show all title in the accent weight 500, and the Fold's selected row in the tint; the app draws a 32 dp tint tile with a 16 dp icon, the row title style, and the hover fill. Accept: the kit redraws those four as the app ships them, pinned by pairs in `tests/mobile-pixel.test.js`; no app change.
-
 - **UX-DESK-A11Y** — The photo viewer shows its errors
   `bug · agent · normal` · small
   An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.
