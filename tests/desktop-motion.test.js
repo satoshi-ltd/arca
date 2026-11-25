@@ -574,6 +574,27 @@ test("the viewer captions a photo with its date alone at the lower left, and sho
   assert.match(style, /\.photo-viewer-caption:empty,\s+\.photo-info-open \.photo-viewer-caption \{\s+display: none;/);
 });
 
+test("the photo viewer shows its own errors over the photo and its result notices above it", async (t) => {
+  const ui = await viewerGallery(t, [photo("a.jpg", "20"), photo("b.jpg", "19"), photo("c.jpg", "18")]);
+  await openViewer(ui, 0);
+  const viewer = ui.$("#dialog.photo-viewer");
+  await confirmDelete(ui);
+  await until(ui.settled(() => ui.$("#dialog.photo-viewer")?.open && !ui.$("#background-dialog") && ui.$("#notice .notice-card") && ui.idle()));
+  assert.equal(ui.$("#notice").parentElement, ui.$("#dialog.photo-viewer"), "a result notice is drawn inside the viewer, above the photo");
+  assert.match(ui.$("#notice").textContent, /deleted/i);
+  Object.assign(ui.status, { role: "replica", hubUnavailable: true, hub: "http://casa", hubId: "hub" });
+  for (const poll of ui.polls) await poll();
+  await until(ui.settled(() => ui.$(".photo-delete")?.getAttribute("aria-disabled") === "true"));
+  ui.$(".photo-delete").click();
+  const error = ui.$("#dialog.photo-viewer #dialog-error");
+  await until(ui.settled(() => !error.hidden));
+  assert.match(error.textContent, /hub/i, "the explanation is written inside the viewer");
+  assert.match(style, /\.photo-viewer #dialog-error \{[^}]*position: absolute;[^}]*bottom: var\(--space-6\);/, "over the photo rather than below the window");
+  ui.$("#cancel-dialog").click();
+  await until(ui.settled(() => !viewer.open && ui.idle()));
+  assert.equal(ui.$("#notice").parentElement, ui.$("main"), "closing the viewer puts the notices back");
+});
+
 test("deleting the only photo from the viewer closes the viewer once the confirmation leaves, and focus lands in the gallery", async (t) => {
   const ui = await viewerGallery(t, [photo("solo.jpg", "20")]);
   await openViewer(ui, 0);

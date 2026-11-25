@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.10.15 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.10.16 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -476,6 +476,16 @@ exports/</textarea><p id="ignore-hint" class="hint">One gitignore pattern per li
               <div class="photo-viewer-stage"><div class="photo-viewer-image"><div class="kit-viewer-placeholder" aria-label="Photo placeholder"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg></div></div><button type="button" class="icon-button photo-previous" aria-label="Previous photo"><span data-icon="chevron-left"></span></button><button type="button" class="icon-button photo-next" aria-label="Next photo"><span data-icon="chevron-right"></span></button></div>
               <div class="photo-viewer-caption"><p>September 12, 2026</p></div>
             </div><div class="dialog-actions"><button type="button" class="secondary" id="cancel-dialog" aria-label="Back to gallery"><span data-icon="arrow-left"></span></button></div></form>
+          </dialog>
+        </div>
+        <p class="kit-caption">Photo viewer · an action that cannot run, such as Delete while the hub is away, explains why over the lower part of the photo, at the notice width; with Info open it centres over the photo beside the panel, and notices while the viewer is open are drawn inside it, above the photo.</p>
+        <div class="kit-dialog-stage">
+          <dialog open class="photo-viewer" aria-label="Photo viewer with an error">
+            <form><div id="background-dialog-content">
+              <div class="photo-viewer-head"><h2 id="viewer-error-title" class="sr-only">IMG_4401.jpg</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo"><span data-icon="download"></span></button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false"><span data-icon="info"></span></button><button type="button" class="icon-button photo-delete" aria-label="Delete photo"><span data-icon="trash-2"></span></button></div></div>
+              <div class="photo-viewer-stage"><div class="photo-viewer-image"><div class="kit-viewer-placeholder" aria-label="Photo placeholder"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg></div></div><button type="button" class="icon-button photo-previous" aria-label="Previous photo"><span data-icon="chevron-left"></span></button><button type="button" class="icon-button photo-next" aria-label="Next photo"><span data-icon="chevron-right"></span></button></div>
+              <div class="photo-viewer-caption"><p>September 12, 2026</p></div>
+            </div><div id="dialog-error" class="dialog-error" role="alert"><article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Cannot reach Casa</strong><p>Hub unavailable. Try again when it is reachable.</p></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article></div><div class="dialog-actions"><button type="button" class="secondary" id="cancel-dialog" aria-label="Back to gallery"><span data-icon="arrow-left"></span></button></div></form>
           </dialog>
         </div>
         <p class="kit-caption">Photo viewer · Info open. The photo area resizes at once; only the panel fades and slides on entry and exit.</p>

@@ -4130,6 +4130,35 @@ dialog.photo-viewer {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+.photo-viewer #dialog-error {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: 3;
+  width: min(var(--notice-width), calc(100% - 2 * var(--space-4)));
+  margin: 0;
+  padding: 0;
+  background: none;
+  transform: translateX(-50%);
+}
+.photo-viewer.photo-info-open #dialog-error {
+  left: calc((100% - 360px) / 2);
+  width: min(var(--notice-width), calc(100% - 360px - 2 * var(--space-4)));
+}
+.photo-viewer.photo-info-open #notice {
+  right: calc(360px + var(--space-4));
+}
+@media (max-width: 760px) {
+  .photo-viewer #dialog-error,
+  .photo-viewer.photo-info-open #dialog-error {
+    left: 50%;
+    z-index: 5;
+    width: min(var(--notice-width), calc(100% - 2 * var(--space-4)));
+  }
+  .photo-viewer.photo-info-open #notice {
+    right: var(--space-4);
+  }
+}
 .photo-viewer-caption:empty,
 .photo-info-open .photo-viewer-caption {
   display: none;

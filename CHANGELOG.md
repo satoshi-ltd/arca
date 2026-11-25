@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.16 — 2026-11-25
+
+- The photo viewer on desktop and web shows its errors over the photo and its result notices above it: a Delete refused while the hub is away, or a deletion's result, no longer lands out of sight behind the viewer.
+
+Needs: desktop build · hub redeploy · server replica redeploy
+
 ## 0.10.15 — 2026-11-25
 
 - On a computer or server that is not the hub, a folder whose requests keep losing the connection while the hub still answers no longer stops the folders after it: the problem shows on that folder, which retries on its own, instead of the whole device reading "hub unavailable". The phone has done this since 0.10.5.

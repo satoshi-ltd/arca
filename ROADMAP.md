@@ -27,9 +27,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UX-DESK-A11Y** — The photo viewer shows its errors
-  `bug · agent · normal`
-  An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.
+_None._
 
 ## In progress
 

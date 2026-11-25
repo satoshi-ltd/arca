@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.10.15";
+const APP_VERSION = "0.10.16";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1499,7 +1499,13 @@ function renderStateBanner(item) {
   box.innerHTML = markup;
   box.dataset.markup = markup;
 }
+function placeNotices() {
+  const box = $("#notice");
+  const host = document.querySelector("dialog.photo-viewer[open]") || $("main");
+  if (box && box.parentElement !== host) host.prepend(box);
+}
 function renderNotices() {
+  placeNotices();
   const box = $("#notice"),
     layout = noticeLayout(noticeStore.all(), { attention: 2, results: 1 }),
     items = layout.stack;
@@ -1527,6 +1533,7 @@ function renderNotices() {
       old.replaceWith(card);
     } else {
       card.classList.add("notice-enter");
+      card.addEventListener("animationend", () => card.classList.remove("notice-enter"), { once: true });
       box.append(card);
     }
   }
@@ -5097,6 +5104,7 @@ async function openGalleryPhoto(index) {
     event.currentTarget.getAttribute("aria-disabled") === "true" ? hubOnlyBlocked() : deleteGalleryPhotos([item]),
   );
   syncHubOnlyControls();
+  placeNotices();
   const infoPanel = $(".photo-info");
   const updateInfoActions = () => {
     infoPanel.querySelector(".photo-file").hidden = !item.metadata?.hasHistory;
@@ -10087,13 +10095,20 @@ function returnFocus(dialog) {
       : null;
   target?.focus();
 }
-document.addEventListener("close", (event) => returnFocus(event.target), true);
+document.addEventListener(
+  "close",
+  (event) => {
+    if (event.target.contains?.($("#notice"))) $("main").prepend($("#notice"));
+    returnFocus(event.target);
+  },
+  true,
+);
 function modal(html, submit, label = "Save", wide = false, layered = false) {
   if (isLeaving($("#dialog"))) settleLeave($("#dialog"));
   if (layered) {
     const previous = $("#dialog"),
       previousSubmit = submitDialog;
-    const identified = [previous, ...previous.querySelectorAll("[id]")];
+    const identified = [previous, ...[...previous.querySelectorAll("[id]")].filter((element) => element.id !== "notice")];
     for (const element of identified) {
       element.dataset.dialogId = element.id;
       element.id = "background-" + element.id;
