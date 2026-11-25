@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   IncomingSession,
   SHARE_STALLED,
+  PICK_STALLED,
   clearIncoming,
   copyPicked,
   resolveShared,
@@ -240,6 +241,13 @@ test("Android Import files copies each pick natively into the inbox, off the pic
   await assert.rejects(copyPicked(f.runtime, failing, assets, "import-2"), /provider went away/);
   await missing(path.join(f.temporary, "import-2-0"));
   await missing(path.join(f.temporary, "import-2-1"));
+  const silent = async (uri, destination) => {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "half");
+    return new Promise(() => {});
+  };
+  await assert.rejects(copyPicked(f.runtime, silent, assets, "import-3", { startMs: 300, stallMs: 40, pollMs: 10 }), { message: PICK_STALLED }, "a provider that stops sending ends the import instead of holding it forever");
+  await missing(path.join(f.temporary, "import-3-0"));
   const read = (file) => fs.readFile(new URL(`../apps/mobile/${file}`, import.meta.url), "utf8");
   const app = await read("src/App.jsx");
   assert.match(app, /copyToCacheDirectory: Platform\.OS !== "android"/, "the picker no longer copies on Android");

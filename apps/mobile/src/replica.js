@@ -44,6 +44,8 @@ export const OFFLINE_HOLD_MS = 5 * 60000;
 export const PROGRESS_MS = 1000;
 const IGNORE_HEAD_MS = 5000;
 const FOLDER_OUTAGE_RETRIES = 3;
+const QUIET_MS = 15000;
+export const SYNC_FINISHING = "Arca is still finishing the current sync. Try again in a moment.";
 const WEEK = 7 * 86400000;
 const missingRoot = () =>
   Object.assign(
@@ -118,6 +120,7 @@ export class Replica {
     this.progressAt = 0;
     this.rowIssues = new Map();
     this.folderOutages = new Map();
+    this.quietMs = QUIET_MS;
     this.syncTurn = null;
     this.swept = new Set();
   }
@@ -324,6 +327,19 @@ export class Replica {
   async settle() {
     this.stop();
     if (this.active) await this.active;
+  }
+  async quiet(ms = this.quietMs) {
+    this.stop();
+    if (!this.active) return;
+    let timer;
+    const late = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(SYNC_FINISHING)), ms);
+    });
+    try {
+      await Promise.race([this.active, late]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
   releaseSnapshot(session) {
     void this.interactiveClient
@@ -1941,21 +1957,18 @@ export class Replica {
       this.changed();
     }
   }
-  async importFile(volume, name, source) {
+  async importFile(volume, name, source, { owned = false } = {}) {
     await this.requireActiveReplica();
     validPath(name);
     if (builtinExcluded(name))
       throw new Error("This kind of file is always excluded from sync.");
     // Callers hold picking/importing, so no cycle restarts before the copy lands.
-    if (this.active) {
-      this.stop();
-      await this.active;
-    }
+    await this.quiet();
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Start syncing this folder first");
     await this.requireRoot(volume);
     const size = (await this.files.stat(source)).size;
-    await this.space(size * 2);
+    await this.space(owned ? 0 : size * 2);
     const incoming = await this.fingerprint(source, volume);
     const conflict = `${name}.conflict-import-${incoming.slice(0, 12)}`;
     const candidates = [
@@ -1983,7 +1996,8 @@ export class Replica {
     await this.inventoryNow(volume);
     await this.files.clearStaged(this.files.parent(destination));
     await this.mkdirInside(volume, this.files.parent(destination));
-    await this.files.copy(source, destination);
+    if (owned) await this.files.adopt(source, destination);
+    else await this.files.copy(source, destination);
     this.changed();
   }
   async renameFile(volume, name, newName, rev) {

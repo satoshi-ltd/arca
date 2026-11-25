@@ -2150,6 +2150,7 @@ export default function App() {
         if (kind === "photos" && source) {
           await replica.gallery.addPhotos(folder.id, result.assets);
         } else {
+          await replica.quiet();
           const copied =
             kind !== "photos" && Platform.OS === "android"
               ? await copyPicked(
@@ -2167,6 +2168,7 @@ export default function App() {
                 directory +
                   (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
                 asset.uri,
+                { owned: !!copied },
               );
           } finally {
             for (const asset of assets)

@@ -27,10 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-SHARE-WAIT** — Adding or saving a file on the phone never stops sync until a restart
-  `bug · agent · normal`
-  Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts; Save awaits the running cycle with no deadline; `importFile` needs twice the file's size because it copies the inbox file instead of moving it. Accept: Add files… uses the share's stall deadline and always releases `picking`, Save gives the running cycle a bounded time and says what it is waiting for, and the inbox copy is moved into place, with a test for each.
-
 - **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
   `bug · agent · normal`
   The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
@@ -108,6 +104,10 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 - **TEST-SHARED-DOWNLOAD-LOAD** — The shared-download test does not depend on the machine's load
   `bug · agent · low` · small
   Seen once on 2026-11-25 in the local pre-push suite, passing alone and on the next two runs: `tests/mobile-replica.test.js` "identical files materialize from one download across snapshot pages after the first copy moved into place" counted two downloads of the shared object where it expects one, after 18 s where it normally takes 3. Unknown whether a turn that yields under load really downloads the object twice on a slow phone. Accept: the cause is traced; a real double download is fixed with a test that forces the yield, a test-only timing assumption is removed.
+
+- **IOS-PICKER-DEADLINE** — A file picker that never returns does not hold the iPhone's sync
+  `bug · agent · normal · native` · small
+  Found by the review of MOB-SHARE-WAIT. On iOS the provider's copy happens inside the system document picker and the photo picker, awaited with no deadline while `picking` stops every sync; Android's copy has had the share's stall deadline since 0.10.13. Accept: both pickers' copies end with the stall message after the same deadlines and release `picking`, with a test; needs a native or picker-side progress signal.
 
 - **HUB-SCAN-SAME-FOLDER** — A proposal does not wait for a full scan of its own folder
   `feature · agent · normal` · medium

@@ -1,6 +1,6 @@
 [package]
 name = "arca-desktop"
-version = "0.10.12"
+version = "0.10.13"
 edition = "2021"
 license = "AGPL-3.0-only"
 

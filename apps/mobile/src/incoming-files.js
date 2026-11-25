@@ -47,6 +47,7 @@ export function incomingDestination(directory, name) {
   return validPath((prefix ? `${prefix}/${name}` : name).normalize("NFC"));
 }
 export const SHARE_STALLED = "The other app stopped sending the file. Share it again.";
+export const PICK_STALLED = "The app that holds the file stopped sending it. Choose it again.";
 // Idle time is counted in polls, never wall time, so a suspended app is not read as a stalled sender.
 export async function stallGuard(
   work,
@@ -125,20 +126,24 @@ export async function resolveShared(r, receive, raw, id, timing) {
     throw error;
   }
 }
-export async function copyPicked(r, receive, assets, id) {
+export async function copyPicked(r, receive, assets, id, timing) {
   const staged = [];
   try {
     const copies = [];
     for (const [index, asset] of assets.entries()) {
       const destination = r.files.incoming(`${id}-${index}`);
       staged.push(destination);
-      const received = await receive(asset.uri, destination);
+      const received = await stallGuard(
+        receive(asset.uri, destination),
+        async () => (await r.files.stat(destination).catch(() => null))?.size ?? 0,
+        { ...timing, late: () => r.files.remove(destination) },
+      );
       copies.push({ name: asset.name || received.name, uri: destination });
     }
     return copies;
   } catch (error) {
     for (const uri of staged) await r.files.remove(uri).catch(() => {});
-    throw error;
+    throw error.message === SHARE_STALLED ? new Error(PICK_STALLED) : error;
   }
 }
 export async function stageIncoming(r, payloads, id) {

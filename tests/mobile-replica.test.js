@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { quickHashFile } from "../packages/daemon/storage.js";
-import { Replica, CHUNK, HEADROOM } from "../apps/mobile/src/replica.js";
+import { Replica, CHUNK, HEADROOM, SYNC_FINISHING } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import {
   gallerySettingsChanged,
@@ -125,6 +125,7 @@ async function fixture(t, { timeout } = {}) {
           if (name.startsWith(".arca-copy-")) fs.rmSync(path.join(p, name), { force: true });
     },
     move: async (a, b) => fs.renameSync(a, b),
+    adopt: async (a, b) => fs.renameSync(a, b),
     replace: async (a, b) => fs.renameSync(a, b),
     text: async (p) => fs.readFileSync(p, "utf8"),
     hash: async (p) =>
@@ -4468,6 +4469,46 @@ test("a file edited on the phone is renamed before its edit reaches the hub, and
   await assert.rejects(f.replica.renameFile(f.volume.id, "mine.txt", "later.txt"), /File changed\. Reload before renaming\./, "a file waiting for the hub's newer version is not renamed");
   f.store.current = current;
   assert.equal(fs.existsSync(work("mine.txt")), true);
+});
+
+test("an inbox file is moved into its folder without needing its size twice, and a sync that will not stop does not hold the import forever", async (t) => {
+  const f = await fixture(t);
+  const r = f.replica;
+  await r.select(f.volume);
+  await sync(f);
+  const inbox = path.join(f.root, "inbox.bin");
+  const picked = path.join(f.root, "picked.bin");
+  const bytes = crypto.randomBytes(4096);
+  fs.writeFileSync(inbox, bytes);
+  fs.writeFileSync(picked, bytes);
+  f.files.free = async () => HEADROOM + 4096;
+  await assert.rejects(r.importFile(f.volume.id, "copied.bin", picked), /Not enough storage/);
+  await r.importFile(f.volume.id, "moved.bin", inbox, { owned: true });
+  assert.equal(fs.existsSync(inbox), false, "the inbox copy is the file now");
+  assert.deepEqual(fs.readFileSync(f.files.work(r.scope, f.volume.id, "moved.bin")), bytes);
+  f.files.free = async () => 1e12;
+
+  let release;
+  r.active = new Promise((resolve) => (release = resolve));
+  await assert.rejects(r.quiet(30), { message: SYNC_FINISHING });
+  assert.equal(r.stopped, true, "the running sync was asked to stop");
+  r.quietMs = 30;
+  fs.writeFileSync(picked, bytes);
+  await assert.rejects(r.importFile(f.volume.id, "waits.bin", picked), { message: SYNC_FINISHING }, "an import gives a sync that will not stop a bounded time");
+  assert.equal(fs.existsSync(f.files.work(r.scope, f.volume.id, "waits.bin")), false);
+  release();
+  await r.quiet(30);
+  r.active = null;
+  const files = fs.readFileSync(new URL("../apps/mobile/src/files.js", import.meta.url), "utf8");
+  assert.match(files, /async adopt\(from, to\) \{\s+const staged = new File\(this\.staged\(to\)\);\s+try \{\s+await new File\(from\)\.move\(staged\);\s+if \(to\.startsWith\(root\.uri\)\) native\.replaceFile\(staged\.uri, to\);/, "the inbox file is flushed and published by the same native replace a copy uses");
+  assert.match(files, /if \(staged\.exists\) await staged\.move\(new File\(from\)\);\s+throw error;/, "a failed publish puts the file back in the inbox");
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /await replica\.quiet\(\);\s+const copied =/, "the wait comes before the copies, so a timeout costs none");
+  assert.match(app, /asset\.uri,\s+\{ owned: !!copied \},/);
+  const share = fs.readFileSync(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
+  assert.match(share, /await r\.quiet\(\);\s+const local = await r\.store\.folder\(r\.scope, volume\.id\);/);
+  assert.doesNotMatch(share, /if \(r\.active\) await r\.active;/);
+  assert.match(share, /item\.uri,\s+\{ owned: true \},/);
 });
 
 test("a file added and renamed offline reaches the hub only under its new name", async (t) => {

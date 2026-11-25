@@ -164,6 +164,17 @@ export const files = {
       throw error;
     }
   },
+  async adopt(from, to) {
+    const staged = new File(this.staged(to));
+    try {
+      await new File(from).move(staged);
+      if (to.startsWith(root.uri)) native.replaceFile(staged.uri, to);
+      else await staged.move(new File(to));
+    } catch (error) {
+      if (staged.exists) await staged.move(new File(from));
+      throw error;
+    }
+  },
   async move(from, to) {
     if (Paths.info(from).isDirectory)
       await new Directory(from).move(new Directory(to));

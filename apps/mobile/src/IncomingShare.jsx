@@ -240,8 +240,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
       if (r.scope !== connection.hubId)
         throw new Error("The hub changed. Choose the destination again.");
       for (const item of items) incomingDestination(directory, item.name);
-      r.stop();
-      if (r.active) await r.active;
+      await r.quiet();
       const local = await r.store.folder(r.scope, volume.id);
       if (!local?.selected || galleryConfig(local))
         throw new Error(
@@ -254,6 +253,7 @@ export function IncomingShare({ connection, locals, onSaved, onChoose }) {
             volume.id,
             incomingDestination(directory, item.name),
             item.uri,
+            { owned: true },
           );
           setItems(await session.current.saved(item));
         }

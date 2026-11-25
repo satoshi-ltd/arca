@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.13 — 2026-11-25
+
+- Adding files on the phone can no longer stop every sync until the app restarts: when the app that holds a file stops sending it, the import ends with a message instead of waiting forever.
+- Saving a shared file waits at most 15 seconds for a running sync to stop and then says so, and a shared or added file is moved into its folder instead of copied, so it no longer needs its size twice in free space.
+
+Needs: native build
+
 ## 0.10.12 — 2026-11-25
 
 - A photo or video that cannot upload from the phone is no longer exported and hashed again every minute for as long as it fails: each further failure doubles the wait, up to an hour, and Retry or Sync now tries at once. One that `.arcaignore` excludes is no longer exported at all.
