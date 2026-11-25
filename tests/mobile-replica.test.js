@@ -1914,6 +1914,59 @@ test("gallery pauses, resumes a partial upload from its kept export, cleans stag
   );
 });
 
+test("a photo that keeps failing waits longer each time, up to an hour, and an excluded one is refused before it is exported again", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume } = f;
+  await f.enable();
+  const upload = r.upload.bind(r);
+  r.upload = async () => {
+    throw new Error("The hub refused this upload");
+  };
+  const item = () => f.store.galleryAsset(r.scope, volume.id, f.assets[0].id);
+  const due = async () => f.store.putGalleryAsset(r.scope, volume.id, { ...(await item()), retryAt: 0 });
+  const minutes = [];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const before = Date.now();
+    await r.sync(false, { scheduled: true });
+    minutes.push(Math.round(((await item()).retryAt - before) / 60000));
+    await due();
+  }
+  assert.deepEqual(minutes, [1, 2, 4, 8, 16, 32, 60, 60]);
+  assert.equal(f.exports.length, 8, "each try exports the original once");
+
+  await r.gallery.retryUpload(volume.id, f.assets[0].id);
+  assert.equal((await item()).failures, 0, "Retry starts the wait over");
+  let before = Date.now();
+  await r.sync(false, { scheduled: true });
+  assert.equal(Math.round(((await item()).retryAt - before) / 60000), 1);
+  before = Date.now();
+  await r.sync(true);
+  assert.equal(Math.round(((await item()).retryAt - before) / 60000), 1, "so does Sync now");
+
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.HEIC\n");
+  await f.daemon.engine.cycle();
+  await due();
+  const exported = f.exports.length;
+  await r.sync(false, { scheduled: true });
+  assert.match((await item()).issue, /^Excluded by \.arcaignore: /);
+  assert.equal(f.exports.length, exported, "the saved manifest is enough to refuse it");
+  assert.equal(f.staging(), false, "and nothing stays staged for it");
+  await f.store.putGalleryAsset(r.scope, volume.id, { ...(await item()), failures: 7, retryAt: Date.now() + 3600000 });
+  await f.store.clearInterrupted(r.scope);
+  assert.equal((await item()).failures, 7, "a real failure keeps its count across a restart");
+  const newer = { id: "later", name: "later.jpg", state: "failed", issue: "Failed later", failedAt: Date.now() + 1000, failures: 1, retryAt: Date.now() + 60000 };
+  await f.store.putGalleryAsset(r.scope, volume.id, newer);
+  assert.equal((await f.store.galleryFailure(r.scope, volume.id)).id, "later", "the latest failure is the one quoted, not the longest wait");
+  await f.store.putGalleryAsset(r.scope, volume.id, { ...newer, state: "removed" });
+
+  fs.rmSync(path.join(volume.path, ".arcaignore"));
+  await f.daemon.engine.cycle();
+  r.upload = upload;
+  await r.sync(true);
+  assert.equal((await item()).state, "accepted");
+  assert.equal((await item()).failures, 0);
+});
+
 test("Retry sends one failed upload now instead of waiting for the next background run", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume } = f;

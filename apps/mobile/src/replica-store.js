@@ -141,6 +141,7 @@ export class ReplicaStore {
         ...JSON.parse(item.row),
         state: "pending",
         retryAt: 0,
+        failures: 0,
         issue: null,
       });
   }
@@ -458,7 +459,7 @@ export class ReplicaStore {
   }
   async galleryFailure(scope, volume) {
     const row = await this.db.getFirstAsync(
-      "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state='failed' ORDER BY retryAt DESC LIMIT 1",
+      "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state='failed' ORDER BY COALESCE(json_extract(row,'$.failedAt'),retryAt) DESC LIMIT 1",
       scope,
       volume,
     );
@@ -512,7 +513,7 @@ export class ReplicaStore {
   }
   async retryGalleryManual(scope, volume) {
     await this.db.runAsync(
-      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND json_extract(row,'$.manual')=1",
+      "UPDATE gallery_assets SET retryAt=0, row=json_set(row,'$.retryAt',0,'$.failures',0) WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND json_extract(row,'$.manual')=1",
       scope,
       volume,
     );
@@ -528,7 +529,7 @@ export class ReplicaStore {
   }
   async retryGalleryAsset(scope, volume, asset) {
     const result = await this.db.runAsync(
-      "UPDATE gallery_assets SET retryAt=0, row=json_set(row,'$.retryAt',0) WHERE scope=? AND volume=? AND asset=? AND state='failed' AND COALESCE(json_extract(row,'$.lost'),0)=0",
+      "UPDATE gallery_assets SET retryAt=0, row=json_set(row,'$.retryAt',0,'$.failures',0) WHERE scope=? AND volume=? AND asset=? AND state='failed' AND COALESCE(json_extract(row,'$.lost'),0)=0",
       scope,
       volume,
       asset,
@@ -537,7 +538,7 @@ export class ReplicaStore {
   }
   async retryGallery(scope, volume) {
     await this.db.runAsync(
-      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable')",
+      "UPDATE gallery_assets SET retryAt=0, row=json_set(row,'$.retryAt',0,'$.failures',0) WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable')",
       scope,
       volume,
     );

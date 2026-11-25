@@ -15,6 +15,13 @@ import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
 const stageName = (item) => digest(item.id).slice(0, 32);
+const RETRY_MS = 60000;
+const RETRY_MAX_MS = 3600000;
+function retryLater(item) {
+  item.failedAt = Date.now();
+  item.failures = (item.failures || 0) + 1;
+  item.retryAt = Date.now() + Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** (item.failures - 1));
+}
 export function galleryConfig(folder) {
   const config = parseGallery(folder?.gallery);
   return config?.mode !== "local" ? config : null;
@@ -244,6 +251,7 @@ export class Gallery {
     item.manual = true;
     if (item.state === "unavailable") item.state = "pending";
     item.retryAt = 0;
+    item.failures = 0;
     await r.store.putGalleryAsset(r.scope, volume, item);
     if (!asset.assetId) await r.files.discardPicked(asset.uri).catch(() => {});
     return item;
@@ -305,7 +313,7 @@ export class Gallery {
             throw error;
           item.state = "failed";
           item.issue = error.message;
-          item.retryAt = Date.now() + 60000;
+          retryLater(item);
           if (error.code === "PICKED_LOST") item.lost = true;
           await r.store.putGalleryAsset(r.scope, volume, item);
           failure ||= error;
@@ -575,9 +583,19 @@ export class Gallery {
       delete item.previousResources;
       await this.dropPicked(folder.id, item);
       item.issue = null;
+      item.retryAt = 0;
+      item.failures = 0;
       await save();
       return;
     }
+    for (const resource of item.resources || [])
+      if (
+        !resource.accepted &&
+        (builtinExcluded(resource.path) || policy.ignores(resource.path))
+      ) {
+        await this.unstage(folder.id, stageName(item));
+        throw new Error(`Excluded by .arcaignore: ${resource.path}`);
+      }
     r.check();
     await r.space(0);
     const name = stageName(item);
@@ -742,6 +760,7 @@ export class Gallery {
       await this.dropPicked(folder.id, item);
       item.issue = null;
       item.retryAt = 0;
+      item.failures = 0;
       await save();
     } catch (error) {
       keep =
@@ -838,7 +857,7 @@ export class Gallery {
         if (await this.releaseMissing(folder, source, item, error)) continue;
         item.state = "failed";
         item.issue = error.message;
-        item.retryAt = Date.now() + 60000;
+        retryLater(item);
         if (error.code === "PICKED_LOST") item.lost = true;
         await r.store.putGalleryAsset(r.scope, folder.id, item);
       }
@@ -1008,6 +1027,8 @@ export class Gallery {
             await r.store.putGalleryAsset(r.scope, folder.id, {
               ...known,
               modificationTime: asset.modificationTime,
+              retryAt: 0,
+              failures: 0,
             });
           } else if (known.state === "unavailable") {
             unchanged = false;
@@ -1016,6 +1037,7 @@ export class Gallery {
               modificationTime: asset.modificationTime,
               state: "pending",
               retryAt: 0,
+              failures: 0,
               issue: null,
             });
           } else if (
@@ -1031,6 +1053,7 @@ export class Gallery {
               resources: undefined,
               state: "pending",
               retryAt: 0,
+              failures: 0,
               issue: null,
             });
           }
@@ -1077,7 +1100,7 @@ export class Gallery {
             continue;
           item.state = "failed";
           item.issue = error.message;
-          item.retryAt = Date.now() + 60000;
+          retryLater(item);
           if (error.code === "PICKED_LOST") item.lost = true;
           await r.store.putGalleryAsset(r.scope, folder.id, item);
           failure = `${item.name || "Photo"}: ${error.message}`;

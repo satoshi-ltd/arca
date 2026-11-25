@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.12 — 2026-11-25
+
+- A photo or video that cannot upload from the phone is no longer exported and hashed again every minute for as long as it fails: each further failure doubles the wait, up to an hour, and Retry or Sync now tries at once. One that `.arcaignore` excludes is no longer exported at all.
+
+Needs: native build
+
 ## 0.10.11 — 2026-11-25
 
 - On the phone, Search Arca shows each group of results as one card with full-height rows, like every other list; on the Fold its rows take the same height. The photo thumbnails sit as close together as in the gallery.

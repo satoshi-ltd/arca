@@ -27,7 +27,21 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **MOB-SHARE-WAIT** — Adding or saving a file on the phone never stops sync until a restart
+  `bug · agent · normal`
+  Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts; Save awaits the running cycle with no deadline; `importFile` needs twice the file's size because it copies the inbox file instead of moving it. Accept: Add files… uses the share's stall deadline and always releases `picking`, Save gives the running cycle a bounded time and says what it is waiting for, and the inbox copy is moved into place, with a test for each.
+
+- **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
+  `bug · agent · normal`
+  The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
+
+- **REPLICA-FOLDER-OUTAGE** — A desktop replica's folder that keeps losing its connection does not stop the folders after it
+  `bug · agent · normal`
+  Found by the review of MOB-SYNC-STARVATION, not traced: `engine.js` marks the hub unavailable on a folder's transport failure and SPEC says that ends the cycle, so one folder whose requests keep failing while the hub answers may starve the rest, as it did on the phone before 0.10.5. Accept: a failing test first; then a desktop or server replica with one such folder still completes the others, as the phone does.
+
+- **UX-DESK-A11Y** — The photo viewer shows its errors
+  `bug · agent · normal`
+  An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.
 
 ## In progress
 
@@ -95,10 +109,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
   `bug · agent · low` · small
   Seen once on 2026-11-25 in the local pre-push suite, passing alone and on the next two runs: `tests/mobile-replica.test.js` "identical files materialize from one download across snapshot pages after the first copy moved into place" counted two downloads of the shared object where it expects one, after 18 s where it normally takes 3. Unknown whether a turn that yields under load really downloads the object twice on a slow phone. Accept: the cause is traced; a real double download is fixed with a test that forces the yield, a test-only timing assumption is removed.
 
-- **REPLICA-FOLDER-OUTAGE** — A desktop replica's folder that keeps losing its connection does not stop the folders after it
-  `bug · agent · normal` · medium
-  Found by the review of MOB-SYNC-STARVATION, not traced: `engine.js` marks the hub unavailable on a folder's transport failure and SPEC says that ends the cycle, so one folder whose requests keep failing while the hub answers may starve the rest, as it did on the phone before 0.10.5. Accept: a failing test first; then a desktop or server replica with one such folder still completes the others, as the phone does.
-
 - **HUB-SCAN-SAME-FOLDER** — A proposal does not wait for a full scan of its own folder
   `feature · agent · normal` · medium
   Found by the review of HUB-SCAN-LOCK. A hub folder's scan holds that folder, so during a restart scan or the six-hour reconciliation of a large folder its own proposals, and the phones' gallery requests for it, wait for the whole scan and replicas can still mark the hub unavailable for that folder. A control that waited a second also holds back new folder work behind that scan. Accept: with a full scan of a folder held open by a stubbed scanner, a proposal for a path in that folder completes, and the scan never records a deletion or an older version over what the proposal committed.
@@ -108,15 +118,6 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 - **VIDEO-RELINK-UPLOAD** — A replica does not upload a film again when its folder becomes a Movies & TV library
   `bug · agent · normal` · small
   Found by the 0.9.61 pipeline. After the hub marks a folder as a video library, a replica rescans with the new fingerprints while its index still holds the old hashes, so it proposes each film, the hub answers that it holds no object for that fingerprint (it reads the film in place), and the replica stages and uploads the whole film. Accept: the replica adopts the hub's fingerprint rows before proposing on a library-type change, and a test counts no upload.
-- **MOB-UPLOAD-BACKOFF** — A photo that cannot upload is not exported and hashed again every minute
-  `bug · agent · normal` · small
-  Every failure retries after a fixed minute, and the export runs before the exclusion check, so excluded or failing videos are copied and hashed three per cycle indefinitely. Accept: an excluded resource with a saved manifest is refused before `media.export`, repeated failures back off from one minute to one hour and reset on Retry or Sync now, with a test counting exports. SPEC's "back off for a minute" changes.
-- **MOB-SHARE-WAIT** — Adding or saving a file on the phone never stops sync until a restart
-  `bug · agent · normal` · small
-  Add files… copies each pick with no stall deadline while holding `picking`, which stops every sync until the app restarts; Save awaits the running cycle with no deadline; `importFile` needs twice the file's size because it copies the inbox file instead of moving it. Accept: Add files… uses the share's stall deadline and always releases `picking`, Save gives the running cycle a bounded time and says what it is waiting for, and the inbox copy is moved into place, with a test for each.
-- **MOB-CONVERTING-STUCK** — An album repair that cannot finish never blocks its folder for good
-  `bug · agent · normal` · medium
-  The phone's repair of a linked album restores every missing indexed file before anything else runs, and a row whose content the hub no longer has fails every cycle: scan, uploads and pulls never run and the only way out is Stop syncing. Accept: the repair restores missing rows against the hub's current head (a row the hub has since edited takes the new revision, one it deleted counts as applied), isolates each row, and always finishes without proposing a deletion, with a test where the indexed revision is gone from the hub.
 - **HUB-ASYNC-APPLY** — The daemon keeps answering while it writes a large file
   `feature · agent · normal` · large
   Accepting or pulling a file hashes it, copies it and fsyncs it synchronously on the main thread; hub reselection recovers every row with no yield. A 4 GB upload freezes the hub for about a minute on a hard disk: every device shows the hub unavailable and the Compose healthcheck fails. Measure it first on Atlas-like hardware with a real film; do it only if the freeze is confirmed. Accept: with a stubbed slow copy, `/v1/status` answers within a second while a row materializes and during hub reselection, and the journal and recovery tests keep passing. SPEC "Storage" changes with it.
@@ -140,9 +141,6 @@ A fix lands only for a cost the measurement shows.
 - **MOB-UI-FIXES** — Five small phone defects
   `bug · agent · normal` · medium
   Android Back closes the Audio or Subtitles panel before the film; the Off position of a switch uses `line` (about 1.5:1) where desktop and SPEC §9 use `control` (3:1); the video player rotates on the nearly square Fold; the Photo uploads sheet shows no sign that a selected album is gone and Save is disabled without a reason; the player and photo viewer bars ignore the cutout and the gesture bar. Accept: `onRequestClose` closes an open panel first; `switchTrack` uses the control token with a 3:1 test in both palettes; a pure rotation rule skips the rotation under an aspect ratio of about 1.2 or on a wide layout; the album row reads "Unavailable" and the button carries its reason; a `layout.js` helper gives both bars their four margins, tested for portrait, landscape and the rotated player; the kit is regenerated.
-- **UX-DESK-A11Y** — The photo viewer shows its errors
-  `bug · agent · normal` · small
-  An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.
 - **DOC-KIT-DRIFT** — SPEC and the kit say what the code does
   `chore · agent · normal` · medium
   Stale SPEC sentences found by the audit: the tray's Now playing row (§4 against §9), the phone's Devices hub actions menu, gallery tile announcements, the Movies & TV search group, the Stream and Keep labels, the Playlists tab in Android Auto, the 2,000-entry folder listing, the one-time photo picks, and §4 Gallery's Deletion bullet, which names `/v1/delete-file` where the desktop uses `/v1/gallery/delete`. SPEC also gains the limits of iOS exposing the Documents tree to Files (an edit there syncs like any edit; deleting a synced folder's directory stops that folder). In the kit: `.kit-tray` re-declares production rules with drifted literals, the Fold's music pane draws the ⋯ only for a show, and the unfolded Fold draws a centred search and preview panes the app shows only from 1100 dp, redrawn to what ships. Accept: each sentence and drawing matches the shipped behaviour; `npm run design -- --check` and the design tests pass; no code changes.
