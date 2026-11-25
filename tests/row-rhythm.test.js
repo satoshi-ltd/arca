@@ -87,7 +87,7 @@ test("phone rows use a two-line and a compact minimum height", () => {
   assert.equal(geometry.rowMinHeightCompact, 48);
   for (const key of ["folderRow", "machineRow", "scaffoldRow"])
     assert.match(theme.match(new RegExp(`\\n    ${key}: \\{([^}]*)\\}`))[1], /minHeight: g\.rowMinHeight,/, key);
-  for (const key of ["settingRow", "actionRow", "searchRow", "musicTrack"])
+  for (const key of ["settingRow", "actionRow", "musicTrack"])
     assert.match(theme.match(new RegExp(`\\n    ${key}: \\{([^}]*)\\}`))[1], /minHeight: g\.rowMinHeightCompact/, key);
 });
 

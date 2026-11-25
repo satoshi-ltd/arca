@@ -505,7 +505,7 @@
 .m-popover {
   align-self: flex-end;
   min-width: 220px;
-  padding: 4px 0;
+  padding: var(--space-2) 0;
   background: var(--m-surface);
   border: 1px solid var(--m-divider);
   border-radius: var(--m-control-radius);
@@ -873,8 +873,8 @@
   margin: 0 auto;
 }
 .m-display {
-  font-size: var(--m-touch-title-font);
-  line-height: var(--m-touch-title-line);
+  font-size: var(--m-touch-display-font);
+  line-height: var(--m-touch-display-line);
   letter-spacing: -1.4px;
   font-weight: 700;
   color: var(--m-ink);
@@ -1810,8 +1810,7 @@
 }
 .m-np-cover {
   width: min(100% - 16px, 320px);
-  border-radius: var(--m-card-radius);
-  box-shadow: var(--shadow-menu);
+  border-radius: var(--m-control-radius);
 }
 .m-np-meta {
   display: flex;

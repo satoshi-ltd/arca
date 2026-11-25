@@ -300,7 +300,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
             <Pressable accessibilityRole="button" accessibilityLabel="Close now playing" onPress={onClose} style={s.viewerIconButtonDark}>
               <Icon name="chevron-down" color={c.ink} />
             </Pressable>
-            <View style={[s.flex, s.stack]}>
+            <View style={s.nowFrom}>
               <Eyebrow>Playing from</Eyebrow>
               <Text numberOfLines={1} style={s.rowTitle}>
                 {queue.name && queue.name !== "Library" ? queue.name : podcast ? "Podcast" : queue.name || "Music"}

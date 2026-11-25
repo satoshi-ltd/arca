@@ -40,20 +40,12 @@ _None._
 - **DEPLOY-0954** — Put 0.9.52 to 0.9.54 on the live devices
   `deploy · maintainer · normal`
   Native build for the phone (0.9.52 fields and empty states, 0.9.53 header buttons and choice sheets); desktop build (0.9.52 Settings and status card, 0.9.54 first-run Folders step); hub redeploy so the catalog carries `rules` and Start syncing can say that `.arcaignore` excludes files (an older hub shows no note); server replica redeploy for the 0.9.54 web wizard.
-- **VERIFY-PIXEL-0107** — The 0.10.7 phone corrections look right on the devices
+- **VERIFY-PIXEL-0107** — The 0.10.7 and 0.10.11 phone corrections look right on the devices
   `verify · maintainer · normal`
-  accept: on a build with 0.10.7, on Android the bottom tab labels and the segmented control labels sit centred in their boxes; on the Fold the 40 dp tile beside a folder's title has the tiles' rounded corners, and the compact rail's items are as wide as the kit draws them with 12 dp below the last one.
+  accept: on a build with 0.10.11, on Android the bottom tab labels and the segmented control labels sit centred in their boxes; on the Fold the 40 dp tile beside a folder's title has the tiles' rounded corners, and the compact rail's items are as wide as the kit draws them with 12 dp below the last one; Search Arca shows each group as one card of 74 dp rows on the phone, and flat 74 dp rows on the Fold, with photo thumbnails 4 dp apart; Now playing's header is 64 dp tall with its text centred between the collapse and sleep buttons (a running sleep countdown moves it slightly left); the welcome headline reads at the display size without wrapping badly on a small phone; the file ⋯ menu has its 8 dp above and below.
 - **VERIFY-WIZARD-FOLDERS** — The first-run Folders step starts empty and scrolls
   `verify · maintainer · normal · depends: DEPLOY-0954`
   accept: on the built desktop app and on a server's web wizard, pairing with a hub that has more folders than the window shows lists them with none chosen, scrolls to Start syncing, and Choose folders stays disabled until one is switched on.
-
-### Decisions
-
-Each carries a recommendation; a yes or no is enough.
-
-- **DEC-PIXEL-CHOICES** — Seven places where the phone and its kit still differ and neither side is plainly right
-  `decision · maintainer · normal`
-  Left by MOB-PIXEL-AUDIT (0.10.7 made the kit draw the app everywhere else). (1) Search photo thumbs: the app spaces them 8 dp, the kit 4 dp like the gallery wall; recommendation 4. (2) The file ⋯ dropdown: the app has no padding, the kit 4 dp, desktop menus 8; recommendation 8, as desktop. (3) Now playing header: the app is 56 dp with "Playing from" left-aligned, the kit 64 dp and centred; recommendation the kit's centred header. (4) Now playing cover: the app has radius 12 and no shadow, the kit radius 18 and the menu shadow; recommendation the app. (5) Search results: the app draws flat 48 dp rows, the kit grouped cards of 74 dp rows as SPEC's list rule says; recommendation the kit. (6) The setup title ships at the title size (26/32) and the kit now draws that, where it used to draw 36/38 and SPEC names a display role of 28/34; recommendation 28/34. (7) Phone cards and grouped lists ship with the control radius (12) where the Shape rule gives cards the surface radius (18); recommendation keep 12, as SPEC now says.
 
 ### Native work waiting for a build
 
@@ -148,6 +140,10 @@ A fix lands only for a cost the measurement shows.
 - **MOB-UI-FIXES** — Five small phone defects
   `bug · agent · normal` · medium
   Android Back closes the Audio or Subtitles panel before the film; the Off position of a switch uses `line` (about 1.5:1) where desktop and SPEC §9 use `control` (3:1); the video player rotates on the nearly square Fold; the Photo uploads sheet shows no sign that a selected album is gone and Save is disabled without a reason; the player and photo viewer bars ignore the cutout and the gesture bar. Accept: `onRequestClose` closes an open panel first; `switchTrack` uses the control token with a 3:1 test in both palettes; a pure rotation rule skips the rotation under an aspect ratio of about 1.2 or on a wide layout; the album row reads "Unavailable" and the button carries its reason; a `layout.js` helper gives both bars their four margins, tested for portrait, landscape and the rotated player; the kit is regenerated.
+- **KIT-SEARCH-LEADS** — The kit draws the phone's search rows with the app's own icons
+  `chore · agent · low` · small
+  Found by the review of 0.10.11. In Search Arca the kit draws a bare 20 dp glyph before a recent search, an action and Show all, a Show all title in the accent weight 500, and the Fold's selected row in the tint; the app draws a 32 dp tint tile with a 16 dp icon, the row title style, and the hover fill. Accept: the kit redraws those four as the app ships them, pinned by pairs in `tests/mobile-pixel.test.js`; no app change.
+
 - **UX-DESK-A11Y** — The photo viewer shows its errors
   `bug · agent · normal` · small
   An action's error in the full-height viewer is written below the window and its result notice lands under the modal layer, so a failed Delete looks like nothing happened. Accept: opening the viewer with the hub away and pressing Delete shows the explanation inside the viewer's box and a result notice above it; DOM test.

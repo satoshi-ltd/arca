@@ -171,6 +171,14 @@ test("the kit draws the phone's own numbers", async () => {
     ["Up next row", [s.nowUpNext.minHeight, s.nowUpNext.gap, s.nowUpNext.backgroundColor, s.nowUpNext.borderRadius], [...kit(".m-np-next", "min-height"), ...kit(".m-np-next", "gap"), ...kit(".m-np-next", "background"), ...kit(".m-np-next", "border-radius")]],
     ["subtitle cue radius", [s.videoCue.borderRadius], kit(".m-video-cue", "border-radius")],
     ["Fold header tile", [g.detailTile, fold.detailTile.borderRadius], [...kit(".m-tile.m-detail", "width"), ...kit(".m-tile.m-detail", "border-radius")]],
+    ["search photo thumbnails gap", [s.searchThumbs.gap], kit(".m-srch-photos", "gap")],
+    ["file menu padding", [s.fileActionMenu.paddingVertical, 0, s.fileActionMenu.borderRadius], [...kit(".m-popover", "padding"), ...kit(".m-popover", "border-radius")]],
+    ["Now playing header", [s.nowHeader.paddingVertical, s.nowHeader.paddingHorizontal, s.nowHeader.gap, s.nowHeader.alignItems, s.nowFrom.alignItems, s.nowFrom.flex], [...kit(".m-np-top", "padding"), ...kit(".m-np-top", "gap"), ...kit(".m-np-top", "align-items"), ...kit(".m-np-from", "align-items"), ...kit(".m-np-from", "flex")]],
+    ["Now playing cover radius", [s.musicCover.borderRadius], kit(".m-np-cover", "border-radius")],
+    ["search sections", [s.searchSections.paddingHorizontal, s.searchSections.gap, s.section.gap], [kit(".m-body", "padding")[1], ...kit(".m-body", "gap"), ...kit(".m-section", "gap")]],
+    ["search result card", [s.group.backgroundColor, s.group.borderWidth, "solid", s.group.borderColor, s.group.borderRadius, s.group.overflow, s.separator.borderTopWidth, "solid", s.separator.borderColor], [...kit(".m-group", "background"), ...kit(".m-group", "border"), ...kit(".m-group", "border-radius"), ...kit(".m-group", "overflow"), ...kit(".m-group > .m-row + .m-row", "border-top")]],
+    ["search result row", [s.folderRow.minHeight, s.folderRow.paddingVertical, s.folderRow.paddingHorizontal, s.folderRow.gap, s.groupedFolderRow.borderRadius], [...kit(".m-row", "min-height"), ...kit(".m-row", "padding"), ...kit(".m-row", "gap"), ...kit(".m-group .m-row", "border-radius")]],
+    ["Fold search result row", [s.folderRow.minHeight, s.folderRow.paddingVertical, s.folderRow.paddingHorizontal, s.folderRow.gap, s.folderRow.borderRadius], [...kit(".m-srch-hit", "min-height"), ...kit(".m-srch-hit", "padding"), ...kit(".m-srch-hit", "gap"), ...kit(".m-srch-hit", "border-radius")]],
     ["rail", [fold.navigation.width, fold.navigation.paddingTop, fold.navigation.paddingHorizontal, fold.navigation.padding], [...kit(".m-sidebar.m-compact", "width"), ...kit(".m-sidebar.m-compact", "padding")]],
   ];
   for (const [name, app, drawn] of pairs) assert.deepEqual(drawn, app, name);
@@ -184,9 +192,54 @@ test("the kit draws the phone's own numbers", async () => {
       ".m-player .m-cover also sets width of .m-fold .m-album-head .m-cover",
       ".m-srch-hit .m-cover also sets width of .m-fold .m-album-head .m-cover",
       ".m-actions-row also sets margin-top of .m-album-head .m-actions-row",
+      ".m-fp-pane > .m-group also sets background of .m-group",
+      ".m-fp-pane > .m-group also sets border of .m-group",
+      ".m-fp-pane > .m-group also sets border-radius of .m-group",
+      ".m-row also sets border-radius of .m-group .m-row",
     ],
     "no other kit rule sets a compared property on the same class, beyond these that target other elements or a base the compared rule overrides",
   );
+});
+
+test("the decided phone geometry: display headline, 64 dp Now playing header, flat cover, grouped 74 dp search rows", async () => {
+  const { s, g } = await phoneStyles();
+  const { s: fold } = await phoneStyles(1, true, true);
+  const css = fs.readFileSync(new URL("../design/mobile.css", import.meta.url), "utf8");
+  const page = fs.readFileSync(new URL("../design/mobile.html", import.meta.url), "utf8");
+  assert.deepEqual([s.displayTitle.fontSize, s.displayTitle.lineHeight, s.displayTitle.fontFamily], [g.touchDisplayFont, g.touchDisplayLine, "Manrope_700Bold"]);
+  assert.deepEqual([g.touchDisplayFont, g.touchDisplayLine], [28, 34]);
+  assert.match(css, /\.m-display \{\s+font-size: var\(--m-touch-display-font\);\s+line-height: var\(--m-touch-display-line\);/);
+  assert.equal(s.searchThumbs.gap, 4);
+  assert.equal(s.fileActionMenu.paddingVertical, 8);
+  for (const styles of [s, fold]) {
+    assert.equal(2 * styles.nowHeader.paddingVertical + styles.viewerIconButtonDark.height, 64);
+    assert.equal(styles.nowHeader.minHeight, undefined);
+    assert.equal(styles.nowHeader.paddingHorizontal, 12);
+    assert.equal(styles.nowFrom.gap, undefined);
+  }
+  assert.doesNotMatch(css, /\.m-np-from \{[^}]*gap:/);
+  assert.match(read("NowPlayingPage.jsx"), /<View style=\{s\.nowHeader\} \{\.\.\.swipe\.panHandlers\}>\s+<Pressable accessibilityRole="button" accessibilityLabel="Close now playing" onPress=\{onClose\} style=\{s\.viewerIconButtonDark\}>[\s\S]+?<\/Pressable>\s+<View style=\{s\.nowFrom\}>\s+<Eyebrow>Playing from<\/Eyebrow>\s+<Text numberOfLines=\{1\} style=\{s\.rowTitle\}>[\s\S]+?<\/View>\s+\{!!state\?\.id && <SleepButton sleep=\{sleep\} podcast=\{podcast\} onPress=\{\(\) => setSleepOpen\(true\)\} \/>\}\s+<\/View>/);
+  assert.equal(s.musicCover.borderRadius, g.controlRadius);
+  assert.equal(s.musicCover.shadowColor, undefined);
+  assert.doesNotMatch(css, /\.m-np-cover \{[^}]*shadow/);
+  assert.equal(s.searchRow, undefined);
+  assert.equal(s.folderRow.minHeight, 74);
+  const search = read("GlobalSearch.jsx");
+  assert.match(search, /style=\{\[s\.folderRow, grouped && s\.groupedFolderRow, divider && s\.separator, active && s\.historyRowChosen\]\}/);
+  assert.match(search, /const grouped = !twoPane;/);
+  assert.match(search, /const rows = entries\.map\(\(entry, at\) => render\(entry, grouped && at > 0\)\);\s+return grouped && rows\.length \? <View style=\{s\.group\}>\{rows\}<\/View> : rows;/);
+  assert.match(search, /const section = twoPane \? s\.searchGroup : s\.section;/);
+  assert.match(search, /contentContainerStyle=\{twoPane \? s\.searchBody : s\.searchSections\}/);
+  assert.match(search, /\{trailing === undefined \? <Icon name="chevron" size=\{20\} color=\{c\.mute\} \/> : trailing\}/);
+  assert.match(search, /<Icon name="play" size=\{twoPane \? 16 : 20\} color=\{c\.accent\} \/>/);
+  assert.match(search, /\{surface\(cells\.length \? lines : \[\.\.\.lines, \.\.\.paging\], resultRow\)\}\s+\{!!cells\.length && \(\s+<View style=\{\[s\.searchThumbs, twoPane && s\.searchThumbsFlat\]\}>[\s\S]+?\{!!cells\.length && surface\(paging, resultRow\)\}/);
+  assert.equal((search.match(/\bsurface\(/g) || []).length, 5);
+  const screens = page.slice(page.indexOf("<h2>Search <span>"));
+  const phone = screens.slice(0, screens.indexOf('class="m-device m-fold"'));
+  assert.ok((phone.match(/data-icon="chevron-right" data-size="20"/g) || []).length > 0);
+  assert.doesNotMatch(phone, /data-icon="chevron-right" data-size="(?!20)\d+"/);
+  assert.doesNotMatch(phone, /class="m-srch-hit/);
+  for (const hit of phone.match(/<div class="m-row">.*?<div class="m-row-action">/g) || []) assert.match(hit, /<div class="m-stack"><span class="m-row-title">[^<]+<\/span><span class="m-caption">/);
 });
 
 test("the Fold's header tile and the rail keep the geometry the spec states", async () => {

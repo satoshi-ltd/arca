@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.11 — 2026-11-25
+
+- On the phone, Search Arca shows each group of results as one card with full-height rows, like every other list; on the Fold its rows take the same height. The photo thumbnails sit as close together as in the gallery.
+- Now playing's header is centred and a little taller, and the welcome headline is slightly larger.
+- The file ⋯ menu has room above its first row and below its last.
+
+Needs: native build
+
 ## 0.10.10 — 2026-11-25
 
 - A hub on a slow or busy disk no longer refuses a device's change with "database is locked". Each folder scan used to ask for the index's write lock even with nothing to write, and a scan that still finds the index held now waits and tries again instead of failing the request.

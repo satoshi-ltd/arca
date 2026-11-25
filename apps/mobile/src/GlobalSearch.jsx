@@ -52,7 +52,7 @@ function PanePreview({ item, preview, files }) {
   return <FilePreview entry={{ path: source, uri: source, size: item.size }} label={item.path.split("/").pop()} files={files} />;
 }
 
-function Row({ item, subtitle, active, onPress, onLongPress, trailing, cover }) {
+function Row({ item, subtitle, active, grouped, divider, onPress, onLongPress, trailing, cover }) {
   const { s, c } = useDesign();
   const title = searchTitle(item);
   const kind = SEARCH_LABELS[item.of]?.[2] || "";
@@ -62,7 +62,7 @@ function Row({ item, subtitle, active, onPress, onLongPress, trailing, cover }) 
       accessibilityLabel={[item.type === "more" || item.type === "page" ? "" : kind, title, subtitle].filter(Boolean).join(", ")}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={[s.searchRow, active && s.historyRowChosen]}
+      style={[s.folderRow, grouped && s.groupedFolderRow, divider && s.separator, active && s.historyRowChosen]}
     >
       <Lead item={item} cover={cover} />
       <View style={[s.flex, s.stack]}>
@@ -75,7 +75,7 @@ function Row({ item, subtitle, active, onPress, onLongPress, trailing, cover }) 
           </Text>
         )}
       </View>
-      {trailing === undefined ? <Icon name="chevron" size={16} color={c.mute} /> : trailing}
+      {trailing === undefined ? <Icon name="chevron" size={20} color={c.mute} /> : trailing}
     </Pressable>
   );
 }
@@ -180,22 +180,57 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
     groups.at(-1).entries.push([item, index]);
   });
   const header = (label, count) => (
-    <View style={s.searchLabel}>
+    <View style={[s.searchLabel, twoPane && s.searchLabelFlat]}>
       <Eyebrow>{label}</Eyebrow>
       {!!count && <Text style={s.eyebrow}>{count}</Text>}
     </View>
   );
+  const grouped = !twoPane;
+  const surface = (entries, render) => {
+    const rows = entries.map((entry, at) => render(entry, grouped && at > 0));
+    return grouped && rows.length ? <View style={s.group}>{rows}</View> : rows;
+  };
+  const section = twoPane ? s.searchGroup : s.section;
+  const actionRow = (action, divider) => (
+    <Row
+      key={action.name}
+      item={{ type: "action", title: action.label, icon: action.icon }}
+      grouped={grouped}
+      divider={divider}
+      trailing={null}
+      onPress={() => onOpen({ type: "action", ...action }, "")}
+    />
+  );
+  const resultRow = ([item, index], divider) =>
+    item.type === "more" || item.type === "page" ? (
+      <Row key={item.type} item={item} cover={cover} grouped={grouped} divider={divider} trailing={null} onPress={() => open(item)} />
+    ) : (
+      <Row
+        key={`${item.type}:${item.volume || ""}:${item.id || item.path || item.month}`}
+        item={item}
+        subtitle={subtitle(item)}
+        cover={cover}
+        grouped={grouped}
+        divider={divider}
+        active={twoPane && selected === index}
+        trailing={item.type === "song" || item.type === "episode" ? <Icon name="play" size={twoPane ? 16 : 20} color={c.accent} /> : undefined}
+        onPress={() => press(item, index)}
+        onLongPress={() => hold(item)}
+      />
+    );
   const list = (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.searchBody}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={twoPane ? s.searchBody : s.searchSections}>
       {!query.trim() && !type && (
         <>
           {!!recents.length && (
-            <View style={s.searchGroup}>
+            <View style={section}>
               {header("Recent searches", 0)}
-              {recents.map((text) => (
+              {surface(recents, (text, divider) => (
                 <Row
                   key={text}
                   item={{ type: "recent", title: text }}
+                  grouped={grouped}
+                  divider={divider}
                   onPress={() => setQuery(text)}
                   trailing={
                     <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${text}`} onPress={() => onForget(text)} style={s.searchForget}>
@@ -206,11 +241,9 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
               ))}
             </View>
           )}
-          <View style={s.searchGroup}>
+          <View style={section}>
             {header("Actions", 0)}
-            {actions.map((action) => (
-              <Row key={action.name} item={{ type: "action", title: action.label, icon: action.icon }} trailing={null} onPress={() => onOpen({ type: "action", ...action }, "")} />
-            ))}
+            {surface(actions, actionRow)}
           </View>
         </>
       )}
@@ -225,25 +258,14 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
       )}
       {groups.map((group) => {
         const cells = group.entries.filter(([item]) => item.type === "photo");
+        const paging = group.entries.filter(([item]) => item.type === "more" || item.type === "page");
+        const lines = group.entries.filter((entry) => !cells.includes(entry) && !paging.includes(entry));
         return (
-          <View key={group.label} style={s.searchGroup}>
+          <View key={group.label} style={section}>
             {header(group.label, group.count)}
-            {group.entries
-              .filter(([item]) => item.type !== "photo" && item.type !== "more" && item.type !== "page")
-              .map(([item, index]) => (
-                <Row
-                  key={`${item.type}:${item.volume || ""}:${item.id || item.path || item.month}`}
-                  item={item}
-                  subtitle={subtitle(item)}
-                  cover={cover}
-                  active={twoPane && selected === index}
-                  trailing={item.type === "song" || item.type === "episode" ? <Icon name="play" size={16} color={c.accent} /> : undefined}
-                  onPress={() => press(item, index)}
-                  onLongPress={() => hold(item)}
-                />
-              ))}
+            {surface(cells.length ? lines : [...lines, ...paging], resultRow)}
             {!!cells.length && (
-              <View style={s.searchThumbs}>
+              <View style={[s.searchThumbs, twoPane && s.searchThumbsFlat]}>
                 {cells.map(([item, index]) => {
                   const day = formatDay((item.date || "").slice(0, 10));
                   return (
@@ -266,20 +288,14 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
                 })}
               </View>
             )}
-            {group.entries
-              .filter(([item]) => item.type === "more" || item.type === "page")
-              .map(([item]) => (
-                <Row key={item.type} item={item} cover={cover} trailing={null} onPress={() => open(item)} />
-              ))}
+            {!!cells.length && surface(paging, resultRow)}
           </View>
         );
       })}
       {!!quickActions.length && (
-        <View style={s.searchGroup}>
+        <View style={section}>
           {header("Actions", 0)}
-          {quickActions.map((action) => (
-            <Row key={action.name} item={{ type: "action", title: action.label, icon: action.icon }} trailing={null} onPress={() => onOpen({ type: "action", ...action }, "")} />
-          ))}
+          {surface(quickActions, actionRow)}
         </View>
       )}
     </ScrollView>
