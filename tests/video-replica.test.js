@@ -322,6 +322,23 @@ test("a server replica keeps Movies & TV too, and a library kept the old way mus
   assert.deepEqual(r.replica.engine.store.mediaModes(), {});
 });
 
+test("a replica asked for its saved library answers from it without waiting for the hub, and asks the hub when it has none", async (t) => {
+  const f = await hub(t);
+  await library(f);
+  const r = await replicaOf(t, f);
+  const hubLibrary = await f.library();
+  assert.deepEqual(await r.call(`/v1/video/library?volume=${f.v.id}&saved=1`), hubLibrary, "with nothing saved the hub answers as before");
+  const http = await import("node:http");
+  let asked = 0;
+  const silent = http.createServer(() => asked++);
+  await new Promise((resolve) => silent.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => (silent.closeAllConnections(), silent.close(resolve))));
+  r.replica.engine.config.hub.url = `http://127.0.0.1:${silent.address().port}`;
+  assert.deepEqual(await r.call(`/v1/video/library?volume=${f.v.id}&saved=1`), { ...hubLibrary, saved: true });
+  assert.equal(asked, 0, "the hub is not asked");
+  assert.equal((await f.call(`/v1/video/library?volume=${f.v.id}&saved=1`)).saved, undefined, "a hub has no saved copy to answer from");
+});
+
 test("offline, a replica refuses to start a video it holds no current copy of, and passes the hub's range errors on", async (t) => {
   const f = await hub(t);
   const { film, hash, name } = await library(f);

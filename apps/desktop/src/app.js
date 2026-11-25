@@ -156,7 +156,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.10.5";
+const APP_VERSION = "0.10.6";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7301,8 +7301,10 @@ async function loadVideoLibrary(volume) {
   const known = videoLibraries.get(key);
   const query = new URLSearchParams({ volume });
   if (known) query.set("version", known.version);
+  else if (status.role === "replica") query.set("saved", "1");
   const data = await api("/v1/video/library?" + query);
   if (data.unchanged && known) {
+    known.saved = false;
     known.indexing = data.indexing || false;
     known.matching = data.matching || false;
     if (data.tmdb !== undefined) known.tmdb = data.tmdb;
@@ -7318,6 +7320,7 @@ async function loadVideoLibrary(volume) {
     stamp: 0,
     tmdb: data.tmdb,
     offline: !!data.offline,
+    saved: !!data.saved,
     library: buildVideoLibrary(data),
   };
   videoLibraries.delete(key);
@@ -7409,25 +7412,28 @@ function refreshVideo(volume, force = false) {
   return job;
 }
 async function readVideo(volume, key, known) {
-  const before = JSON.stringify([known?.indexing, known?.matching, known?.offline]);
+  const before = JSON.stringify([known?.indexing, known?.matching, known?.offline, known?.saved]);
+  let entry;
   try {
-    const entry = await loadVideoLibrary(volume);
+    entry = await loadVideoLibrary(volume);
     const downloadsChanged = await loadVideoDownloads(volume);
     const tmdbChanged = entry.tmdb !== undefined ? rememberVideoTmdb(entry.tmdb) : await loadVideoTmdb();
     if (tmdbChanged) videoTouched(volume);
     videoFailures.delete(key);
     armVideoIndex(volume, videoWorking(entry) ? 5000 : VIDEO_IDLE_REFRESH);
-    if ((entry !== known || tmdbChanged || downloadsChanged || JSON.stringify([entry.indexing, entry.matching, entry.offline]) !== before) && videoShowing(volume)) {
+    if ((entry !== known || tmdbChanged || downloadsChanged || JSON.stringify([entry.indexing, entry.matching, entry.offline, entry.saved]) !== before) && videoShowing(volume)) {
       if (known && !videoWorking(entry) && (videoMenuOpen() || videoPlayer)) videoStale.add(volume);
       else renderVideo(folderVolume(volume));
     }
   } catch (error) {
-    if (known) return void armVideoIndex(volume, videoWorking(known) ? 5000 : VIDEO_IDLE_REFRESH);
+    if (known && !known.saved) return void armVideoIndex(volume, videoWorking(known) ? 5000 : VIDEO_IDLE_REFRESH);
+    videoLibraries.delete(key);
     videoFailures.set(key, error.message);
     if (videoShowing(volume)) renderVideo(folderVolume(volume));
   } finally {
     videoLoading.delete(key);
   }
+  if (entry?.saved && videoLibraries.get(key) === entry) void refreshVideo(volume, true);
 }
 function videoTouched(volume) {
   const entry = videoLibraries.get(videoKey(volume));
@@ -7580,7 +7586,7 @@ function videoBand(v, item, actions) {
   const cast = (item.cast || []).slice(0, 5);
   return `<div class="video-backdrop">${videoArt(v.id, item.backdrop, "arca", " video-backdrop-art", "large")}${videoArt(v.id, item.poster, videoSymbol(item), " video-poster", "small", videoWatchedMark(item))}<div class="music-head-info"><div><h2>${escape(item.title)}</h2>${facts ? `<p class="video-facts">${facts}</p>` : ""}${spoken ? `<p class="video-languages">${spoken}</p>` : ""}${item.overview ? `<p class="video-hero-overview">${escape(item.overview)}</p>` : ""}${cast.length ? `<p class="video-line video-cast"><strong>Cast</strong>${escape(cast.join(", "))}</p>` : ""}<div class="heading-actions">${actions}</div></div></div></div>`;
 }
-const videoLive = (entry) => !!entry && !entry.offline && !hubOffline() && navigator.onLine !== false;
+const videoLive = (entry) => !!entry && !entry.offline && !entry.saved && !hubOffline() && navigator.onLine !== false;
 function videoTrailer(item, live) {
   if (!item.trailer || item.kids || !live) return "";
   return `<a class="secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(item.trailer)}" target="_blank" rel="noopener noreferrer" data-trailer="${escape(item.trailer)}">${icon("external-link")}Trailer</a>`;

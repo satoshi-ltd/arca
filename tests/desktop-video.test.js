@@ -60,7 +60,7 @@ const SETTINGS = {
   libraries: [{ volume: "vid", name: "video", movies: 5, shows: 3, unrecognised: 1 }],
 };
 
-async function boot(t, { status = hubStatus(), route = "#/folders/vid", web = false, canPlay = "maybe", library = sampleLibrary, remote = null, search = null, playback = null, settings = () => SETTINGS, audioTracks = false, compatible = null, subtitles = null, downloads = null, watched = null, removal = null } = {}) {
+async function boot(t, { status = hubStatus(), libraryAnswer = null, route = "#/folders/vid", web = false, canPlay = "maybe", library = sampleLibrary, remote = null, search = null, playback = null, settings = () => SETTINGS, audioTracks = false, compatible = null, subtitles = null, downloads = null, watched = null, removal = null } = {}) {
   const dom = new JSDOM(html, { runScripts: "outside-only", url: `http://tauri.localhost/${route}` });
   const w = dom.window;
   const pending = new Set();
@@ -199,6 +199,7 @@ async function boot(t, { status = hubStatus(), route = "#/folders/vid", web = fa
     if (route === "/v1/remote") return remote || { volumes: [] };
     if (route === "/v1/machines") return { machines: [] };
     if (route === "/v1/network") return { mode: "standalone", tailscale: { state: "stopped" }, publishing: false, allowLanHttp: false };
+    if (libraryAnswer && route.startsWith("/v1/video/library?")) return libraryAnswer(route);
     if (route.startsWith("/v1/video/library?")) {
       data ||= library();
       const current = `${data.version}-${version}`;
@@ -455,9 +456,9 @@ test("a title with a TMDB trailer offers Trailer, opened outside Arca, never for
   assert.equal(offline.$("a[data-trailer]"), null, "a cached answer from an unreachable hub hides it");
 
   const app = source("app.js");
-  assert.match(app, /const videoLive = \(entry\) => !!entry && !entry\.offline && !hubOffline\(\) && navigator\.onLine !== false;/);
-  assert.match(app, /const before = JSON\.stringify\(\[known\?\.indexing, known\?\.matching, known\?\.offline\]\);/, "a hub coming back repaints the page even when the library is unchanged");
-  assert.match(app, /JSON\.stringify\(\[entry\.indexing, entry\.matching, entry\.offline\]\) !== before/);
+  assert.match(app, /const videoLive = \(entry\) => !!entry && !entry\.offline && !entry\.saved && !hubOffline\(\) && navigator\.onLine !== false;/);
+  assert.match(app, /const before = JSON\.stringify\(\[known\?\.indexing, known\?\.matching, known\?\.offline, known\?\.saved\]\);/, "a hub coming back repaints the page even when the library is unchanged");
+  assert.match(app, /JSON\.stringify\(\[entry\.indexing, entry\.matching, entry\.offline, entry\.saved\]\) !== before/);
   assert.match(app, /for \(const name of \["online", "offline"\]\)\n  window\.addEventListener\(name, \(\) => \{\n    if \(videoShowing\(detailId\)\) renderVideo\(folderVolume\(detailId\)\);/, "losing the internet repaints the page");
   assert.match(app, /const link = event\.target\.closest\?\.\("a\[data-trailer\]"\);\n  if \(!link \|\| !native\) return;\n  event\.preventDefault\(\);\n  invoke\("open_trailer", \{ key: link\.dataset\.trailer \}\)/, "the desktop app hands the key to the system browser");
   const rust = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
@@ -811,7 +812,7 @@ test("a desktop replica opens an unselected video folder on its library through 
   assert.ok(sections.some((text) => /On hub · not selected/.test(text) && /documents/.test(text) && /video/.test(text)), "it waits under On hub · not selected");
   assert.ok(card.querySelector('[data-action="add"]'), "it offers Start syncing beside the row");
   await ui.click('.folder-card[data-id="vid"] .row-main', () => ui.$(".video-page .music-card") && ui.idle());
-  assert.ok(ui.routes.some((route) => route === "/v1/video/library?volume=vid"));
+  assert.ok(ui.routes.some((route) => route === "/v1/video/library?volume=vid&saved=1"));
   assert.equal(ui.$('[data-action="video-mode"]'), null, "no files to view without a local copy");
   assert.ok(ui.$('.video-page ~ * .favorite-star, #content .favorite-star'), "the streamed folder can still be a favorite");
   await ui.click('[data-action="video-tab"][data-id="movies"]', () => cardTitles(ui).includes("Inception"));
@@ -1496,6 +1497,58 @@ const revised = () => {
   for (const row of [...data.movies, ...data.other, ...data.shows.flatMap((show) => show.seasons.flatMap((season) => season.episodes))]) row.rev = ++rev;
   return data;
 };
+
+test("a replica paints its library and a title from the saved copy at once and updates when the hub answers", async (t) => {
+  let release;
+  const hubAnswer = new Promise((resolve) => (release = resolve));
+  const fresh = sampleLibrary();
+  fresh.version = "2";
+  fresh.movies.find((row) => row.title === "Inception").title = "Inception (Director's Cut)";
+  const ui = await boot(t, {
+    status: streamingReplica,
+    libraryAnswer: (route) => {
+      const query = new URLSearchParams(route.split("?")[1]);
+      const saved = sampleLibrary();
+      for (const item of [...saved.movies, ...fresh.movies]) if (item.title.startsWith("Inception")) item.trailer = "dQw4w9WgXcQ";
+      if (query.get("saved") === "1") return { ...saved, version: "1", saved: true };
+      return hubAnswer.then(() => (query.get("version") === "2" ? { version: "2", unchanged: true } : fresh));
+    },
+  });
+  const reads = () => ui.routes.filter((route) => route.startsWith("/v1/video/library?"));
+  await until(() => ui.$(".video-page .music-card") && reads().length === 2);
+  assert.deepEqual(reads(), ["/v1/video/library?volume=vid&saved=1", "/v1/video/library?volume=vid&version=1"]);
+  await ui.click('[data-action="video-tab"][data-id="movies"]', () => cardTitles(ui).includes("Inception"));
+  const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Inception");
+  await ui.click(card, () => ui.text(".video-backdrop h2") === "Inception");
+  assert.equal(ui.$(".video-backdrop a[data-trailer]"), null, "a saved copy is not a live answer");
+  release();
+  await until(() => ui.text(".video-backdrop h2") === "Inception (Director's Cut)" && ui.idle());
+  assert.ok(ui.$(".video-backdrop a[data-trailer]"));
+  assert.equal(reads().length, 2, "the saved copy is asked for once");
+});
+
+test("a saved copy gives way to the error when the hub refuses the read behind it", async (t) => {
+  const ui = await boot(t, {
+    status: streamingReplica,
+    libraryAnswer: (route) =>
+      route.includes("saved=1")
+        ? { ...sampleLibrary(), version: "1", saved: true }
+        : Promise.reject(Object.assign(new Error("The hub refused this device's credential"), { status: 401 })),
+  });
+  await until(() => /Library unavailable/.test(ui.text("#content")) && ui.idle());
+  assert.equal(ui.$(".video-page .music-card"), null);
+});
+
+test("a hub never asks for a saved copy, and a replica whose daemon had none reads the hub's answer once", async (t) => {
+  const reads = (ui) => ui.routes.filter((route) => route.startsWith("/v1/video/library?"));
+  const ui = await boot(t);
+  await library(ui);
+  assert.deepEqual(reads(ui), ["/v1/video/library?volume=vid"]);
+  const replica = await boot(t, { status: streamingReplica });
+  await library(replica);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(reads(replica), ["/v1/video/library?volume=vid&saved=1"]);
+});
 
 test("a replica streaming a folder it did not select still deletes shows and episodes on the hub", async (t) => {
   const ui = await boot(t, { status: streamingReplica, library: revised });

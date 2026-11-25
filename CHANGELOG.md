@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.6 — 2026-11-25
+
+- On a desktop or server that is not the hub, a Movies & TV library and its titles open at once from the copy saved on that device and update when the hub answers, instead of waiting up to ten seconds for a hub that is slow or away.
+
+Needs: desktop build · server replica redeploy
+
 ## 0.10.5 — 2026-11-25
 
 - On the phone, a folder that keeps failing no longer stops the folders after it from syncing: when one folder loses its connection while the hub still answers, the phone goes on with the rest, tries that folder again and shows the problem on it instead of "hub unavailable".

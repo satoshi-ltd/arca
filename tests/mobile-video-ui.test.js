@@ -49,6 +49,7 @@ test("a Movies & TV library waits under On hub · not selected until it is start
 test("the library reads the cache first, refreshes from the hub, and keeps the list when the hub is out of reach", () => {
   const load = app.slice(app.indexOf("const cached = await cachedVideoLibrary(replica, folder.id);"), app.indexOf("const shownVideo ="));
   assert.ok(load.indexOf("cachedVideoLibrary") < load.indexOf("refreshVideoLibrary"));
+  assert.ok(load.indexOf("{ key, library: cached, offline: false, live: false }") < load.indexOf("refreshVideoLibrary"), "the saved library is on screen before the hub is asked");
   assert.match(load, /if \(!connected\) \{\s+if \(active\) setVideoData\(\{ key, library: cached, offline: true \}\);/);
   assert.match(load, /catch \{\s+if \(active\) setVideoData\(\{ key, library: cached, offline: true \}\);/);
   assert.match(app, /pruneVideoLibraries\(replica, catalog\)/);

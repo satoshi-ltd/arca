@@ -204,14 +204,15 @@ function withoutLocalDeletions(engine, volume, value) {
   };
 }
 
-export async function replicaLibrary(context, volume, known, stop = null) {
+export async function replicaLibrary(context, volume, known, stop = null, fromSaved = false) {
   const { engine, s } = context;
   const key = `${engine.config.hub?.id || ""}:video-library:${volume}`;
   const saved = s.db.prepare("SELECT value FROM remote_views WHERE key=?").get(key);
   const cached = saved ? JSON.parse(saved.value) : null;
   if (saved) s.db.prepare("UPDATE remote_views SET used=? WHERE key=?").run(Date.now(), key);
   let value;
-  try {
+  if (fromSaved && cached) value = { ...cached, saved: true };
+  else try {
     const answer = await forward(
       engine,
       `/v1/video/library?${new URLSearchParams({ volume, ...(cached?.version ? { version: cached.version } : {}) })}`,
@@ -392,7 +393,7 @@ export async function videoRoute(context) {
     if (route === "/v1/video/library") {
       if (!hub) {
         requireAdmin();
-        return send(200, await replicaLibrary(context, query.get("volume"), query.get("version")));
+        return send(200, await replicaLibrary(context, query.get("volume"), query.get("version"), null, query.get("saved") === "1"));
       }
       const library = video.library(query.get("volume"), query.get("version"));
       context.checkCredential();
