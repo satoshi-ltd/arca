@@ -2444,34 +2444,23 @@
   display: grid;
   place-items: center;
 }
-.m-video-head {
+.m-video-band.m-video-band-stage {
+  height: auto;
+  margin-top: -16px;
+}
+.m-video-stage {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
+  padding: 8px 16px 24px;
 }
-.m-video-head-poster {
+.m-video-stage-poster {
   position: relative;
   flex: none;
   width: 96px;
-  margin-top: -64px;
   overflow: hidden;
-  border: 2px solid var(--m-paper);
   border-radius: var(--m-control-radius);
-}
-.m-fold .m-video-head-poster {
-  width: 112px;
-}
-.m-video-head-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
-}
-.m-video-head .m-title {
-  flex: none;
 }
 .m-video-actions {
   display: flex;
@@ -2929,6 +2918,7 @@
   gap: 8px;
 }
 .m-video-hero-info .m-title,
+.m-video-hero-info .m-detail-title,
 .m-video-hero-info .m-caption,
 .m-video-hero-info .m-text,
 .m-video-hero-info .m-video-language-group,

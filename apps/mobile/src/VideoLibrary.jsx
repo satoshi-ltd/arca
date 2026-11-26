@@ -257,10 +257,10 @@ function Grid({ cards, art, open, scrollRef, scrollY }) {
 }
 
 function Band({ item, art, back, backLabel, more, children }) {
-  const { s, c } = useDesign();
+  const { s, c, wide } = useDesign();
   const uri = art(item.backdrop, "large");
   return (
-    <View style={[s.videoBand, !!children && s.videoBandHero]}>
+    <View style={[s.videoBand, !!children && (wide ? s.videoBandHero : s.videoBandStage)]}>
       {!!uri && <Image source={{ uri }} style={s.videoBandImage} accessibilityIgnoresInvertColors />}
       <View style={s.videoBandScrim} pointerEvents="none" />
       <View style={s.videoBandBar}>
@@ -410,6 +410,22 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
       </View>
     </View>
   );
+  const stage = (
+    <View style={s.videoStage}>
+      <View style={s.videoStagePoster}>
+        <Art uri={art(item.poster, "small")} shape="poster" icon={show ? "tv" : "clapperboard"} />
+        {watched && <Watched />}
+      </View>
+      <View style={s.videoStageText}>
+        <Text accessibilityRole="header" style={[s.detailTitle, s.videoOnMedia]}>
+          {item.title}
+        </Text>
+        <Facts media facts={titleFacts(item, library)} />
+        {!!languages && <Languages media languages={languages} />}
+        {show && <Text style={[s.caption, s.videoOnMedia]}>{watchedLine(item)}</Text>}
+      </View>
+    </View>
+  );
   const row = show ? null : download(item);
   const allowed = show ? false : canDownload(item);
   const tile = show || kept ? null : downloadTile(row, allowed);
@@ -523,7 +539,9 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
     );
   return (
     <View style={s.musicPage}>
-      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)} />
+      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)}>
+        {!wide && stage}
+      </Band>
       {wide ? (
         <View style={s.videoSplit}>
           <View style={s.videoSplitSide}>
@@ -539,7 +557,6 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
         </View>
       ) : (
         <>
-          {head}
           {playRow}
           {facts}
           {relatedRow}

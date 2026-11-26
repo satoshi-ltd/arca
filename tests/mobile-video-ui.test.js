@@ -62,7 +62,7 @@ test("title pages own their header: the backdrop band carries back and the menu,
   assert.match(app, /\{!onboarding && !videoTitleOpen && \(\s+<View\s+style=\{\[\s+s\.viewHeader,/);
   const back = app.slice(app.indexOf("const handler = () => {"), app.indexOf("const selectTab"));
   assert.ok(back.indexOf("videoBack.current()") < back.lastIndexOf("setFolder(null)"));
-  assert.match(library, /<Band item=\{item\} art=\{art\} back=\{back\} backLabel=\{videoBackLabel\(route\)\} more=\{\(\) => more\(item, season\?\.season\)\} \/>/);
+  assert.match(library, /<Band item=\{item\} art=\{art\} back=\{back\} backLabel=\{videoBackLabel\(route\)\} more=\{\(\) => more\(item, season\?\.season\)\}>\s+\{!wide && stage\}/);
   assert.match(library, /Resume|playLabel\(library, item\)/);
   assert.match(library, /<DockTile label="Start over" icon="rotate-ccw" onPress=\{\(\) => play\(target, 0\)\} \/>/);
   assert.match(library, /spoken=\{watched \? "Mark as unwatched" : "Mark as watched"\}/);
@@ -156,15 +156,32 @@ test("files with several audio tracks get an Audio panel that remembers the lang
   assert.match(player, /rememberedAudio\(audios, rememberedLanguage\.get\(titleKey\(session\.item\)\)\)/);
 });
 
-test("on the title page only the poster overlaps the backdrop band; the heading text starts below it", () => {
+test("on a large tablet only the poster overlaps the backdrop band; the heading text starts below it", () => {
   const rule = (name) => theme.match(new RegExp(`\\b${name}: \\{[^}]*\\}`))[0];
   assert.doesNotMatch(rule("videoHead"), /marginTop|alignItems: "flex-end"|position/, "the heading row starts where the band ends");
   assert.match(rule("videoHead"), /alignItems: "flex-start"/);
   assert.match(rule("videoHeadPoster"), /marginTop: -\(2 \* sp\[7\]\)/);
   assert.doesNotMatch(rule("videoHeadText"), /marginTop: -|position|top:/, "the text column never moves up under the band");
-  const head = library.slice(library.indexOf("<View style={s.videoHead}>"), library.indexOf("const playRow"));
+  const head = library.slice(library.indexOf("<View style={s.videoHead}>"), library.indexOf("const stage = ("));
   assert.match(head, /<View style=\{s\.videoHeadPoster\}>[\s\S]*<\/View>\s+<View style=\{s\.videoHeadText\}>/);
   assert.ok(library.indexOf("<Band ") < library.indexOf("{head}"), "the band is drawn before the heading");
+});
+
+test("on the phone the title sits on its backdrop: poster, title, facts and languages inside the band, which grows to hold them", () => {
+  const rule = (name) => theme.match(new RegExp(`\\b${name}: \\{[^}]*\\}`))[0];
+  assert.match(library, /<View style=\{\[s\.videoBand, !!children && \(wide \? s\.videoBandHero : s\.videoBandStage\)\]\}>/);
+  assert.match(rule("videoBandStage"), /height: undefined/, "no fixed band height on the phone");
+  assert.match(library, /more=\{\(\) => more\(item, season\?\.season\)\}>\s+\{!wide && stage\}\s+<\/Band>/);
+  const stage = library.slice(library.indexOf("const stage = ("), library.indexOf("const row = show"));
+  assert.match(stage, /<View style=\{s\.videoStagePoster\}>\s+<Art uri=\{art\(item\.poster, "small"\)\} shape="poster" icon=\{show \? "tv" : "clapperboard"\} \/>\s+\{watched && <Watched \/>\}\s+<\/View>\s+<View style=\{s\.videoStageText\}>/);
+  assert.match(stage, /style=\{\[s\.detailTitle, s\.videoOnMedia\]\}/, "the title uses the detail title size in the on-media colour");
+  assert.match(stage, /<Facts media facts=\{titleFacts\(item, library\)\} \/>\s+\{!!languages && <Languages media languages=\{languages\} \/>\}/);
+  assert.match(stage, /\{show && <Text style=\{\[s\.caption, s\.videoOnMedia\]\}>\{watchedLine\(item\)\}<\/Text>\}/);
+  assert.doesNotMatch(rule("videoStagePoster"), /marginTop/, "the poster stays inside the backdrop");
+  assert.match(rule("videoStage"), /alignItems: "center"/);
+  const phone = library.slice(library.lastIndexOf(") : (\n        <>"), library.indexOf("export function VideoOffline"));
+  assert.doesNotMatch(phone, /\{head\}/, "the phone draws no second heading under the band");
+  assert.match(phone, /<>\s+\{playRow\}\s+\{facts\}/);
 });
 
 test("sort and season pickers use the app's segmented control, there is no genre filter, sort joins the tabs row unfolded, and the last tab is Others", () => {

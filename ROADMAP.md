@@ -35,21 +35,15 @@ _None._
 
 ## Needs maintainer
 
-### Deploy and verify
+_None._
 
-- **DEPLOY-0954** — Put 0.9.52 to 0.9.54 on the live devices
-  `deploy · maintainer · normal`
-  Native build for the phone (0.9.52 fields and empty states, 0.9.53 header buttons and choice sheets); desktop build (0.9.52 Settings and status card, 0.9.54 first-run Folders step); hub redeploy so the catalog carries `rules` and Start syncing can say that `.arcaignore` excludes files (an older hub shows no note); server replica redeploy for the 0.9.54 web wizard.
-- **VERIFY-PIXEL-0107** — The 0.10.7 and 0.10.11 phone corrections look right on the devices
-  `verify · maintainer · normal`
-  accept: on a build with 0.10.11, on Android the bottom tab labels and the segmented control labels sit centred in their boxes; on the Fold the 40 dp tile beside a folder's title has the tiles' rounded corners, and the compact rail's items are as wide as the kit draws them with 12 dp below the last one; Search Arca shows each group as one card of 74 dp rows on the phone, and flat 74 dp rows on the Fold, with photo thumbnails 4 dp apart; Now playing's header is 64 dp tall with its text centred between the collapse and sleep buttons (a running sleep countdown moves it slightly left); the welcome headline reads at the display size without wrapping badly on a small phone; the file ⋯ menu has its 8 dp above and below.
-- **VERIFY-WIZARD-FOLDERS** — The first-run Folders step starts empty and scrolls
-  `verify · maintainer · normal · depends: DEPLOY-0954`
-  accept: on the built desktop app and on a server's web wizard, pairing with a hub that has more folders than the window shows lists them with none chosen, scrolls to Start syncing, and Choose folders stays disabled until one is switched on.
+## Proposed
 
-### Native work waiting for a build
+Ideas not yet approved, from the source audit of 2026-11-11 and later ones, reviewed against the code on 2026-11-18. The security model is sound as built: every `/v1` route passes one gate that refuses a missing or unknown credential, a player has an allow-list, every synced path passes `validPath`, the daemon listens on loopback unless told otherwise and the Docker image runs unprivileged. What stays here is what an intruder or a failing disk could really use; hardening against a hostile hub, against the owner's own files, or for a case that needs an unlikely coincidence is gone, because the hub and the owner's devices are the root of trust (SPEC §1, Single-owner trust). Unless an entry says reproduced or confirmed, its cause was traced in the code and not run, so its first step is the failing test its accept describes. Effort: small is one function and its tests, medium a few files or one subsystem, large a design change. No task in this lane is approved for implementation.
 
-Agent tasks that end with JavaScript and contract tests and run only after a maintainer build; schedule them together to share one.
+### Native — needs a build
+
+Each ends with JavaScript and contract tests and needs a maintainer build; approve them together to share one.
 
 - **NAT-IOS-HASH** — Native hashing on iOS
   `feature · agent · high · native`
@@ -66,10 +60,6 @@ Agent tasks that end with JavaScript and contract tests and run only after a mai
 - **MOB-SLEEP-FADE** — The phone's sleep timer fades out before pausing
   `feature · agent · low · native`
   accept: `MusicService` gains a volume command (or a timed fade) and the phone's sleep timer ramps the player volume to silence over about 5 s before pausing and restoring it, as desktop does; reduced motion keeps the fade because it is audio; JVM and contract tests cover it.
-
-## Proposed
-
-Ideas not yet approved, from the source audit of 2026-11-11 and later ones, reviewed against the code on 2026-11-18. The security model is sound as built: every `/v1` route passes one gate that refuses a missing or unknown credential, a player has an allow-list, every synced path passes `validPath`, the daemon listens on loopback unless told otherwise and the Docker image runs unprivileged. What stays here is what an intruder or a failing disk could really use; hardening against a hostile hub, against the owner's own files, or for a case that needs an unlikely coincidence is gone, because the hub and the owner's devices are the root of trust (SPEC §1, Single-owner trust). Unless an entry says reproduced or confirmed, its cause was traced in the code and not run, so its first step is the failing test its accept describes. Effort: small is one function and its tests, medium a few files or one subsystem, large a design change. No task in this lane is approved for implementation.
 
 ### Security
 
@@ -90,6 +80,10 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
   The credential is stored `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so a background task that starts on a locked phone cannot load it and ends as failed. Accept: after-first-unlock, this device only, re-saved once, pinned by a test; in the same change `NSAllowsLocalNetworking` replaces `NSAllowsArbitraryLoads` (the native module already refuses plain HTTP outside verified addresses) and the config test pins it.
 
 ### Reliability — normal
+
+- **TEST-TIMING-FLAKES** — Two tests that fail under a slow runner pass reliably
+  `bug · agent · low` · small
+  Seen on 2026-11-25, each passing on the next pipeline: `tests/mobile-replica.test.js` "the first cycle against a silent hub reports it offline at the client deadline…" (Ubuntu, 0.10.12: the second sync, every request delayed 100 ms against a 1 s client deadline, ended with the hub marked unavailable) and `tests/video-compatible.test.js` "a start inside a long group of pictures begins at the keyframe before it…" (Windows, 0.10.14: "Condition not reached" after 62 s). Accept: each cause is traced; a real defect is fixed with a test, a test-only timing margin is widened without hiding it.
 
 - **TEST-SHARED-DOWNLOAD-LOAD** — The shared-download test does not depend on the machine's load
   `bug · agent · low` · small

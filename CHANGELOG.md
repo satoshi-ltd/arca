@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.17 — 2026-11-26
+
+- On the phone, a film or show opens with its poster, title, facts and languages on the backdrop, as on desktop and the Fold, instead of a thin strip of picture with the poster hanging below it.
+
+Needs: native build
+
 ## 0.10.16 — 2026-11-25
 
 - The photo viewer on desktop and web shows its errors over the photo and its result notices above it: a Delete refused while the hub is away, or a deletion's result, no longer lands out of sight behind the viewer.

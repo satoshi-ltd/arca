@@ -163,7 +163,8 @@ test("the unfolded Fold stacks every side column into one full-width column and 
 
 test("the Fold title page is the desktop hero with only the mark-all action for shows and a single Play for movies", () => {
   const library = read("VideoLibrary.jsx");
-  const fold = library.slice(library.indexOf("const heroActions"), library.indexOf("return (\n    <View style={s.musicPage}>\n      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)} />"));
+  const fold = library.slice(library.indexOf("const heroActions"), library.indexOf("return (\n    <View style={s.musicPage}>\n      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)}>\n        {!wide && stage}"));
+  assert.ok(fold.length < library.length / 2, "the Fold's hero ends before the phone's page");
   assert.match(fold, /Mark all episodes as unwatched" : "Mark all episodes as watched"/);
   assert.doesNotMatch(fold, /Start over|Continue/);
   assert.equal((fold.match(/primary label=\{playLabel/g) || []).length, 1);
